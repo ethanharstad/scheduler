@@ -1,0 +1,51 @@
+-- User Authentication System — D1 Schema
+-- Apply: wrangler d1 execute scheduler-auth --local --file=src/db/schema.sql
+-- All datetimes: ISO 8601 TEXT. Booleans: INTEGER 0/1. PKs: crypto.randomUUID().
+
+CREATE TABLE IF NOT EXISTS user (
+  id              TEXT    PRIMARY KEY,
+  email           TEXT    NOT NULL UNIQUE,        -- stored lowercase
+  password_hash   TEXT    NOT NULL,               -- base64(salt[32] || PBKDF2-SHA256[32])
+  verified        INTEGER NOT NULL DEFAULT 0,     -- 0=unverified, 1=verified
+  failed_attempts INTEGER NOT NULL DEFAULT 0,     -- consecutive failed login count
+  lock_until      TEXT,                           -- ISO 8601 or NULL
+  created_at      TEXT    NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON user(email);
+
+CREATE TABLE IF NOT EXISTS session (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  session_token    TEXT NOT NULL UNIQUE,           -- 32-byte random → base64url
+  created_at       TEXT NOT NULL,
+  last_activity_at TEXT NOT NULL,
+  expires_at       TEXT NOT NULL                   -- last_activity_at + 24 hours
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_session_token   ON session(session_token);
+CREATE        INDEX IF NOT EXISTS idx_session_user_id ON session(user_id);
+
+CREATE TABLE IF NOT EXISTS email_verification_token (
+  id         TEXT    PRIMARY KEY,
+  user_id    TEXT    NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  token      TEXT    NOT NULL UNIQUE,              -- 32-byte random → base64url
+  created_at TEXT    NOT NULL,
+  expires_at TEXT    NOT NULL,                     -- created_at + 24 hours
+  used       INTEGER NOT NULL DEFAULT 0            -- 0=unused, 1=consumed
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_evt_token   ON email_verification_token(token);
+CREATE        INDEX IF NOT EXISTS idx_evt_user_id ON email_verification_token(user_id);
+
+CREATE TABLE IF NOT EXISTS password_reset_token (
+  id         TEXT    PRIMARY KEY,
+  user_id    TEXT    NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  token      TEXT    NOT NULL UNIQUE,              -- 32-byte random → base64url
+  created_at TEXT    NOT NULL,
+  expires_at TEXT    NOT NULL,                     -- created_at + 60 minutes
+  used       INTEGER NOT NULL DEFAULT 0            -- 0=unused, 1=consumed
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prt_token   ON password_reset_token(token);
+CREATE        INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_token(user_id);
