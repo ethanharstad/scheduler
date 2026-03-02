@@ -30,3 +30,10 @@ This is a full-stack React application using **TanStack Start** (SSR meta-framew
 **Path alias:** `@/*` maps to `./src/*`.
 
 **Devtools:** TanStack Router Devtools and React Query Devtools are rendered in the root layout in development only.
+
+## Active Technologies
+- TypeScript 5.7 (strict mode — Principle II) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React (001-user-auth)
+- Cloudflare D1 (SQLite) — binding name `DB`; see `data-model.md` for schema (001-user-auth)
+
+## Recent Changes
+- 001-user-auth: Added TypeScript 5.7 (strict mode — Principle II) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React
