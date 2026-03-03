@@ -37,6 +37,8 @@ This is a full-stack React application using **TanStack Start** (SSR meta-framew
 - TypeScript 5.7 (strict mode) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React, Cloudflare D1 (existing), Cloudflare R2 (new `PROFILE_PHOTOS` binding) (002-user-profile)
 - Cloudflare D1 — new `user_profile` table; Cloudflare R2 — `scheduler-profile-photos` bucket for avatar images (002-user-profile)
 - Cloudflare D1 (SQLite) — binding name `DB`; two new tables: `organization`, `org_membership` (003-create-org)
+- TypeScript 5.7 (strict mode) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React, Cloudflare D1 (existing `org_membership` + `session` tables) (004-org-rbac)
+- Cloudflare D1 — no schema changes required; `org_membership.role` column is the source of truth (004-org-rbac)
 
 ## Recent Changes
 - 001-user-auth: Added TypeScript 5.7 (strict mode — Principle II) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React
