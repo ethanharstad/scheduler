@@ -19,6 +19,12 @@
 			"database_name": "scheduler-auth",
 			"database_id": "2e2aefb5-7c6c-49cd-af07-8b8b5bb52597"
 		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "PROFILE_PHOTOS",
+			"bucket_name": "scheduler-profile-photos"
+		}
 	]
 	/**
 	 * Smart Placement

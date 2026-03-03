@@ -49,3 +49,12 @@ CREATE TABLE IF NOT EXISTS password_reset_token (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_prt_token   ON password_reset_token(token);
 CREATE        INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_token(user_id);
+
+-- User Profile (002-user-profile)
+CREATE TABLE IF NOT EXISTS user_profile (
+  user_id      TEXT NOT NULL PRIMARY KEY REFERENCES user(id) ON DELETE CASCADE,
+  display_name TEXT NOT NULL,           -- required; editable; defaults to email local-part
+  phone_number TEXT,                    -- optional; loosely validated international format or NULL
+  avatar_key   TEXT,                    -- R2 object key ("profile-photos/<user_id>") or NULL
+  updated_at   TEXT NOT NULL            -- ISO 8601
+);
