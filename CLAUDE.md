@@ -15,21 +15,94 @@ npm run cf-typegen # Regenerate Cloudflare Worker binding types
 
 ## Architecture
 
-This is a full-stack React application using **TanStack Start** (SSR meta-framework), deployed to **Cloudflare Workers**.
+This is a full-stack React SaaS application using **TanStack Start** (SSR meta-framework), deployed to **Cloudflare Workers**. It's an emergency services workforce management tool (fire, EMS, law enforcement) with a multi-tenant org → department → station hierarchy and tiered plans (Free / Basic / Pro).
 
 **Key libraries:**
 - TanStack Start v1 + TanStack Router — file-based routing, SSR, server functions
-- React 19 + TypeScript (strict)
-- Tailwind CSS v4 (configured via Vite plugin, not a config file)
+- React 19 + TypeScript 5.7 (strict mode, `verbatimModuleSyntax: true`)
+- Tailwind CSS v4 (via `@tailwindcss/vite` plugin — no config file)
 - Lucide React for icons
+- Cloudflare D1 (SQLite, binding: `DB`) + Cloudflare R2 (binding: `PROFILE_PHOTOS`)
 
-**Routing:** Routes live in `src/routes/`. TanStack Router uses file-based routing; `src/routeTree.gen.ts` is auto-generated and should not be edited manually (it's regenerated on `dev`/`build`). The root layout is `src/routes/__root.tsx`.
+**Routing:** Routes live in `src/routes/`. `src/routeTree.gen.ts` is auto-generated — never edit it manually (regenerated on `dev`/`build`). The root layout is `src/routes/__root.tsx`.
 
-**SSR + Cloudflare:** Vite builds two bundles — client (`dist/client/`) and server (`dist/server/`). The server bundle runs on Cloudflare Workers via `wrangler.jsonc`. Use `worker-configuration.d.ts` for Cloudflare binding types (regenerate with `npm run cf-typegen`).
+**SSR + Cloudflare:** Vite builds two bundles — client (`dist/client/`) and server (`dist/server/`). The server bundle runs on Cloudflare Workers via `src/server.ts` (custom entry; `wrangler.jsonc` `"main"` points here). This passes `env` as request context so server functions can access Cloudflare bindings.
 
 **Path alias:** `@/*` maps to `./src/*`.
 
-**Devtools:** TanStack Router Devtools and React Query Devtools are rendered in the root layout in development only.
+## Critical API Patterns
+
+### Cloudflare Env Access in Server Functions
+
+Server functions access Cloudflare bindings via double-cast context:
+```typescript
+const env = ctx.context as unknown as Cloudflare.Env
+```
+
+**DO NOT** import from `@cloudflare/vite-plugin/worker` (subpath doesn't exist in v1.25.6) or from `vinxi/http` (not a direct dependency).
+
+### Server Functions
+
+```typescript
+// POST with input
+createServerFn({ method: 'POST' })
+  .inputValidator((d: MyInput) => d)  // use inputValidator, NOT .validator()
+  .handler(async (ctx) => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+  })
+
+// GET without input
+createServerFn({ method: 'GET' }).handler(async (ctx) => { ... })
+
+// Client call with input
+await myFn({ data: inputData })
+// Client call without input
+await myFn()
+```
+
+### Cookie & Request Utilities
+
+```typescript
+import { getCookie, setCookie, getRequestUrl } from '@tanstack/react-start/server'
+```
+`getRequestUrl()` returns a `URL` object (not string) — use `.origin`, `.pathname`, etc.
+
+### Token Generation (Workers-safe)
+
+```typescript
+const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
+const token = btoa(String.fromCharCode(...bytes))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+```
+
+## Routing Patterns
+
+**Pathless layout:** `_protected.tsx` at the routes root guards auth. Child routes in `_protected/` appear at their URL without the `/_protected` prefix (e.g., `_protected/home.tsx` → `/home`).
+
+**Nested org workspace:** `orgs.$orgSlug.tsx` is a layout; its `beforeLoad` fetches org + user role and returns `{ org, userRole }`. Child routes in `orgs.$orgSlug/` read context via:
+```typescript
+useRouteContext({ from: '/_protected/orgs/$orgSlug' })
+```
+
+**Public routes** (outside `_protected`): landing page, login, register, forgot/reset password, verify-email, join (staff invitation acceptance).
+
+## Database Schema
+
+D1 SQLite — binding `DB`. Tables:
+- `user`, `session`, `email_verification_token`, `password_reset_token` (auth)
+- `organization` (slug UNIQUE), `org_membership` (role: `owner|admin|manager|employee|payroll_hr`) (orgs)
+- `user_profile` (1:1 with user; lazy INSERT OR IGNORE on first access) (profiles)
+- `staff_member`, `staff_invitation` (token UNIQUE, 7-day expiry), `staff_audit_log` (staff management)
+
+Full schema in `src/db/schema.sql`. Feature specs and data models in `specs/`.
+
+## Code Organization
+
+- `src/lib/` — Shared types and utilities: `auth.ts` (PBKDF2, session validation), `rbac.ts` (permission matrix), `*.types.ts` (per-feature type definitions)
+- `src/server/` — Server functions grouped by feature: `auth.ts`, `org.ts`, `members.ts`, `profile.ts`, `staff.ts`
+- `src/routes/` — File-based routes (TanStack Router)
+- `specs/` — Feature specs, plans, data models, and task checklists per feature
 
 ## Active Technologies
 - TypeScript 5.7 (strict mode — Principle II) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React (001-user-auth)
