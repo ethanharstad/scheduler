@@ -5,7 +5,7 @@ import {
   redirect,
   useRouteContext,
 } from '@tanstack/react-router'
-import { ChevronDown, Users } from 'lucide-react'
+import { ChevronDown, Users, UserCog } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import { getOrgServerFn } from '@/server/org'
 
@@ -33,6 +33,14 @@ function OrgLayout() {
           >
             <span className="text-gray-600">←</span>
             All Organizations
+          </Link>
+          <Link
+            to="/orgs/$orgSlug/staff"
+            params={{ orgSlug: org.slug }}
+            className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm"
+          >
+            <UserCog className="w-4 h-4" />
+            Staff
           </Link>
           {canDo(userRole, 'assign-roles') && (
             <Link

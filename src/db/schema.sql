@@ -76,6 +76,56 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_org_membership_unique ON org_membership(or
 CREATE        INDEX IF NOT EXISTS idx_org_membership_user   ON org_membership(user_id);
 CREATE        INDEX IF NOT EXISTS idx_org_membership_org    ON org_membership(org_id);
 
+-- Staff Member Management (005-staff-management)
+
+CREATE TABLE IF NOT EXISTS staff_member (
+  id           TEXT NOT NULL PRIMARY KEY,               -- crypto.randomUUID()
+  org_id       TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  user_id      TEXT REFERENCES user(id) ON DELETE SET NULL, -- NULL if no account yet
+  name         TEXT NOT NULL,                           -- 1-100 chars
+  email        TEXT,                                    -- optional; required if phone is NULL
+  phone        TEXT,                                    -- optional; required if email is NULL
+  role         TEXT NOT NULL DEFAULT 'employee',        -- OrgRole
+  status       TEXT NOT NULL DEFAULT 'roster_only',     -- roster_only | pending | active | removed
+  added_by     TEXT REFERENCES user(id) ON DELETE SET NULL,
+  created_at   TEXT NOT NULL,                           -- ISO 8601
+  updated_at   TEXT NOT NULL,                           -- ISO 8601
+
+  CHECK (email IS NOT NULL OR phone IS NOT NULL)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_member_org_email
+  ON staff_member(org_id, email) WHERE email IS NOT NULL;
+CREATE        INDEX IF NOT EXISTS idx_staff_member_org    ON staff_member(org_id);
+CREATE        INDEX IF NOT EXISTS idx_staff_member_user   ON staff_member(user_id) WHERE user_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS staff_invitation (
+  id              TEXT NOT NULL PRIMARY KEY,            -- crypto.randomUUID()
+  org_id          TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  staff_member_id TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  email           TEXT NOT NULL,
+  token           TEXT NOT NULL UNIQUE,                 -- 32-byte random, base64url
+  invited_by      TEXT REFERENCES user(id) ON DELETE SET NULL,
+  expires_at      TEXT NOT NULL,                        -- ISO 8601; 7 days from creation
+  status          TEXT NOT NULL DEFAULT 'pending',      -- pending | accepted | cancelled
+  created_at      TEXT NOT NULL                         -- ISO 8601
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_invitation_token      ON staff_invitation(token);
+CREATE        INDEX IF NOT EXISTS idx_staff_invitation_org_member ON staff_invitation(org_id, staff_member_id);
+
+CREATE TABLE IF NOT EXISTS staff_audit_log (
+  id              TEXT NOT NULL PRIMARY KEY,            -- crypto.randomUUID()
+  org_id          TEXT NOT NULL,                        -- denormalized; org may be deleted later
+  staff_member_id TEXT,                                 -- NULL if member record removed
+  performed_by    TEXT,                                 -- user_id; NULL if system action
+  action          TEXT NOT NULL,                        -- StaffAuditAction
+  metadata        TEXT,                                 -- JSON: action-specific details
+  created_at      TEXT NOT NULL                         -- ISO 8601
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_audit_log_org ON staff_audit_log(org_id, created_at DESC);
+
 -- User Profile (002-user-profile)
 CREATE TABLE IF NOT EXISTS user_profile (
   user_id      TEXT NOT NULL PRIMARY KEY REFERENCES user(id) ON DELETE CASCADE,
