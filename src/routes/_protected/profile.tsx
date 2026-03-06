@@ -9,6 +9,9 @@ import { removePhotoServerFn } from '@/server/profile'
 import type { ProfileView } from '@/lib/profile.types'
 
 export const Route = createFileRoute('/_protected/profile')({
+  head: () => ({
+    meta: [{ title: 'Profile | Scene Ready' }],
+  }),
   loader: async () => {
     const result = await getProfileServerFn()
     if (!result.success) {

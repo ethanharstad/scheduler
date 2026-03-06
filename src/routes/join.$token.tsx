@@ -8,6 +8,9 @@ import {
 import type { InvitationView } from '@/lib/staff.types'
 
 export const Route = createFileRoute('/join/$token')({
+  head: () => ({
+    meta: [{ title: 'Join Organization | Scene Ready' }],
+  }),
   loader: async ({ params }): Promise<LoaderData> => {
     const session = await getSessionServerFn()
 

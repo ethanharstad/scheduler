@@ -3,6 +3,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { resetPasswordServerFn } from '@/server/auth'
 
 export const Route = createFileRoute('/reset-password/$token')({
+  head: () => ({
+    meta: [{ title: 'Reset Password | Scene Ready' }],
+  }),
   component: ResetPasswordPage,
 })
 

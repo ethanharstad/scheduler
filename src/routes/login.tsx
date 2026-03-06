@@ -4,6 +4,9 @@ import { getSessionServerFn } from '@/lib/auth'
 import { loginServerFn, resendVerificationServerFn } from '@/server/auth'
 
 export const Route = createFileRoute('/login')({
+  head: () => ({
+    meta: [{ title: 'Sign In | Scene Ready' }],
+  }),
   validateSearch: (search: Record<string, unknown>) => ({
     from: typeof search.from === 'string' ? search.from : '/home',
     verified: search.verified === '1' || search.verified === true,

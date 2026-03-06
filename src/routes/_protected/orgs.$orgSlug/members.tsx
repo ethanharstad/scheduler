@@ -11,6 +11,9 @@ import {
 } from '@/server/members'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/members')({
+  head: () => ({
+    meta: [{ title: 'Members | Scene Ready' }],
+  }),
   beforeLoad: ({ context, params }) => {
     const { userRole } = context as { userRole: OrgRole }
     if (!canDo(userRole, 'assign-roles')) {

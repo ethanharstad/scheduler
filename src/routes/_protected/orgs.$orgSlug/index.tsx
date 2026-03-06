@@ -4,6 +4,9 @@ import { canDo, getPermissions } from '@/lib/rbac'
 import type { Permission } from '@/lib/rbac.types'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
+  head: () => ({
+    meta: [{ title: 'Dashboard | Scene Ready' }],
+  }),
   component: OrgDashboard,
 })
 

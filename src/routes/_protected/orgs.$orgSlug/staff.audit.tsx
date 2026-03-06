@@ -5,6 +5,9 @@ import { getStaffAuditLogServerFn } from '@/server/staff'
 import type { StaffAuditAction, StaffAuditEntry } from '@/lib/staff.types'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/staff/audit')({
+  head: () => ({
+    meta: [{ title: 'Audit Log | Scene Ready' }],
+  }),
   beforeLoad: ({ context }) => {
     const { userRole } = context as { userRole: string }
     if (!canDo(userRole as Parameters<typeof canDo>[0], 'assign-roles')) {

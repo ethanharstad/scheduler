@@ -3,6 +3,9 @@ import { Building2, Plus } from 'lucide-react'
 import type { OrgRole } from '@/lib/org.types'
 
 export const Route = createFileRoute('/_protected/orgs/')({
+  head: () => ({
+    meta: [{ title: 'Organizations | Scene Ready' }],
+  }),
   component: OrgsListPage,
 })
 

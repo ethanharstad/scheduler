@@ -1,6 +1,9 @@
 import { createFileRoute, useRouteContext } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_protected/home')({
+  head: () => ({
+    meta: [{ title: 'Home | Scene Ready' }],
+  }),
   component: HomePage,
 })
 

@@ -3,6 +3,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { verifyEmailServerFn, resendVerificationServerFn } from '@/server/auth'
 
 export const Route = createFileRoute('/verify-email/$token')({
+  head: () => ({
+    meta: [{ title: 'Verify Email | Scene Ready' }],
+  }),
   loader: async ({ params }) => {
     return await verifyEmailServerFn({ data: { token: params.token } })
   },

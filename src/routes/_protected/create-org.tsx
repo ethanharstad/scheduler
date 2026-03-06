@@ -4,6 +4,9 @@ import { Building2 } from 'lucide-react'
 import { createOrgServerFn, listUserOrgsServerFn } from '@/server/org'
 
 export const Route = createFileRoute('/_protected/create-org')({
+  head: () => ({
+    meta: [{ title: 'Create Organization | Scene Ready' }],
+  }),
   loader: async () => {
     const result = await listUserOrgsServerFn()
     if (!result.success) {

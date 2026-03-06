@@ -15,6 +15,9 @@ import {
 } from '@/server/staff'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/staff')({
+  head: () => ({
+    meta: [{ title: 'Staff | Scene Ready' }],
+  }),
   loader: async ({ params }) => {
     const result = await listStaffServerFn({ data: { orgSlug: params.orgSlug } })
     if (!result.success) return { members: [] }

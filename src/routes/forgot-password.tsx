@@ -4,6 +4,9 @@ import { getSessionServerFn } from '@/lib/auth'
 import { forgotPasswordServerFn } from '@/server/auth'
 
 export const Route = createFileRoute('/forgot-password')({
+  head: () => ({
+    meta: [{ title: 'Forgot Password | Scene Ready' }],
+  }),
   beforeLoad: async () => {
     const session = await getSessionServerFn()
     if (session) throw redirect({ to: '/home' })

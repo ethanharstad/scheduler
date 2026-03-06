@@ -4,6 +4,9 @@ import { getSessionServerFn } from '@/lib/auth'
 import { registerServerFn, resendVerificationServerFn } from '@/server/auth'
 
 export const Route = createFileRoute('/register')({
+  head: () => ({
+    meta: [{ title: 'Create Account | Scene Ready' }],
+  }),
   beforeLoad: async () => {
     const session = await getSessionServerFn()
     if (session) throw redirect({ to: '/home' })
