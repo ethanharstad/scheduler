@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router'
-import { Building2, Home, LogOut, Shield, UserCircle, UserCog, Users } from 'lucide-react'
+import { Building2, Calendar, Home, LogOut, Shield, UserCircle, UserCog, Users } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -109,6 +109,12 @@ function ProtectedLayout() {
                   {orgCtx.org.name}
                 </span>
               </div>
+              <NavItem
+                to="/orgs/$orgSlug/schedules"
+                params={{ orgSlug: orgCtx.org.slug }}
+                icon={<Calendar className="w-5 h-5" />}
+                label="Schedules"
+              />
               <NavItem
                 to="/orgs/$orgSlug/staff"
                 params={{ orgSlug: orgCtx.org.slug }}

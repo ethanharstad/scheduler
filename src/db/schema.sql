@@ -135,3 +135,37 @@ CREATE TABLE IF NOT EXISTS user_profile (
   avatar_key   TEXT,                    -- R2 object key ("profile-photos/<user_id>") or NULL
   updated_at   TEXT NOT NULL            -- ISO 8601
 );
+
+-- Scheduling (006-scheduling)
+
+CREATE TABLE IF NOT EXISTS schedule (
+  id         TEXT NOT NULL PRIMARY KEY,
+  org_id     TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  start_date TEXT NOT NULL,                          -- YYYY-MM-DD, inclusive
+  end_date   TEXT NOT NULL,                          -- YYYY-MM-DD, inclusive
+  status     TEXT NOT NULL DEFAULT 'draft',          -- 'draft' | 'published'
+  created_by TEXT REFERENCES user(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (end_date >= start_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_schedule_org       ON schedule(org_id);
+CREATE INDEX IF NOT EXISTS idx_schedule_org_dates ON schedule(org_id, start_date, end_date);
+
+CREATE TABLE IF NOT EXISTS shift_assignment (
+  id              TEXT NOT NULL PRIMARY KEY,
+  schedule_id     TEXT NOT NULL REFERENCES schedule(id) ON DELETE CASCADE,
+  staff_member_id TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  start_datetime  TEXT NOT NULL,                     -- ISO 8601 datetime
+  end_datetime    TEXT NOT NULL,                     -- ISO 8601 datetime
+  position        TEXT,                              -- e.g. "Engine 1", "Medic 2"
+  notes           TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  CHECK (end_datetime > start_datetime)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shift_assignment_schedule ON shift_assignment(schedule_id);
+CREATE INDEX IF NOT EXISTS idx_shift_assignment_staff    ON shift_assignment(staff_member_id);

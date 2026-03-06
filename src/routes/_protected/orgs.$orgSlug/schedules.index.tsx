@@ -1,0 +1,270 @@
+import { useState } from 'react'
+import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
+import { Plus, Trash2, Calendar } from 'lucide-react'
+import { canDo } from '@/lib/rbac'
+import type { ScheduleView } from '@/lib/schedule.types'
+import {
+  listSchedulesServerFn,
+  createScheduleServerFn,
+  deleteScheduleServerFn,
+} from '@/server/schedule'
+
+export const Route = createFileRoute('/_protected/orgs/$orgSlug/schedules/')({
+  head: () => ({
+    meta: [{ title: 'Schedules | Scene Ready' }],
+  }),
+  loader: async ({ params }) => {
+    const result = await listSchedulesServerFn({ data: { orgSlug: params.orgSlug } })
+    if (!result.success) return { schedules: [] }
+    return { schedules: result.schedules }
+  },
+  component: SchedulesPage,
+})
+
+function statusBadge(status: ScheduleView['status']) {
+  if (status === 'published') {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-success-bg text-success" style={{ fontFamily: 'var(--font-condensed)' }}>
+        Published
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-warning-bg text-warning" style={{ fontFamily: 'var(--font-condensed)' }}>
+      Draft
+    </span>
+  )
+}
+
+function formatDateRange(start: string, end: string) {
+  const s = new Date(start + 'T00:00:00')
+  const e = new Date(end + 'T00:00:00')
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+  return `${s.toLocaleDateString('en-US', opts)} – ${e.toLocaleDateString('en-US', opts)}`
+}
+
+function SchedulesPage() {
+  const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
+  const { schedules: initialSchedules } = Route.useLoaderData()
+
+  const [schedules, setSchedules] = useState<ScheduleView[]>(initialSchedules)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+
+  const [name, setName] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [createBusy, setCreateBusy] = useState(false)
+
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState<string | null>(null)
+
+  const canEdit = canDo(userRole, 'create-edit-schedules')
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    setCreateError(null)
+    if (!name.trim()) { setCreateError('Name is required.'); return }
+    if (!startDate || !endDate) { setCreateError('Start and end dates are required.'); return }
+    if (endDate < startDate) { setCreateError('End date must be on or after start date.'); return }
+
+    setCreateBusy(true)
+    try {
+      const result = await createScheduleServerFn({
+        data: { orgSlug: org.slug, name: name.trim(), startDate, endDate },
+      })
+      if (result.success) {
+        setSchedules((prev) => [result.schedule, ...prev])
+        setName(''); setStartDate(''); setEndDate('')
+        setShowCreateForm(false)
+      } else {
+        const msgs: Record<string, string> = {
+          FORBIDDEN: 'You do not have permission to create schedules.',
+          VALIDATION_ERROR: 'Please check the form fields and try again.',
+        }
+        setCreateError(msgs[result.error] ?? 'An error occurred.')
+      }
+    } finally {
+      setCreateBusy(false)
+    }
+  }
+
+  async function handleDelete(scheduleId: string) {
+    setDeleteBusy(scheduleId)
+    try {
+      const result = await deleteScheduleServerFn({
+        data: { orgSlug: org.slug, scheduleId },
+      })
+      if (result.success) {
+        setSchedules((prev) => prev.filter((s) => s.id !== scheduleId))
+        setConfirmDelete(null)
+      }
+    } finally {
+      setDeleteBusy(null)
+    }
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-navy-700">Schedules</h1>
+          <p className="text-sm text-gray-500 mt-1">{schedules.length} schedule{schedules.length !== 1 ? 's' : ''}</p>
+        </div>
+        {canEdit && (
+          <button
+            onClick={() => setShowCreateForm((v) => !v)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-800 text-white rounded-md text-sm font-semibold transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create Schedule
+          </button>
+        )}
+      </div>
+
+      {/* Create Form */}
+      {showCreateForm && canEdit && (
+        <form onSubmit={handleCreate} className="mb-6 p-5 rounded-lg border border-gray-200 bg-white">
+          <h2 className="text-base font-semibold text-navy-700 mb-4">New schedule</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Name <span className="text-danger">*</span>
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Week of March 10"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Start Date <span className="text-danger">*</span>
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                End Date <span className="text-danger">*</span>
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+              />
+            </div>
+          </div>
+          {createError && <p className="mt-3 text-sm text-danger">{createError}</p>}
+          <div className="flex items-center gap-3 mt-4">
+            <button
+              type="submit"
+              disabled={createBusy}
+              className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors"
+            >
+              {createBusy ? 'Creating…' : 'Create schedule'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowCreateForm(false); setCreateError(null) }}
+              className="px-4 py-2 text-gray-500 hover:text-gray-900 text-sm transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Schedules Table */}
+      {schedules.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <Calendar className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <p className="text-lg font-medium text-gray-500">No schedules yet.</p>
+          {canEdit && (
+            <p className="text-sm mt-1">Click &ldquo;Create Schedule&rdquo; to get started.</p>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Date Range</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Status</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Assignments</th>
+                {canEdit && (
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Actions</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {schedules.map((schedule) => {
+                const confirming = confirmDelete === schedule.id
+                const busy = deleteBusy === schedule.id
+
+                return (
+                  <tr key={schedule.id} className="border-b border-gray-200 last:border-0 hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <Link
+                        to="/orgs/$orgSlug/schedules/$scheduleId"
+                        params={{ orgSlug: org.slug, scheduleId: schedule.id }}
+                        className="text-navy-700 font-medium hover:underline"
+                      >
+                        {schedule.name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {formatDateRange(schedule.startDate, schedule.endDate)}
+                    </td>
+                    <td className="px-4 py-3">{statusBadge(schedule.status)}</td>
+                    <td className="px-4 py-3 text-gray-500">{schedule.assignmentCount}</td>
+                    {canEdit && (
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          {confirming ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-gray-500">Delete?</span>
+                              <button
+                                onClick={() => handleDelete(schedule.id)}
+                                disabled={busy}
+                                className="px-2 py-1 bg-danger hover:opacity-90 disabled:opacity-50 text-white rounded-md text-xs"
+                              >
+                                {busy ? '…' : 'Yes'}
+                              </button>
+                              <button
+                                onClick={() => setConfirmDelete(null)}
+                                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-xs"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDelete(schedule.id)}
+                              className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-danger-bg text-gray-500 hover:text-danger rounded-md text-xs transition-colors"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
