@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { UserPlus, Mail, Phone, Clock, Send, X, RefreshCw, Trash2, ChevronDown } from 'lucide-react'
+import { UserPlus, Mail, Phone, Send, X, RefreshCw, Trash2, ChevronDown } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { OrgRole } from '@/lib/org.types'
 import type { StaffMemberView } from '@/lib/staff.types'
@@ -37,21 +37,21 @@ const ASSIGNABLE_ROLES: OrgRole[] = ['admin', 'manager', 'employee', 'payroll_hr
 function statusBadge(status: StaffMemberView['status']) {
   if (status === 'active') {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-900/40 text-emerald-400">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-success-bg text-success" style={{ fontFamily: 'var(--font-condensed)' }}>
         Active
       </span>
     )
   }
   if (status === 'pending') {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-900/40 text-amber-400">
-        Invite pending
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-warning-bg text-warning" style={{ fontFamily: 'var(--font-condensed)' }}>
+        Invite Pending
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-700 text-slate-400">
-      No account
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-gray-100 text-gray-500" style={{ fontFamily: 'var(--font-condensed)' }}>
+      No Account
     </span>
   )
 }
@@ -63,7 +63,6 @@ function StaffPage() {
   const [members, setMembers] = useState<StaffMemberView[]>(initialMembers)
   const [showAddForm, setShowAddForm] = useState(false)
 
-  // Add form state
   const [addName, setAddName] = useState('')
   const [addEmail, setAddEmail] = useState('')
   const [addPhone, setAddPhone] = useState('')
@@ -71,7 +70,6 @@ function StaffPage() {
   const [addError, setAddError] = useState<string | null>(null)
   const [addBusy, setAddBusy] = useState(false)
 
-  // Per-member action state
   const [busyMember, setBusyMember] = useState<string | null>(null)
   const [memberError, setMemberError] = useState<Record<string, string>>({})
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
@@ -207,18 +205,18 @@ function StaffPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
+    <div className="max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Staff</h1>
-          <p className="text-sm text-slate-400 mt-1">{members.length} member{members.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-navy-700">Staff</h1>
+          <p className="text-sm text-gray-500 mt-1">{members.length} member{members.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-3">
           {canViewAudit && (
             <Link
               to="/orgs/$orgSlug/staff/audit"
               params={{ orgSlug: org.slug }}
-              className="text-sm text-slate-400 hover:text-white transition-colors"
+              className="text-sm text-gray-500 hover:text-navy-700 transition-colors"
             >
               View audit log
             </Link>
@@ -226,7 +224,7 @@ function StaffPage() {
           {canManage && (
             <button
               onClick={() => setShowAddForm((v) => !v)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-800 text-white rounded-md text-sm font-semibold transition-colors"
             >
               <UserPlus className="w-4 h-4" />
               Add staff member
@@ -239,75 +237,75 @@ function StaffPage() {
       {showAddForm && canManage && (
         <form
           onSubmit={handleAdd}
-          className="mb-6 p-5 rounded-xl border border-slate-700 bg-slate-800/60"
+          className="mb-6 p-5 rounded-lg border border-gray-200 bg-white"
         >
-          <h2 className="text-base font-semibold text-white mb-4">New staff member</h2>
+          <h2 className="text-base font-semibold text-navy-700 mb-4">New staff member</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-300 mb-1">
-                Name <span className="text-red-400">*</span>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Name <span className="text-danger">*</span>
               </label>
               <input
                 type="text"
                 value={addName}
                 onChange={(e) => setAddName(e.target.value)}
                 placeholder="Full name"
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-300 mb-1">Role</label>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Role</label>
               <div className="relative">
                 <select
                   value={addRole}
                   onChange={(e) => setAddRole(e.target.value as OrgRole)}
-                  className="w-full appearance-none px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                  className="w-full appearance-none px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
                 >
                   {ASSIGNABLE_ROLES.map((r) => (
                     <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                   ))}
                 </select>
-                <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+                <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
               </div>
             </div>
             <div>
-              <label className="block text-sm text-slate-300 mb-1">
-                Email <span className="text-slate-500">(or phone required)</span>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Email <span className="text-gray-400">(or phone required)</span>
               </label>
               <input
                 type="email"
                 value={addEmail}
                 onChange={(e) => setAddEmail(e.target.value)}
                 placeholder="email@example.com"
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-300 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Phone</label>
               <input
                 type="tel"
                 value={addPhone}
                 onChange={(e) => setAddPhone(e.target.value)}
                 placeholder="+1 555 000 0000"
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
               />
             </div>
           </div>
           {addError && (
-            <p className="mt-3 text-sm text-red-400">{addError}</p>
+            <p className="mt-3 text-sm text-danger">{addError}</p>
           )}
           <div className="flex items-center gap-3 mt-4">
             <button
               type="submit"
               disabled={addBusy}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+              className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors"
             >
               {addBusy ? 'Adding…' : 'Add member'}
             </button>
             <button
               type="button"
               onClick={() => { setShowAddForm(false); setAddError(null) }}
-              className="px-4 py-2 text-slate-400 hover:text-white text-sm transition-colors"
+              className="px-4 py-2 text-gray-500 hover:text-gray-900 text-sm transition-colors"
             >
               Cancel
             </button>
@@ -317,23 +315,23 @@ function StaffPage() {
 
       {/* Staff Table */}
       {members.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
-          <p className="text-lg font-medium">No staff members yet.</p>
+        <div className="text-center py-16 text-gray-400">
+          <p className="text-lg font-medium text-gray-500">No staff members yet.</p>
           {canManage && (
             <p className="text-sm mt-1">Click "Add staff member" to get started.</p>
           )}
         </div>
       ) : (
-        <div className="rounded-xl border border-slate-700 overflow-hidden">
+        <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-700 bg-slate-800/50">
-                <th className="text-left px-4 py-3 text-slate-400 font-medium">Name</th>
-                <th className="text-left px-4 py-3 text-slate-400 font-medium">Contact</th>
-                <th className="text-left px-4 py-3 text-slate-400 font-medium">Role</th>
-                <th className="text-left px-4 py-3 text-slate-400 font-medium">Status</th>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Contact</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Role</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Status</th>
                 {(canManage || canChangeRoles || canRemove) && (
-                  <th className="text-right px-4 py-3 text-slate-400 font-medium">Actions</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Actions</th>
                 )}
               </tr>
             </thead>
@@ -344,9 +342,9 @@ function StaffPage() {
                 const confirming = confirmRemove === member.id
 
                 return (
-                  <tr key={member.id} className="border-b border-slate-700/50 last:border-0 hover:bg-slate-800/30">
-                    <td className="px-4 py-3 text-white font-medium">{member.name}</td>
-                    <td className="px-4 py-3 text-slate-400">
+                  <tr key={member.id} className="border-b border-gray-200 last:border-0 hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-900 font-medium">{member.name}</td>
+                    <td className="px-4 py-3 text-gray-500">
                       {member.email && (
                         <span className="flex items-center gap-1">
                           <Mail className="w-3.5 h-3.5 shrink-0" />
@@ -367,29 +365,28 @@ function StaffPage() {
                             value={member.role}
                             disabled={busy}
                             onChange={(e) => handleRoleChange(member.id, e.target.value as OrgRole)}
-                            className="appearance-none pr-6 pl-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-xs focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                            className="appearance-none pr-6 pl-2 py-1 bg-white border border-gray-300 rounded-md text-gray-700 text-xs focus:outline-none focus:border-navy-500 disabled:opacity-50"
                           >
                             {ALL_ROLES.filter((r) => r !== 'owner').map((r) => (
                               <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                             ))}
                           </select>
-                          <ChevronDown className="absolute right-1 top-1.5 w-3 h-3 text-slate-400 pointer-events-none" />
+                          <ChevronDown className="absolute right-1 top-1.5 w-3 h-3 text-gray-400 pointer-events-none" />
                         </div>
                       ) : (
-                        <span className="text-slate-300">{ROLE_LABELS[member.role]}</span>
+                        <span className="text-gray-700">{ROLE_LABELS[member.role]}</span>
                       )}
                     </td>
                     <td className="px-4 py-3">{statusBadge(member.status)}</td>
                     {(canManage || canChangeRoles || canRemove) && (
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2 flex-wrap">
-                          {/* Invite actions */}
                           {canManage && member.status === 'roster_only' && (
                             <button
                               onClick={() => handleInvite(member.id)}
                               disabled={busy || !member.email}
                               title={!member.email ? 'Add an email address first' : 'Send invitation'}
-                              className="flex items-center gap-1 px-2.5 py-1 bg-blue-900/40 hover:bg-blue-800/60 disabled:opacity-40 disabled:cursor-not-allowed text-blue-400 rounded text-xs transition-colors"
+                              className="flex items-center gap-1 px-2.5 py-1 bg-info-bg hover:bg-info/10 disabled:opacity-40 disabled:cursor-not-allowed text-info rounded-md text-xs transition-colors"
                             >
                               <Send className="w-3 h-3" />
                               {busy ? 'Sending…' : 'Invite'}
@@ -400,7 +397,7 @@ function StaffPage() {
                               <button
                                 onClick={() => handleResendInvite(member.id)}
                                 disabled={busy}
-                                className="flex items-center gap-1 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-300 rounded text-xs transition-colors"
+                                className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-600 rounded-md text-xs transition-colors"
                               >
                                 <RefreshCw className="w-3 h-3" />
                                 Resend
@@ -408,7 +405,7 @@ function StaffPage() {
                               <button
                                 onClick={() => handleCancelInvite(member.id)}
                                 disabled={busy}
-                                className="flex items-center gap-1 px-2.5 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-300 rounded text-xs transition-colors"
+                                className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-600 rounded-md text-xs transition-colors"
                               >
                                 <X className="w-3 h-3" />
                                 Cancel
@@ -416,21 +413,20 @@ function StaffPage() {
                             </>
                           )}
 
-                          {/* Remove */}
                           {canRemove && (
                             confirming ? (
                               <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-slate-400">Remove?</span>
+                                <span className="text-xs text-gray-500">Remove?</span>
                                 <button
                                   onClick={() => handleRemove(member.id)}
                                   disabled={busy}
-                                  className="px-2 py-1 bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white rounded text-xs"
+                                  className="px-2 py-1 bg-danger hover:opacity-90 disabled:opacity-50 text-white rounded-md text-xs"
                                 >
                                   {busy ? '…' : 'Yes'}
                                 </button>
                                 <button
                                   onClick={() => setConfirmRemove(null)}
-                                  className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded text-xs"
+                                  className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-xs"
                                 >
                                   No
                                 </button>
@@ -449,7 +445,7 @@ function StaffPage() {
                                 }}
                                 disabled={busy}
                                 title={member.role === 'owner' ? 'Transfer ownership first' : 'Remove member'}
-                                className="flex items-center gap-1 px-2.5 py-1 bg-slate-700 hover:bg-red-900/40 disabled:opacity-50 text-slate-400 hover:text-red-400 rounded text-xs transition-colors"
+                                className="flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-danger-bg disabled:opacity-50 text-gray-500 hover:text-danger rounded-md text-xs transition-colors"
                               >
                                 <Trash2 className="w-3 h-3" />
                                 Remove
@@ -459,7 +455,7 @@ function StaffPage() {
                         </div>
 
                         {error && (
-                          <p className="text-xs text-red-400 mt-1 text-right">{error}</p>
+                          <p className="text-xs text-danger mt-1 text-right">{error}</p>
                         )}
                       </td>
                     )}

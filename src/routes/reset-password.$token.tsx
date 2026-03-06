@@ -56,101 +56,82 @@ function ResetPasswordPage() {
     error === 'ALREADY_USED'
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-white mb-6">Set new password</h1>
+        <div className="bg-white border border-gray-200 rounded-xl shadow-md p-8">
+          <h1 className="text-2xl font-bold text-navy-700 mb-6">Set new password</h1>
 
-        {isTokenError && (
-          <div className="mb-4 p-3 bg-red-900/50 border border-red-500/50 rounded-lg text-red-400 text-sm">
-            <p>
-              {error === 'EXPIRED_TOKEN'
-                ? 'This reset link has expired.'
-                : 'This reset link is invalid or has already been used.'}
-            </p>
-            <p className="mt-1">
-              <a
-                href="/forgot-password"
-                className="underline hover:no-underline"
-              >
-                Request a new reset link
-              </a>
-            </p>
-          </div>
-        )}
-
-        {!isTokenError && (
-          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm text-gray-400 mb-1"
-              >
-                New password
-              </label>
-              <input
-                id="password"
-                type="password"
-                required
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={`w-full px-3 py-2 bg-slate-800 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 ${
-                  error === 'INVALID_INPUT'
-                    ? 'border-red-500'
-                    : 'border-slate-700'
-                }`}
-                placeholder="••••••••"
-              />
-
-              {password && (
-                <ul className="mt-2 space-y-1 text-xs">
-                  <li
-                    className={
-                      strength.length ? 'text-green-400' : 'text-gray-500'
-                    }
-                  >
-                    {strength.length ? '✓' : '○'} 8+ characters
-                  </li>
-                  <li
-                    className={
-                      strength.letter ? 'text-green-400' : 'text-gray-500'
-                    }
-                  >
-                    {strength.letter ? '✓' : '○'} At least one letter
-                  </li>
-                  <li
-                    className={
-                      strength.digit ? 'text-green-400' : 'text-gray-500'
-                    }
-                  >
-                    {strength.digit ? '✓' : '○'} At least one number
-                  </li>
-                </ul>
-              )}
-
-              {error === 'INVALID_INPUT' && (
-                <p className="mt-1 text-red-400 text-xs">
-                  Password must be 8+ characters with at least one letter and
-                  one number.
-                </p>
-              )}
+          {isTokenError && (
+            <div className="mb-4 p-3 bg-danger-bg border border-danger/30 rounded-lg text-danger text-sm">
+              <p>
+                {error === 'EXPIRED_TOKEN'
+                  ? 'This reset link has expired.'
+                  : 'This reset link is invalid or has already been used.'}
+              </p>
+              <p className="mt-1">
+                <a href="/forgot-password" className="underline hover:no-underline">
+                  Request a new reset link
+                </a>
+              </p>
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-2 px-4 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
-            >
-              {isSubmitting ? 'Updating…' : 'Update password'}
-            </button>
-          </form>
-        )}
+          {!isTokenError && (
+            <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-600 mb-1">
+                  New password
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={`w-full px-3 py-2 bg-white border rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:border-navy-500 focus:ring-1 focus:ring-navy-500/15 ${
+                    error === 'INVALID_INPUT' ? 'border-danger' : 'border-gray-300'
+                  }`}
+                  placeholder="••••••••"
+                />
 
-        <p className="mt-6 text-sm text-gray-400 text-center">
-          <a href="/login" className="text-cyan-400 hover:text-cyan-300">
-            Back to sign in
-          </a>
-        </p>
+                {password && (
+                  <ul className="mt-2 space-y-1 text-xs">
+                    <li className={strength.length ? 'text-success' : 'text-gray-400'}>
+                      {strength.length ? '✓' : '○'} 8+ characters
+                    </li>
+                    <li className={strength.letter ? 'text-success' : 'text-gray-400'}>
+                      {strength.letter ? '✓' : '○'} At least one letter
+                    </li>
+                    <li className={strength.digit ? 'text-success' : 'text-gray-400'}>
+                      {strength.digit ? '✓' : '○'} At least one number
+                    </li>
+                  </ul>
+                )}
+
+                {error === 'INVALID_INPUT' && (
+                  <p className="mt-1 text-danger text-xs">
+                    Password must be 8+ characters with at least one letter and one number.
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-2 px-4 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white font-semibold rounded-md transition-colors"
+              >
+                {isSubmitting ? 'Updating…' : 'Update password'}
+              </button>
+            </form>
+          )}
+
+          <p className="mt-6 text-sm text-gray-600 text-center">
+            <a href="/login" className="text-red-700 hover:text-red-800">
+              Back to sign in
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   )

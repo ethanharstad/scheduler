@@ -1,15 +1,76 @@
 @import "tailwindcss";
 
+@theme {
+  /* Brand colors */
+  --color-navy-900: #0F1A30;
+  --color-navy-700: #1B2A4A;
+  --color-navy-500: #2A3F6A;
+  --color-navy-300: #4A6491;
+  --color-navy-100: #C5D0E0;
+  --color-navy-50: #E8ECF2;
+
+  --color-red-700: #C8102E;
+  --color-red-800: #9A0C24;
+  --color-red-500: #E8334E;
+  --color-red-300: #F28C9A;
+  --color-red-100: #FCE4E8;
+  --color-red-50: #FFF1F3;
+
+  /* Semantic colors */
+  --color-success: #059669;
+  --color-success-bg: #ECFDF5;
+  --color-success-light: #34D399;
+  --color-warning: #D97706;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-light: #FBBF24;
+  --color-danger: #DC2626;
+  --color-danger-bg: #FEF2F2;
+  --color-danger-light: #F87171;
+  --color-info: #2563EB;
+  --color-info-bg: #EFF6FF;
+  --color-info-light: #60A5FA;
+
+  /* Fonts */
+  --font-sans: 'Barlow', system-ui, -apple-system, sans-serif;
+  --font-condensed: 'Barlow Condensed', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', Consolas, Monaco, monospace;
+}
+
+:root {
+  --bg-page: #F9FAFB;
+  --bg-card: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --border-default: #E5E7EB;
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --text-tertiary: #9CA3AF;
+}
+
+[data-theme="dark"] {
+  --bg-page: #0F1A30;
+  --bg-card: #1B2A4A;
+  --bg-elevated: #2A3F6A;
+  --border-default: rgba(255, 255, 255, 0.1);
+  --text-primary: #F3F4F6;
+  --text-secondary: #9CA3AF;
+  --text-tertiary: #6B7280;
+}
+
 body {
   @apply m-0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-    monospace;
+:focus-visible {
+  outline: 2px solid #2A3F6A;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(42, 63, 106, 0.2);
+}
+
+[data-theme="dark"] :focus-visible {
+  outline: 2px solid #E8334E;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(232, 51, 78, 0.25);
 }

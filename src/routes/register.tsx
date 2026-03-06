@@ -91,124 +91,125 @@ function RegisterPage() {
 
   if (registered) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm text-center">
-          <h1 className="text-2xl font-bold text-white mb-4">Check your inbox</h1>
-          <p className="text-gray-400 mb-6">
-            We sent a verification link to <strong className="text-white">{email}</strong>.
-            Click the link to activate your account.
-          </p>
-          {resendStatus === 'sent' ? (
-            <p className="text-green-400 text-sm">Verification email resent!</p>
-          ) : resendStatus === 'cooldown' ? (
-            <p className="text-yellow-400 text-sm">
-              Please wait {cooldownSeconds}s before requesting another email.
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-md p-8 text-center">
+            <h1 className="text-2xl font-bold text-navy-700 mb-4">Check your inbox</h1>
+            <p className="text-gray-600 mb-6">
+              We sent a verification link to <strong className="text-gray-900">{email}</strong>.
+              Click the link to activate your account.
             </p>
-          ) : (
-            <button
-              onClick={() => void handleResend()}
-              disabled={resendStatus === 'sending'}
-              className="text-cyan-400 hover:text-cyan-300 text-sm underline hover:no-underline disabled:opacity-50"
-            >
-              {resendStatus === 'sending' ? 'Sending…' : "Didn't receive it? Resend"}
-            </button>
-          )}
-          <p className="mt-6 text-sm text-gray-400">
-            Already verified?{' '}
-            <a href="/login" className="text-cyan-400 hover:text-cyan-300">
-              Sign in
-            </a>
-          </p>
+            {resendStatus === 'sent' ? (
+              <p className="text-success text-sm">Verification email resent!</p>
+            ) : resendStatus === 'cooldown' ? (
+              <p className="text-warning text-sm">
+                Please wait {cooldownSeconds}s before requesting another email.
+              </p>
+            ) : (
+              <button
+                onClick={() => void handleResend()}
+                disabled={resendStatus === 'sending'}
+                className="text-red-700 hover:text-red-800 text-sm underline hover:no-underline disabled:opacity-50"
+              >
+                {resendStatus === 'sending' ? 'Sending…' : "Didn't receive it? Resend"}
+              </button>
+            )}
+            <p className="mt-6 text-sm text-gray-600">
+              Already verified?{' '}
+              <a href="/login" className="text-red-700 hover:text-red-800">
+                Sign in
+              </a>
+            </p>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-white mb-6">Create account</h1>
+        <div className="bg-white border border-gray-200 rounded-xl shadow-md p-8">
+          <h1 className="text-2xl font-bold text-navy-700 mb-6">Create account</h1>
 
-        {serverError && (
-          <div className="mb-4 p-3 bg-red-900/50 border border-red-500/50 rounded-lg text-red-400 text-sm">
-            {serverError}
-          </div>
-        )}
+          {serverError && (
+            <div className="mb-4 p-3 bg-danger-bg border border-danger/30 rounded-lg text-danger text-sm">
+              {serverError}
+            </div>
+          )}
 
-        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm text-gray-400 mb-1">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={`w-full px-3 py-2 bg-slate-800 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 ${
-                fieldErrors.email ? 'border-red-500' : 'border-slate-700'
-              }`}
-              placeholder="you@example.com"
-            />
-            {fieldErrors.email && (
-              <p className="mt-1 text-red-400 text-xs">{fieldErrors.email}</p>
-            )}
-          </div>
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-600 mb-1">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={`w-full px-3 py-2 bg-white border rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:border-navy-500 focus:ring-1 focus:ring-navy-500/15 ${
+                  fieldErrors.email ? 'border-danger' : 'border-gray-300'
+                }`}
+                placeholder="you@example.com"
+              />
+              {fieldErrors.email && (
+                <p className="mt-1 text-danger text-xs">{fieldErrors.email}</p>
+              )}
+            </div>
 
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-sm text-gray-400 mb-1"
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-600 mb-1">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`w-full px-3 py-2 bg-white border rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:border-navy-500 focus:ring-1 focus:ring-navy-500/15 ${
+                  fieldErrors.password ? 'border-danger' : 'border-gray-300'
+                }`}
+                placeholder="••••••••"
+              />
+              {password && (
+                <ul className="mt-2 space-y-1 text-xs">
+                  <li className={strength.length ? 'text-success' : 'text-gray-400'}>
+                    {strength.length ? '✓' : '○'} 8+ characters
+                  </li>
+                  <li className={strength.letter ? 'text-success' : 'text-gray-400'}>
+                    {strength.letter ? '✓' : '○'} At least one letter
+                  </li>
+                  <li className={strength.digit ? 'text-success' : 'text-gray-400'}>
+                    {strength.digit ? '✓' : '○'} At least one number
+                  </li>
+                </ul>
+              )}
+              {fieldErrors.password && (
+                <p className="mt-1 text-danger text-xs">{fieldErrors.password}</p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full py-2 px-4 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white font-semibold rounded-md transition-colors"
             >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={`w-full px-3 py-2 bg-slate-800 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 ${
-                fieldErrors.password ? 'border-red-500' : 'border-slate-700'
-              }`}
-              placeholder="••••••••"
-            />
-            {password && (
-              <ul className="mt-2 space-y-1 text-xs">
-                <li className={strength.length ? 'text-green-400' : 'text-gray-500'}>
-                  {strength.length ? '✓' : '○'} 8+ characters
-                </li>
-                <li className={strength.letter ? 'text-green-400' : 'text-gray-500'}>
-                  {strength.letter ? '✓' : '○'} At least one letter
-                </li>
-                <li className={strength.digit ? 'text-green-400' : 'text-gray-500'}>
-                  {strength.digit ? '✓' : '○'} At least one number
-                </li>
-              </ul>
-            )}
-            {fieldErrors.password && (
-              <p className="mt-1 text-red-400 text-xs">{fieldErrors.password}</p>
-            )}
-          </div>
+              {isSubmitting ? 'Creating account…' : 'Create account'}
+            </button>
+          </form>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-2 px-4 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
-          >
-            {isSubmitting ? 'Creating account…' : 'Create account'}
-          </button>
-        </form>
-
-        <p className="mt-6 text-sm text-gray-400 text-center">
-          Already have an account?{' '}
-          <a href="/login" className="text-cyan-400 hover:text-cyan-300">
-            Sign in
-          </a>
-        </p>
+          <p className="mt-6 text-sm text-gray-600 text-center">
+            Already have an account?{' '}
+            <a href="/login" className="text-red-700 hover:text-red-800">
+              Sign in
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   )

@@ -9,7 +9,6 @@ import type { InvitationView } from '@/lib/staff.types'
 
 export const Route = createFileRoute('/join/$token')({
   loader: async ({ params }): Promise<LoaderData> => {
-    // Check if caller is already logged in
     const session = await getSessionServerFn()
 
     const result = await getInvitationByTokenServerFn({ data: { token: params.token } })
@@ -18,7 +17,6 @@ export const Route = createFileRoute('/join/$token')({
       return { state: 'error', error: result.error }
     }
 
-    // If logged in with matching email, auto-accept and redirect
     if (session && session.email === result.invitation.email) {
       const accept = await acceptInvitationServerFn({ data: { token: params.token } })
       if (accept.success) {
@@ -59,11 +57,11 @@ function JoinPage() {
 
   if (loaderData.state === 'error') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
-        <div className="w-full max-w-md text-center">
-          <div className="p-8 rounded-2xl border border-slate-700 bg-slate-800/60">
-            <h1 className="text-xl font-semibold text-white mb-3">Invitation unavailable</h1>
-            <p className="text-slate-400 text-sm">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-md p-8 text-center">
+            <h1 className="text-xl font-semibold text-navy-700 mb-3">Invitation unavailable</h1>
+            <p className="text-gray-600 text-sm">
               {ERROR_MESSAGES[loaderData.error] ?? 'This invitation link is not valid.'}
             </p>
           </div>
@@ -120,27 +118,27 @@ function JoinPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        <div className="p-8 rounded-2xl border border-slate-700 bg-slate-800/60">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-md p-8">
           {/* Header */}
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-navy-700">
               Join {invitation.orgName}
             </h1>
             {invitation.inviterName && (
-              <p className="text-slate-400 text-sm mt-1">
+              <p className="text-gray-600 text-sm mt-1">
                 {invitation.inviterName} has invited you
               </p>
             )}
-            <p className="text-slate-500 text-xs mt-2">
-              Invitation for <span className="text-slate-300">{invitation.email}</span>
+            <p className="text-gray-400 text-xs mt-2">
+              Invitation for <span className="text-gray-600">{invitation.email}</span>
             </p>
           </div>
 
           {/* If logged in with wrong email, show mismatch warning */}
           {isLoggedIn && loggedInEmail && loggedInEmail !== invitation.email && (
-            <div className="mb-5 p-3 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-300 text-sm">
+            <div className="mb-5 p-3 rounded-lg bg-warning-bg border border-warning/30 text-warning text-sm">
               You are logged in as <strong>{loggedInEmail}</strong>, but this invitation is for{' '}
               <strong>{invitation.email}</strong>. Please log out and try again.
             </div>
@@ -149,16 +147,16 @@ function JoinPage() {
           {/* If logged in with correct email — link account form */}
           {isLoggedIn && loggedInEmail === invitation.email && (
             <form onSubmit={handleLinkAccount}>
-              <p className="text-slate-300 text-sm mb-4">
+              <p className="text-gray-600 text-sm mb-4">
                 Click below to accept the invitation and join{' '}
-                <strong className="text-white">{invitation.orgName}</strong> as{' '}
-                <strong className="text-white capitalize">{invitation.role}</strong>.
+                <strong className="text-gray-900">{invitation.orgName}</strong> as{' '}
+                <strong className="text-gray-900 capitalize">{invitation.role}</strong>.
               </p>
-              {formError && <p className="text-red-400 text-sm mb-3">{formError}</p>}
+              {formError && <p className="text-danger text-sm mb-3">{formError}</p>}
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+                className="w-full py-2.5 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md font-semibold transition-colors"
               >
                 {busy ? 'Joining…' : 'Accept invitation'}
               </button>
@@ -169,32 +167,32 @@ function JoinPage() {
           {!isLoggedIn && (
             showLoginPrompt ? (
               <div className="text-center">
-                <p className="text-slate-300 text-sm mb-4">
-                  An account already exists with <strong className="text-white">{invitation.email}</strong>.
+                <p className="text-gray-600 text-sm mb-4">
+                  An account already exists with <strong className="text-gray-900">{invitation.email}</strong>.
                   Please{' '}
-                  <a href="/login" className="text-blue-400 hover:underline">log in</a>
+                  <a href="/login" className="text-red-700 hover:text-red-800">log in</a>
                   {' '}and then click the invitation link again to accept.
                 </p>
               </div>
             ) : (
               <form onSubmit={handleRegister}>
-                <p className="text-slate-400 text-sm mb-5">
-                  Create an account to join <strong className="text-white">{invitation.orgName}</strong> as{' '}
-                  <strong className="text-white capitalize">{invitation.role}</strong>.
+                <p className="text-gray-600 text-sm mb-5">
+                  Create an account to join <strong className="text-gray-900">{invitation.orgName}</strong> as{' '}
+                  <strong className="text-gray-900 capitalize">{invitation.role}</strong>.
                 </p>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm text-slate-300 mb-1">Email</label>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Email</label>
                     <input
                       type="email"
                       value={invitation.email}
                       readOnly
-                      className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-slate-400 text-sm cursor-not-allowed"
+                      className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-md text-gray-500 text-sm cursor-not-allowed"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-slate-300 mb-1">
-                      Your name <span className="text-red-400">*</span>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">
+                      Your name <span className="text-danger">*</span>
                     </label>
                     <input
                       type="text"
@@ -202,38 +200,38 @@ function JoinPage() {
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Full name"
                       autoFocus
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500"
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-slate-300 mb-1">
-                      Password <span className="text-red-400">*</span>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">
+                      Password <span className="text-danger">*</span>
                     </label>
                     <input
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="At least 8 characters"
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500"
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
                     />
                   </div>
                 </div>
                 {formError && (
-                  <p className="text-red-400 text-sm mt-3">{formError}</p>
+                  <p className="text-danger text-sm mt-3">{formError}</p>
                 )}
                 <button
                   type="submit"
                   disabled={busy}
-                  className="w-full mt-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+                  className="w-full mt-5 py-2.5 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md font-semibold transition-colors"
                 >
                   {busy ? 'Creating account…' : 'Create account & join'}
                 </button>
-                <p className="text-center text-slate-500 text-xs mt-4">
+                <p className="text-center text-gray-400 text-xs mt-4">
                   Already have an account?{' '}
                   <button
                     type="button"
                     onClick={() => setShowLoginPrompt(true)}
-                    className="text-blue-400 hover:underline"
+                    className="text-red-700 hover:text-red-800"
                   >
                     Log in instead
                   </button>

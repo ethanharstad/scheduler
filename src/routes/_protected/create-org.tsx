@@ -70,22 +70,22 @@ function CreateOrgPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="flex items-center gap-3 mb-8">
-          <Building2 className="w-8 h-8 text-blue-400" />
-          <h1 className="text-2xl font-bold text-white">Create Organization</h1>
+    <div className="max-w-md mx-auto">
+      <div className="flex items-center gap-3 mb-8">
+        <Building2 className="w-8 h-8 text-navy-500" />
+        <h1 className="text-2xl font-bold text-navy-700">Create Organization</h1>
+      </div>
+
+      {errors.form && (
+        <div className="mb-6 p-4 rounded-lg bg-danger-bg border border-danger/30 text-danger text-sm">
+          {errors.form}
         </div>
+      )}
 
-        {errors.form && (
-          <div className="mb-6 p-4 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-sm">
-            {errors.form}
-          </div>
-        )}
-
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1.5">
+            <label htmlFor="name" className="block text-sm font-medium text-gray-600 mb-1.5">
               Organization Name
             </label>
             <input
@@ -97,17 +97,17 @@ function CreateOrgPage() {
               minLength={2}
               maxLength={100}
               placeholder="Springfield Fire Department"
-              className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full px-4 py-2.5 rounded-md bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-navy-500 focus:ring-1 focus:ring-navy-500/15"
             />
-            {errors.name && <p className="mt-1.5 text-sm text-red-400">{errors.name}</p>}
+            {errors.name && <p className="mt-1.5 text-sm text-danger">{errors.name}</p>}
           </div>
 
           <div>
-            <label htmlFor="slug" className="block text-sm font-medium text-gray-300 mb-1.5">
+            <label htmlFor="slug" className="block text-sm font-medium text-gray-600 mb-1.5">
               URL Slug
             </label>
-            <div className="flex items-center rounded-lg bg-slate-800 border border-slate-600 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 overflow-hidden">
-              <span className="pl-4 pr-1 text-gray-500 text-sm whitespace-nowrap select-none">
+            <div className="flex items-center rounded-md bg-white border border-gray-300 focus-within:border-navy-500 focus-within:ring-1 focus-within:ring-navy-500/15 overflow-hidden">
+              <span className="pl-4 pr-1 text-gray-400 text-sm whitespace-nowrap select-none">
                 /orgs/
               </span>
               <input
@@ -119,24 +119,24 @@ function CreateOrgPage() {
                 minLength={2}
                 maxLength={50}
                 placeholder="springfield-fire"
-                className="flex-1 px-2 py-2.5 bg-transparent text-white placeholder-gray-500 focus:outline-none"
+                className="flex-1 px-2 py-2.5 bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none"
               />
             </div>
             <p className="mt-1.5 text-xs text-gray-500">
               Lowercase letters, numbers, and hyphens only. Cannot be changed after creation.
             </p>
-            {errors.slug && <p className="mt-1 text-sm text-red-400">{errors.slug}</p>}
+            {errors.slug && <p className="mt-1 text-sm text-danger">{errors.slug}</p>}
           </div>
 
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors mt-2"
+            className="w-full py-2.5 px-4 rounded-md bg-red-700 hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold transition-colors mt-2"
           >
             {submitting ? 'Creating…' : 'Create Organization'}
           </button>
         </form>
       </div>
-    </main>
+    </div>
   )
 }

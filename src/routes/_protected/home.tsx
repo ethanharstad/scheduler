@@ -8,11 +8,11 @@ function HomePage() {
   const { session } = useRouteContext({ from: '/_protected' })
 
   return (
-    <main className="p-8 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-white mb-2">
+    <div className="max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold text-navy-700 mb-2">
         Welcome back, {session.email}
       </h1>
-      <p className="text-gray-400">You are signed in to Scheduler.</p>
-    </main>
+      <p className="text-gray-600">You are signed in to Scene Ready.</p>
+    </div>
   )
 }

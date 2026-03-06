@@ -20,25 +20,25 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/staff/audit')({
 })
 
 const ACTION_LABELS: Record<StaffAuditAction, string> = {
-  member_added: 'Member added',
-  member_removed: 'Member removed',
-  member_linked: 'Account linked',
-  role_changed: 'Role changed',
-  invitation_sent: 'Invitation sent',
-  invitation_cancelled: 'Invitation cancelled',
-  invitation_resent: 'Invitation resent',
-  invitation_accepted: 'Invitation accepted',
+  member_added: 'Member Added',
+  member_removed: 'Member Removed',
+  member_linked: 'Account Linked',
+  role_changed: 'Role Changed',
+  invitation_sent: 'Invitation Sent',
+  invitation_cancelled: 'Invitation Cancelled',
+  invitation_resent: 'Invitation Resent',
+  invitation_accepted: 'Invitation Accepted',
 }
 
-const ACTION_COLORS: Record<StaffAuditAction, string> = {
-  member_added: 'bg-emerald-900/40 text-emerald-400',
-  member_removed: 'bg-red-900/40 text-red-400',
-  member_linked: 'bg-emerald-900/40 text-emerald-400',
-  role_changed: 'bg-blue-900/40 text-blue-400',
-  invitation_sent: 'bg-amber-900/40 text-amber-400',
-  invitation_cancelled: 'bg-slate-700 text-slate-400',
-  invitation_resent: 'bg-amber-900/40 text-amber-400',
-  invitation_accepted: 'bg-emerald-900/40 text-emerald-400',
+const ACTION_BADGE_COLORS: Record<StaffAuditAction, string> = {
+  member_added: 'bg-success-bg text-success',
+  member_removed: 'bg-danger-bg text-danger',
+  member_linked: 'bg-success-bg text-success',
+  role_changed: 'bg-info-bg text-info',
+  invitation_sent: 'bg-warning-bg text-warning',
+  invitation_cancelled: 'bg-gray-100 text-gray-500',
+  invitation_resent: 'bg-warning-bg text-warning',
+  invitation_accepted: 'bg-success-bg text-success',
 }
 
 function formatRelativeTime(isoString: string): string {
@@ -73,24 +73,24 @@ function StaffAuditPage() {
   const { entries, total } = Route.useLoaderData()
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-4xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
         <Link
           to="/orgs/$orgSlug/staff"
           params={{ orgSlug: org.slug }}
-          className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors text-sm"
+          className="flex items-center gap-1.5 text-gray-500 hover:text-navy-700 transition-colors text-sm"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Staff
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-white">Audit Log</h1>
-          <p className="text-sm text-slate-400 mt-0.5">{total} total event{total !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-navy-700">Audit Log</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{total} total event{total !== 1 ? 's' : ''}</p>
         </div>
       </div>
 
       {entries.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
+        <div className="text-center py-16 text-gray-400">
           <p>No staff management events recorded yet.</p>
         </div>
       ) : (
@@ -100,29 +100,30 @@ function StaffAuditPage() {
             return (
               <div
                 key={entry.id}
-                className="flex items-start gap-4 p-4 rounded-xl border border-slate-700/50 bg-slate-800/40 hover:bg-slate-800/60"
+                className="flex items-start gap-4 p-4 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
               >
                 <span
-                  className={`inline-flex items-center px-2.5 py-1 rounded text-xs font-medium shrink-0 ${ACTION_COLORS[entry.action]}`}
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide shrink-0 ${ACTION_BADGE_COLORS[entry.action]}`}
+                  style={{ fontFamily: 'var(--font-condensed)' }}
                 >
                   {ACTION_LABELS[entry.action]}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white">
+                  <p className="text-sm text-gray-900">
                     <span className="font-medium">
                       {entry.staffMemberName ?? 'Deleted member'}
                     </span>
                     {detail && (
-                      <span className="text-slate-400 ml-1">— {detail}</span>
+                      <span className="text-gray-500 ml-1">— {detail}</span>
                     )}
                   </p>
                   {entry.performedByName && (
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-gray-400 mt-0.5">
                       by {entry.performedByName}
                     </p>
                   )}
                 </div>
-                <div className="flex items-center gap-1 text-xs text-slate-500 shrink-0">
+                <div className="flex items-center gap-1 text-xs text-gray-400 shrink-0">
                   <Clock className="w-3 h-3" />
                   <span title={entry.createdAt}>{formatRelativeTime(entry.createdAt)}</span>
                 </div>
@@ -131,7 +132,7 @@ function StaffAuditPage() {
           })}
 
           {total > entries.length && (
-            <p className="text-center text-sm text-slate-500 pt-2">
+            <p className="text-center text-sm text-gray-400 pt-2">
               Showing {entries.length} of {total} events.
             </p>
           )}
