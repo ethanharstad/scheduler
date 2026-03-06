@@ -41,7 +41,7 @@ function ProtectedLayout() {
     <div className="min-h-screen bg-slate-900">
       <header className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
         <div className="flex items-center gap-4">
-          <span className="font-semibold text-white">Scheduler</span>
+          <span className="font-semibold text-white">Scene Ready</span>
           {orgs.length > 0 && (
             <Link
               to="/home"
