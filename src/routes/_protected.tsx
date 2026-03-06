@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router'
-import { Building2, Home, LogOut, UserCircle, UserCog, Users } from 'lucide-react'
+import { Building2, Home, LogOut, Shield, UserCircle, UserCog, Users } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -52,6 +52,7 @@ function NavItem({
 
 function ProtectedLayout() {
   const navigate = useNavigate()
+  const { session } = Route.useRouteContext()
   const orgCtx = useOrgContext()
 
   async function handleLogout() {
@@ -85,6 +86,20 @@ function ProtectedLayout() {
           {/* Global nav */}
           <NavItem to="/home" icon={<Home className="w-5 h-5" />} label="Home" />
           <NavItem to="/orgs" icon={<Building2 className="w-5 h-5" />} label="Organizations" />
+
+          {/* System admin nav */}
+          {session.isSystemAdmin && (
+            <>
+              <div className="mt-4 mb-1 px-4">
+                <span className="text-white/40 text-xs font-semibold uppercase tracking-widest flex items-center gap-1.5" style={{ fontFamily: 'var(--font-condensed)' }}>
+                  <Shield className="w-3 h-3" /> System Admin
+                </span>
+              </div>
+              <NavItem to="/admin" icon={<Shield className="w-5 h-5" />} label="Admin Dashboard" />
+              <NavItem to="/admin/users" icon={<Users className="w-5 h-5" />} label="Users" />
+              <NavItem to="/admin/orgs" icon={<Building2 className="w-5 h-5" />} label="Organizations" />
+            </>
+          )}
 
           {/* Org-specific nav */}
           {orgCtx && (

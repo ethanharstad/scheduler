@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS user (
   verified        INTEGER NOT NULL DEFAULT 0,     -- 0=unverified, 1=verified
   failed_attempts INTEGER NOT NULL DEFAULT 0,     -- consecutive failed login count
   lock_until      TEXT,                           -- ISO 8601 or NULL
+  is_system_admin INTEGER NOT NULL DEFAULT 0,     -- 0=regular user, 1=platform admin
   created_at      TEXT    NOT NULL
 );
 

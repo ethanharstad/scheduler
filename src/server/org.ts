@@ -11,17 +11,21 @@ import {
 // Internal: session helper
 // ---------------------------------------------------------------------------
 
-async function getAuthenticatedUserId(env: Cloudflare.Env): Promise<string | null> {
+async function getAuthenticatedUser(env: Cloudflare.Env): Promise<{ userId: string; isSystemAdmin: boolean } | null> {
   const sessionToken = getCookie('session')
   if (!sessionToken) return null
   const now = new Date().toISOString()
-  type SessionRow = { user_id: string }
+  type SessionRow = { user_id: string; is_system_admin: number }
   const row = await env.DB.prepare(
-    `SELECT user_id FROM session WHERE session_token = ? AND expires_at > ?`,
+    `SELECT s.user_id, u.is_system_admin
+     FROM session s
+     JOIN user u ON u.id = s.user_id
+     WHERE s.session_token = ? AND s.expires_at > ?`,
   )
     .bind(sessionToken, now)
     .first<SessionRow>()
-  return row?.user_id ?? null
+  if (!row) return null
+  return { userId: row.user_id, isSystemAdmin: row.is_system_admin === 1 }
 }
 
 // ---------------------------------------------------------------------------
@@ -42,8 +46,9 @@ export const createOrgServerFn = createServerFn({ method: 'POST' })
     const { data } = ctx
     const env = ctx.context as unknown as Cloudflare.Env
 
-    const userId = await getAuthenticatedUserId(env)
-    if (!userId) return { success: false, error: 'INVALID_INPUT' }
+    const auth = await getAuthenticatedUser(env)
+    if (!auth) return { success: false, error: 'INVALID_INPUT' }
+    const userId = auth.userId
 
     const name = data.name.trim()
     if (name.length < 2 || name.length > 100) {
@@ -104,8 +109,9 @@ export const listUserOrgsServerFn = createServerFn({ method: 'GET' }).handler(
   async (ctx): Promise<ListUserOrgsOutput> => {
     const env = ctx.context as unknown as Cloudflare.Env
 
-    const userId = await getAuthenticatedUserId(env)
-    if (!userId) return { success: false, error: 'UNAUTHORIZED' }
+    const auth = await getAuthenticatedUser(env)
+    if (!auth) return { success: false, error: 'UNAUTHORIZED' }
+    const userId = auth.userId
 
     type OrgRow = { id: string; slug: string; name: string; role: string }
     const rows = await env.DB.prepare(
@@ -143,8 +149,9 @@ export const getOrgServerFn = createServerFn({ method: 'GET' })
     const { data } = ctx
     const env = ctx.context as unknown as Cloudflare.Env
 
-    const userId = await getAuthenticatedUserId(env)
-    if (!userId) return { success: false, error: 'UNAUTHORIZED' }
+    const auth = await getAuthenticatedUser(env)
+    if (!auth) return { success: false, error: 'UNAUTHORIZED' }
+    const userId = auth.userId
 
     type OrgRow = {
       id: string
@@ -170,7 +177,7 @@ export const getOrgServerFn = createServerFn({ method: 'GET' })
       .bind(orgRow.id, userId)
       .first<MemberRow>()
 
-    if (!memberRow) return { success: false, error: 'UNAUTHORIZED' }
+    if (!memberRow && !auth.isSystemAdmin) return { success: false, error: 'UNAUTHORIZED' }
 
     return {
       success: true,
@@ -181,6 +188,6 @@ export const getOrgServerFn = createServerFn({ method: 'GET' })
         plan: orgRow.plan,
         createdAt: orgRow.created_at,
       },
-      userRole: memberRow.role as OrgRole,
+      userRole: memberRow ? (memberRow.role as OrgRole) : ('owner' as OrgRole),
     }
   })

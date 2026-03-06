@@ -6,6 +6,7 @@ export interface User {
   verified: 0 | 1
   failed_attempts: number
   lock_until: string | null
+  is_system_admin: 0 | 1
   created_at: string
 }
 
@@ -43,4 +44,5 @@ export interface PasswordResetToken {
 export interface SessionContext {
   userId: string
   email: string
+  isSystemAdmin: boolean
 }
