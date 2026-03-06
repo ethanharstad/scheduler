@@ -20,6 +20,7 @@ import { Route as JoinTokenRouteImport } from './routes/join.$token'
 import { Route as ProtectedProfileRouteImport } from './routes/_protected/profile'
 import { Route as ProtectedHomeRouteImport } from './routes/_protected/home'
 import { Route as ProtectedCreateOrgRouteImport } from './routes/_protected/create-org'
+import { Route as ProtectedOrgsIndexRouteImport } from './routes/_protected/orgs.index'
 import { Route as ProtectedOrgsOrgSlugRouteImport } from './routes/_protected/orgs.$orgSlug'
 import { Route as ProtectedOrgsOrgSlugIndexRouteImport } from './routes/_protected/orgs.$orgSlug/index'
 import { Route as ProtectedOrgsOrgSlugStaffRouteImport } from './routes/_protected/orgs.$orgSlug/staff'
@@ -80,6 +81,11 @@ const ProtectedCreateOrgRoute = ProtectedCreateOrgRouteImport.update({
   path: '/create-org',
   getParentRoute: () => ProtectedRoute,
 } as any)
+const ProtectedOrgsIndexRoute = ProtectedOrgsIndexRouteImport.update({
+  id: '/orgs/',
+  path: '/orgs/',
+  getParentRoute: () => ProtectedRoute,
+} as any)
 const ProtectedOrgsOrgSlugRoute = ProtectedOrgsOrgSlugRouteImport.update({
   id: '/orgs/$orgSlug',
   path: '/orgs/$orgSlug',
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/reset-password/$token': typeof ResetPasswordTokenRoute
   '/verify-email/$token': typeof VerifyEmailTokenRoute
   '/orgs/$orgSlug': typeof ProtectedOrgsOrgSlugRouteWithChildren
+  '/orgs/': typeof ProtectedOrgsIndexRoute
   '/orgs/$orgSlug/members': typeof ProtectedOrgsOrgSlugMembersRoute
   '/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
   '/orgs/$orgSlug/': typeof ProtectedOrgsOrgSlugIndexRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/join/$token': typeof JoinTokenRoute
   '/reset-password/$token': typeof ResetPasswordTokenRoute
   '/verify-email/$token': typeof VerifyEmailTokenRoute
+  '/orgs': typeof ProtectedOrgsIndexRoute
   '/orgs/$orgSlug/members': typeof ProtectedOrgsOrgSlugMembersRoute
   '/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
   '/orgs/$orgSlug': typeof ProtectedOrgsOrgSlugIndexRoute
@@ -157,6 +165,7 @@ export interface FileRoutesById {
   '/reset-password/$token': typeof ResetPasswordTokenRoute
   '/verify-email/$token': typeof VerifyEmailTokenRoute
   '/_protected/orgs/$orgSlug': typeof ProtectedOrgsOrgSlugRouteWithChildren
+  '/_protected/orgs/': typeof ProtectedOrgsIndexRoute
   '/_protected/orgs/$orgSlug/members': typeof ProtectedOrgsOrgSlugMembersRoute
   '/_protected/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
   '/_protected/orgs/$orgSlug/': typeof ProtectedOrgsOrgSlugIndexRoute
@@ -176,6 +185,7 @@ export interface FileRouteTypes {
     | '/reset-password/$token'
     | '/verify-email/$token'
     | '/orgs/$orgSlug'
+    | '/orgs/'
     | '/orgs/$orgSlug/members'
     | '/orgs/$orgSlug/staff'
     | '/orgs/$orgSlug/'
@@ -192,6 +202,7 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/reset-password/$token'
     | '/verify-email/$token'
+    | '/orgs'
     | '/orgs/$orgSlug/members'
     | '/orgs/$orgSlug/staff'
     | '/orgs/$orgSlug'
@@ -210,6 +221,7 @@ export interface FileRouteTypes {
     | '/reset-password/$token'
     | '/verify-email/$token'
     | '/_protected/orgs/$orgSlug'
+    | '/_protected/orgs/'
     | '/_protected/orgs/$orgSlug/members'
     | '/_protected/orgs/$orgSlug/staff'
     | '/_protected/orgs/$orgSlug/'
@@ -306,6 +318,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedCreateOrgRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/_protected/orgs/': {
+      id: '/_protected/orgs/'
+      path: '/orgs'
+      fullPath: '/orgs/'
+      preLoaderRoute: typeof ProtectedOrgsIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
     '/_protected/orgs/$orgSlug': {
       id: '/_protected/orgs/$orgSlug'
       path: '/orgs/$orgSlug'
@@ -378,6 +397,7 @@ interface ProtectedRouteChildren {
   ProtectedHomeRoute: typeof ProtectedHomeRoute
   ProtectedProfileRoute: typeof ProtectedProfileRoute
   ProtectedOrgsOrgSlugRoute: typeof ProtectedOrgsOrgSlugRouteWithChildren
+  ProtectedOrgsIndexRoute: typeof ProtectedOrgsIndexRoute
 }
 
 const ProtectedRouteChildren: ProtectedRouteChildren = {
@@ -385,6 +405,7 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedHomeRoute: ProtectedHomeRoute,
   ProtectedProfileRoute: ProtectedProfileRoute,
   ProtectedOrgsOrgSlugRoute: ProtectedOrgsOrgSlugRouteWithChildren,
+  ProtectedOrgsIndexRoute: ProtectedOrgsIndexRoute,
 }
 
 const ProtectedRouteWithChildren = ProtectedRoute._addFileChildren(

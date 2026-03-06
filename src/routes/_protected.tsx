@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router'
-import { Building2, LogOut, Plus, UserCircle, UserCog, Users } from 'lucide-react'
+import { Building2, Home, LogOut, UserCircle, UserCog, Users } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -52,7 +52,6 @@ function NavItem({
 
 function ProtectedLayout() {
   const navigate = useNavigate()
-  const { atLimit } = Route.useLoaderData()
   const orgCtx = useOrgContext()
 
   async function handleLogout() {
@@ -84,10 +83,8 @@ function ProtectedLayout() {
         {/* Navigation */}
         <nav className="flex-1 py-2 overflow-y-auto">
           {/* Global nav */}
-          <NavItem to="/home" icon={<Building2 className="w-5 h-5" />} label="Home" />
-          {!atLimit && (
-            <NavItem to="/create-org" icon={<Plus className="w-5 h-5" />} label="New Organization" />
-          )}
+          <NavItem to="/home" icon={<Home className="w-5 h-5" />} label="Home" />
+          <NavItem to="/orgs" icon={<Building2 className="w-5 h-5" />} label="Organizations" />
 
           {/* Org-specific nav */}
           {orgCtx && (
@@ -137,6 +134,8 @@ function ProtectedLayout() {
           {orgCtx ? (
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Link to="/home" className="hover:text-navy-700 transition-colors">Home</Link>
+              <span className="text-gray-300">/</span>
+              <Link to="/orgs" className="hover:text-navy-700 transition-colors">Organizations</Link>
               <span className="text-gray-300">/</span>
               <Link
                 to="/orgs/$orgSlug"
