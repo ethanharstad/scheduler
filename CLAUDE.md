@@ -97,6 +97,10 @@ D1 SQLite — binding `DB`. Tables:
 
 Full schema in `src/db/schema.sql`. Feature specs and data models in `specs/`.
 
+## Visual Style
+
+**Branding guide:** `specs/branding.md` — reference this for all visual style decisions including colors, typography, spacing, component patterns, and tone. All UI work should align with the brand identity defined there.
+
 ## Code Organization
 
 - `src/lib/` — Shared types and utilities: `auth.ts` (PBKDF2, session validation), `rbac.ts` (permission matrix), `*.types.ts` (per-feature type definitions)
