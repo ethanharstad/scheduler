@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { ScheduleView, ScheduleStatus, ShiftAssignmentView, RecurrenceMode } from '@/lib/schedule.types'
 import type { StaffMemberView } from '@/lib/staff.types'
@@ -12,6 +12,7 @@ import {
   createRecurringAssignmentsServerFn,
   updateAssignmentServerFn,
   deleteAssignmentServerFn,
+  applyConstraintsToScheduleServerFn,
 } from '@/server/schedule'
 import { listStaffServerFn } from '@/server/staff'
 
@@ -162,6 +163,9 @@ function ScheduleDetailPage() {
 
   const [statusBusy, setStatusBusy] = useState(false)
 
+  const [applyConstraintsBusy, setApplyConstraintsBusy] = useState(false)
+  const [applyConstraintsChanged, setApplyConstraintsChanged] = useState<number | null>(null)
+
   const addFormRef = useRef<HTMLFormElement>(null)
 
   function quickAddForDate(date: string) {
@@ -207,6 +211,23 @@ function ScheduleDetailPage() {
       }
     } finally {
       setStatusBusy(false)
+    }
+  }
+
+  async function handleApplyConstraints() {
+    setApplyConstraintsBusy(true)
+    setApplyConstraintsChanged(null)
+    try {
+      const result = await applyConstraintsToScheduleServerFn({
+        data: { orgSlug: org.slug, scheduleId: schedule.id },
+      })
+      if (result.success) {
+        setAssignments(result.assignments)
+        setSchedule((s) => ({ ...s, assignmentCount: result.assignments.length }))
+        setApplyConstraintsChanged(result.changed)
+      }
+    } finally {
+      setApplyConstraintsBusy(false)
     }
   }
 
@@ -470,6 +491,22 @@ function ScheduleDetailPage() {
                 <Pencil className="w-3.5 h-3.5" />
                 Edit
               </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => void handleApplyConstraints()}
+                  disabled={applyConstraintsBusy}
+                  title="Re-process all assignments against current approved constraints"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 rounded-md text-sm transition-colors"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${applyConstraintsBusy ? 'animate-spin' : ''}`} />
+                  {applyConstraintsBusy ? 'Applying…' : 'Apply Constraints'}
+                </button>
+                {applyConstraintsChanged !== null && (
+                  <span className="text-xs text-gray-500">
+                    {applyConstraintsChanged === 0 ? 'No changes' : `${applyConstraintsChanged} updated`}
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => void handleToggleStatus()}
                 disabled={statusBusy}

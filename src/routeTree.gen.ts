@@ -29,6 +29,7 @@ import { Route as ProtectedOrgsOrgSlugStaffRouteImport } from './routes/_protect
 import { Route as ProtectedOrgsOrgSlugSchedulesRouteImport } from './routes/_protected/orgs.$orgSlug/schedules'
 import { Route as ProtectedOrgsOrgSlugPlatoonsRouteImport } from './routes/_protected/orgs.$orgSlug/platoons'
 import { Route as ProtectedOrgsOrgSlugMembersRouteImport } from './routes/_protected/orgs.$orgSlug/members'
+import { Route as ProtectedOrgsOrgSlugAvailabilityRouteImport } from './routes/_protected/orgs.$orgSlug/availability'
 import { Route as ProtectedAdminAdminUsersRouteImport } from './routes/_protected/_admin/admin_.users'
 import { Route as ProtectedAdminAdminOrgsRouteImport } from './routes/_protected/_admin/admin_.orgs'
 import { Route as ProtectedOrgsOrgSlugSchedulesIndexRouteImport } from './routes/_protected/orgs.$orgSlug/schedules.index'
@@ -140,6 +141,12 @@ const ProtectedOrgsOrgSlugMembersRoute =
     path: '/members',
     getParentRoute: () => ProtectedOrgsOrgSlugRoute,
   } as any)
+const ProtectedOrgsOrgSlugAvailabilityRoute =
+  ProtectedOrgsOrgSlugAvailabilityRouteImport.update({
+    id: '/availability',
+    path: '/availability',
+    getParentRoute: () => ProtectedOrgsOrgSlugRoute,
+  } as any)
 const ProtectedAdminAdminUsersRoute =
   ProtectedAdminAdminUsersRouteImport.update({
     id: '/admin_/users',
@@ -198,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/orgs/': typeof ProtectedOrgsIndexRoute
   '/admin/orgs': typeof ProtectedAdminAdminOrgsRoute
   '/admin/users': typeof ProtectedAdminAdminUsersRoute
+  '/orgs/$orgSlug/availability': typeof ProtectedOrgsOrgSlugAvailabilityRoute
   '/orgs/$orgSlug/members': typeof ProtectedOrgsOrgSlugMembersRoute
   '/orgs/$orgSlug/platoons': typeof ProtectedOrgsOrgSlugPlatoonsRouteWithChildren
   '/orgs/$orgSlug/schedules': typeof ProtectedOrgsOrgSlugSchedulesRouteWithChildren
@@ -224,6 +232,7 @@ export interface FileRoutesByTo {
   '/orgs': typeof ProtectedOrgsIndexRoute
   '/admin/orgs': typeof ProtectedAdminAdminOrgsRoute
   '/admin/users': typeof ProtectedAdminAdminUsersRoute
+  '/orgs/$orgSlug/availability': typeof ProtectedOrgsOrgSlugAvailabilityRoute
   '/orgs/$orgSlug/members': typeof ProtectedOrgsOrgSlugMembersRoute
   '/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
   '/orgs/$orgSlug': typeof ProtectedOrgsOrgSlugIndexRoute
@@ -252,6 +261,7 @@ export interface FileRoutesById {
   '/_protected/orgs/': typeof ProtectedOrgsIndexRoute
   '/_protected/_admin/admin_/orgs': typeof ProtectedAdminAdminOrgsRoute
   '/_protected/_admin/admin_/users': typeof ProtectedAdminAdminUsersRoute
+  '/_protected/orgs/$orgSlug/availability': typeof ProtectedOrgsOrgSlugAvailabilityRoute
   '/_protected/orgs/$orgSlug/members': typeof ProtectedOrgsOrgSlugMembersRoute
   '/_protected/orgs/$orgSlug/platoons': typeof ProtectedOrgsOrgSlugPlatoonsRouteWithChildren
   '/_protected/orgs/$orgSlug/schedules': typeof ProtectedOrgsOrgSlugSchedulesRouteWithChildren
@@ -281,6 +291,7 @@ export interface FileRouteTypes {
     | '/orgs/'
     | '/admin/orgs'
     | '/admin/users'
+    | '/orgs/$orgSlug/availability'
     | '/orgs/$orgSlug/members'
     | '/orgs/$orgSlug/platoons'
     | '/orgs/$orgSlug/schedules'
@@ -307,6 +318,7 @@ export interface FileRouteTypes {
     | '/orgs'
     | '/admin/orgs'
     | '/admin/users'
+    | '/orgs/$orgSlug/availability'
     | '/orgs/$orgSlug/members'
     | '/orgs/$orgSlug/staff'
     | '/orgs/$orgSlug'
@@ -334,6 +346,7 @@ export interface FileRouteTypes {
     | '/_protected/orgs/'
     | '/_protected/_admin/admin_/orgs'
     | '/_protected/_admin/admin_/users'
+    | '/_protected/orgs/$orgSlug/availability'
     | '/_protected/orgs/$orgSlug/members'
     | '/_protected/orgs/$orgSlug/platoons'
     | '/_protected/orgs/$orgSlug/schedules'
@@ -499,6 +512,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedOrgsOrgSlugMembersRouteImport
       parentRoute: typeof ProtectedOrgsOrgSlugRoute
     }
+    '/_protected/orgs/$orgSlug/availability': {
+      id: '/_protected/orgs/$orgSlug/availability'
+      path: '/availability'
+      fullPath: '/orgs/$orgSlug/availability'
+      preLoaderRoute: typeof ProtectedOrgsOrgSlugAvailabilityRouteImport
+      parentRoute: typeof ProtectedOrgsOrgSlugRoute
+    }
     '/_protected/_admin/admin_/users': {
       id: '/_protected/_admin/admin_/users'
       path: '/admin/users'
@@ -618,6 +638,7 @@ const ProtectedOrgsOrgSlugStaffRouteWithChildren =
   )
 
 interface ProtectedOrgsOrgSlugRouteChildren {
+  ProtectedOrgsOrgSlugAvailabilityRoute: typeof ProtectedOrgsOrgSlugAvailabilityRoute
   ProtectedOrgsOrgSlugMembersRoute: typeof ProtectedOrgsOrgSlugMembersRoute
   ProtectedOrgsOrgSlugPlatoonsRoute: typeof ProtectedOrgsOrgSlugPlatoonsRouteWithChildren
   ProtectedOrgsOrgSlugSchedulesRoute: typeof ProtectedOrgsOrgSlugSchedulesRouteWithChildren
@@ -626,6 +647,7 @@ interface ProtectedOrgsOrgSlugRouteChildren {
 }
 
 const ProtectedOrgsOrgSlugRouteChildren: ProtectedOrgsOrgSlugRouteChildren = {
+  ProtectedOrgsOrgSlugAvailabilityRoute: ProtectedOrgsOrgSlugAvailabilityRoute,
   ProtectedOrgsOrgSlugMembersRoute: ProtectedOrgsOrgSlugMembersRoute,
   ProtectedOrgsOrgSlugPlatoonsRoute:
     ProtectedOrgsOrgSlugPlatoonsRouteWithChildren,

@@ -201,3 +201,30 @@ CREATE TABLE IF NOT EXISTS platoon_membership (
 -- Enforces one-platoon-per-member at the DB level (last-write-wins via INSERT OR REPLACE)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_platoon_membership_staff   ON platoon_membership(staff_member_id);
 CREATE        INDEX IF NOT EXISTS idx_platoon_membership_platoon ON platoon_membership(platoon_id);
+
+-- Scheduling Constraints (007-scheduling-constraints)
+
+CREATE TABLE IF NOT EXISTS staff_constraint (
+  id              TEXT NOT NULL PRIMARY KEY,
+  org_id          TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  staff_member_id TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  created_by      TEXT REFERENCES user(id) ON DELETE SET NULL,
+  type            TEXT NOT NULL CHECK(type IN ('time_off', 'unavailable', 'preferred', 'not_preferred')),
+  status          TEXT NOT NULL DEFAULT 'approved' CHECK(status IN ('pending', 'approved', 'denied')),
+  start_datetime  TEXT NOT NULL,    -- ISO 8601 datetime (e.g. 2026-03-15T00:00:00)
+  end_datetime    TEXT NOT NULL,    -- ISO 8601 datetime, must be > start_datetime
+  -- Optional recurrence: NULL = one-time; non-NULL = applies to matching days within the
+  -- [start_datetime..end_datetime] window; time-of-day bounds come from the datetime values
+  days_of_week    TEXT,             -- JSON number[] e.g. [1,3,5]; 0=Sun … 6=Sat; NULL = not recurring
+  reason          TEXT,             -- optional free text
+  reviewer_id     TEXT REFERENCES user(id) ON DELETE SET NULL,
+  reviewed_at     TEXT,             -- ISO 8601 or NULL
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  CHECK (end_datetime > start_datetime)
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_constraint_org     ON staff_constraint(org_id);
+CREATE INDEX IF NOT EXISTS idx_staff_constraint_member  ON staff_constraint(staff_member_id);
+CREATE INDEX IF NOT EXISTS idx_staff_constraint_pending ON staff_constraint(org_id, status) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_staff_constraint_dates   ON staff_constraint(staff_member_id, start_datetime, end_datetime);

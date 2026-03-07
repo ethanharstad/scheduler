@@ -16,6 +16,65 @@ import type {
 import type { RRuleEntry } from '@/lib/platoon.types'
 
 // ---------------------------------------------------------------------------
+// Constraint-conflict helpers (used by bulk-population functions)
+// ---------------------------------------------------------------------------
+
+type ConstraintInfo = {
+  startDatetime: string
+  endDatetime: string
+  daysOfWeek: number[] | null
+}
+
+/**
+ * Subtract all blocking constraint windows from the proposed shift window.
+ * Returns the remaining free intervals (0 = fully blocked, 1 = no/full overlap,
+ * 2+ = constraint punches a hole in the middle of the shift).
+ */
+function subtractConstraints(
+  assignStart: string,
+  assignEnd: string,
+  constraints: ConstraintInfo[],
+): Array<{ start: string; end: string }> {
+  let free: Array<{ start: string; end: string }> = [{ start: assignStart, end: assignEnd }]
+  const assignDate = assignStart.slice(0, 10)
+
+  for (const c of constraints) {
+    let blockStart: string
+    let blockEnd: string
+
+    if (c.daysOfWeek === null) {
+      // Non-recurring: use constraint's actual datetimes
+      blockStart = c.startDatetime
+      blockEnd = c.endDatetime
+    } else {
+      // Recurring: skip if date is out of range or day-of-week doesn't match
+      if (assignDate < c.startDatetime.slice(0, 10)) continue
+      if (assignDate > c.endDatetime.slice(0, 10)) continue
+      const dayOfWeek = new Date(assignDate + 'T00:00:00').getDay()
+      if (!c.daysOfWeek.includes(dayOfWeek)) continue
+      blockStart = assignDate + c.startDatetime.slice(10)
+      blockEnd = assignDate + c.endDatetime.slice(10)
+    }
+
+    // Subtract (blockStart, blockEnd) from each free interval
+    const next: Array<{ start: string; end: string }> = []
+    for (const iv of free) {
+      if (blockStart >= iv.end || blockEnd <= iv.start) {
+        next.push(iv) // no overlap — keep as-is
+        continue
+      }
+      if (iv.start < blockStart) next.push({ start: iv.start, end: blockStart })
+      if (iv.end > blockEnd) next.push({ start: blockEnd, end: iv.end })
+      // block covers entire interval → nothing added (fully removed)
+    }
+    free = next
+    if (free.length === 0) break // fully blocked, short-circuit
+  }
+
+  return free
+}
+
+// ---------------------------------------------------------------------------
 // listSchedulesServerFn
 // ---------------------------------------------------------------------------
 
@@ -602,6 +661,28 @@ export const createRecurringAssignmentsServerFn = createServerFn({ method: 'POST
       .first<StaffRow>()
     if (!staff) return { success: false, error: 'NOT_FOUND' }
 
+    // Fetch approved blocking constraints for this staff member overlapping the schedule range
+    type BlockingConstraintRow = { start_datetime: string; end_datetime: string; days_of_week: string | null }
+    const constraintResult = await env.DB.prepare(
+      `SELECT start_datetime, end_datetime, days_of_week
+       FROM staff_constraint
+       WHERE org_id = ? AND staff_member_id = ?
+         AND type IN ('time_off', 'unavailable') AND status = 'approved'
+         AND start_datetime < ? AND end_datetime > ?`,
+    )
+      .bind(
+        membership.orgId,
+        data.staffMemberId,
+        schedule.end_date + 'T23:59:59',
+        schedule.start_date + 'T00:00:00',
+      )
+      .all<BlockingConstraintRow>()
+    const blockingConstraints: ConstraintInfo[] = (constraintResult.results ?? []).map((r) => ({
+      startDatetime: r.start_datetime,
+      endDatetime: r.end_datetime,
+      daysOfWeek: r.days_of_week ? (JSON.parse(r.days_of_week) as number[]) : null,
+    }))
+
     const end = new Date(schedule.end_date + 'T00:00:00')
     const now = new Date().toISOString()
     const position = data.position?.trim() || null
@@ -654,26 +735,32 @@ export const createRecurringAssignmentsServerFn = createServerFn({ method: 'POST
         endDatetime = `${dateStr}T${data.endTime}`
       }
 
-      const id = crypto.randomUUID()
-      stmts.push(
-        env.DB.prepare(
-          `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(id, data.scheduleId, data.staffMemberId, startDatetime, endDatetime, position, notes, now, now),
-      )
+      // Subtract approved constraints — may yield 0 (fully blocked), 1, or 2 partial intervals
+      const freeIntervals = subtractConstraints(startDatetime, endDatetime, blockingConstraints)
 
-      assignments.push({
-        id,
-        staffMemberId: data.staffMemberId,
-        staffMemberName: staff.name,
-        startDatetime,
-        endDatetime,
-        position,
-        notes,
-      })
+      for (const iv of freeIntervals) {
+        const id = crypto.randomUUID()
+        stmts.push(
+          env.DB.prepare(
+            `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(id, data.scheduleId, data.staffMemberId, iv.start, iv.end, position, notes, now, now),
+        )
+        assignments.push({
+          id,
+          staffMemberId: data.staffMemberId,
+          staffMemberName: staff.name,
+          startDatetime: iv.start,
+          endDatetime: iv.end,
+          position,
+          notes,
+        })
+      }
     }
 
-    await env.DB.batch(stmts)
+    if (stmts.length > 0) {
+      await env.DB.batch(stmts)
+    }
 
     return { success: true, assignments }
   })
@@ -803,6 +890,45 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
     const now = new Date().toISOString()
     const stmts: D1PreparedStatement[] = []
 
+    // Fetch approved blocking constraints for all affected staff members
+    const allStaffIds = Array.from(
+      new Set(Array.from(platoonMap.values()).flatMap((p) => p.staffMemberIds)),
+    )
+    const constraintsByStaff = new Map<string, ConstraintInfo[]>()
+    if (allStaffIds.length > 0) {
+      const placeholders = allStaffIds.map(() => '?').join(', ')
+      type BlockingConstraintRow = {
+        staff_member_id: string
+        start_datetime: string
+        end_datetime: string
+        days_of_week: string | null
+      }
+      const cResult = await env.DB.prepare(
+        `SELECT staff_member_id, start_datetime, end_datetime, days_of_week
+         FROM staff_constraint
+         WHERE org_id = ? AND staff_member_id IN (${placeholders})
+           AND type IN ('time_off', 'unavailable') AND status = 'approved'
+           AND start_datetime < ? AND end_datetime > ?`,
+      )
+        .bind(
+          membership.orgId,
+          ...allStaffIds,
+          schedule.end_date + 'T23:59:59',
+          schedule.start_date + 'T00:00:00',
+        )
+        .all<BlockingConstraintRow>()
+      for (const row of cResult.results ?? []) {
+        if (!constraintsByStaff.has(row.staff_member_id)) {
+          constraintsByStaff.set(row.staff_member_id, [])
+        }
+        constraintsByStaff.get(row.staff_member_id)!.push({
+          startDatetime: row.start_datetime,
+          endDatetime: row.end_datetime,
+          daysOfWeek: row.days_of_week ? (JSON.parse(row.days_of_week) as number[]) : null,
+        })
+      }
+    }
+
     for (const platoon of platoonMap.values()) {
       const crossesMidnight = platoon.shift_end_time <= platoon.shift_start_time
 
@@ -827,12 +953,17 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
         }
 
         for (const staffMemberId of platoon.staffMemberIds) {
-          stmts.push(
-            env.DB.prepare(
-              `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
-            ).bind(crypto.randomUUID(), data.scheduleId, staffMemberId, startDatetime, endDatetime, now, now),
-          )
+          const constraints = constraintsByStaff.get(staffMemberId) ?? []
+          const freeIntervals = subtractConstraints(startDatetime, endDatetime, constraints)
+
+          for (const iv of freeIntervals) {
+            stmts.push(
+              env.DB.prepare(
+                `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
+              ).bind(crypto.randomUUID(), data.scheduleId, staffMemberId, iv.start, iv.end, now, now),
+            )
+          }
         }
       }
     }
@@ -842,4 +973,153 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
     await env.DB.batch(stmts)
 
     return { success: true, count: stmts.length }
+  })
+
+// ---------------------------------------------------------------------------
+// applyConstraintsToScheduleServerFn
+// Re-processes all existing assignments against current approved constraints.
+// Unchanged assignments are left alone; conflicting ones are deleted and
+// replaced with their trimmed/split free intervals.
+// ---------------------------------------------------------------------------
+
+type ApplyConstraintsOutput =
+  | { success: true; assignments: ShiftAssignmentView[]; changed: number }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' }
+
+export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { orgSlug: string; scheduleId: string }) => d)
+  .handler(async (ctx): Promise<ApplyConstraintsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'create-edit-schedules')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    type ScheduleRow = { id: string; start_date: string; end_date: string }
+    const schedule = await env.DB.prepare(
+      `SELECT id, start_date, end_date FROM schedule WHERE id = ? AND org_id = ?`,
+    )
+      .bind(data.scheduleId, membership.orgId)
+      .first<ScheduleRow>()
+    if (!schedule) return { success: false, error: 'NOT_FOUND' }
+
+    type AssignmentRow = {
+      id: string
+      staff_member_id: string
+      staff_member_name: string
+      start_datetime: string
+      end_datetime: string
+      position: string | null
+      notes: string | null
+    }
+    const assignmentRows = await env.DB.prepare(
+      `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
+              sa.start_datetime, sa.end_datetime, sa.position, sa.notes
+       FROM shift_assignment sa
+       JOIN staff_member sm ON sm.id = sa.staff_member_id
+       WHERE sa.schedule_id = ?`,
+    )
+      .bind(data.scheduleId)
+      .all<AssignmentRow>()
+
+    const current = assignmentRows.results ?? []
+    if (current.length === 0) {
+      return { success: true, assignments: [], changed: 0 }
+    }
+
+    const allStaffIds = Array.from(new Set(current.map((a) => a.staff_member_id)))
+    const placeholders = allStaffIds.map(() => '?').join(', ')
+
+    type BlockingConstraintRow = {
+      staff_member_id: string
+      start_datetime: string
+      end_datetime: string
+      days_of_week: string | null
+    }
+    const cResult = await env.DB.prepare(
+      `SELECT staff_member_id, start_datetime, end_datetime, days_of_week
+       FROM staff_constraint
+       WHERE org_id = ? AND staff_member_id IN (${placeholders})
+         AND type IN ('time_off', 'unavailable') AND status = 'approved'
+         AND start_datetime < ? AND end_datetime > ?`,
+    )
+      .bind(
+        membership.orgId,
+        ...allStaffIds,
+        schedule.end_date + 'T23:59:59',
+        schedule.start_date + 'T00:00:00',
+      )
+      .all<BlockingConstraintRow>()
+
+    const constraintsByStaff = new Map<string, ConstraintInfo[]>()
+    for (const row of cResult.results ?? []) {
+      if (!constraintsByStaff.has(row.staff_member_id)) {
+        constraintsByStaff.set(row.staff_member_id, [])
+      }
+      constraintsByStaff.get(row.staff_member_id)!.push({
+        startDatetime: row.start_datetime,
+        endDatetime: row.end_datetime,
+        daysOfWeek: row.days_of_week ? (JSON.parse(row.days_of_week) as number[]) : null,
+      })
+    }
+
+    const now = new Date().toISOString()
+    const stmts: D1PreparedStatement[] = []
+    let changed = 0
+    const newAssignments: ShiftAssignmentView[] = []
+
+    for (const a of current) {
+      const constraints = constraintsByStaff.get(a.staff_member_id) ?? []
+      const freeIntervals = subtractConstraints(a.start_datetime, a.end_datetime, constraints)
+
+      const unchanged =
+        freeIntervals.length === 1 &&
+        freeIntervals[0].start === a.start_datetime &&
+        freeIntervals[0].end === a.end_datetime
+
+      if (unchanged) {
+        newAssignments.push({
+          id: a.id,
+          staffMemberId: a.staff_member_id,
+          staffMemberName: a.staff_member_name,
+          startDatetime: a.start_datetime,
+          endDatetime: a.end_datetime,
+          position: a.position,
+          notes: a.notes,
+        })
+        continue
+      }
+
+      changed++
+      stmts.push(env.DB.prepare(`DELETE FROM shift_assignment WHERE id = ?`).bind(a.id))
+
+      for (const iv of freeIntervals) {
+        const newId = crypto.randomUUID()
+        stmts.push(
+          env.DB.prepare(
+            `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(newId, data.scheduleId, a.staff_member_id, iv.start, iv.end, a.position, a.notes, now, now),
+        )
+        newAssignments.push({
+          id: newId,
+          staffMemberId: a.staff_member_id,
+          staffMemberName: a.staff_member_name,
+          startDatetime: iv.start,
+          endDatetime: iv.end,
+          position: a.position,
+          notes: a.notes,
+        })
+      }
+    }
+
+    if (stmts.length > 0) {
+      await env.DB.batch(stmts)
+    }
+
+    newAssignments.sort((a, b) => a.startDatetime.localeCompare(b.startDatetime))
+    return { success: true, assignments: newAssignments, changed }
   })

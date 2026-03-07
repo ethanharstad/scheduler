@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment } from 'react'
-import { Building2, Calendar, Home, LogOut, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
+import { Building2, Calendar, CalendarCheck, Home, LogOut, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -62,6 +62,7 @@ function useBreadcrumbs(): Crumb[] {
     if (pathname.startsWith(`${base}/platoons/`)) {
       return [orgCrumb, orgNameCrumb, { label: 'Platoons', to: '/orgs/$orgSlug/platoons', params: { orgSlug: slug } }, { label: 'Platoon' }]
     }
+    if (pathname === `${base}/availability`) return [orgCrumb, orgNameCrumb, { label: 'Availability' }]
     if (pathname === `${base}/schedules`) return [orgCrumb, orgNameCrumb, { label: 'Schedules' }]
     if (pathname.startsWith(`${base}/schedules/`)) {
       const scheduleMatch = matches.find((m) => (m.pathname as string | undefined)?.startsWith(`${base}/schedules/`))
@@ -195,6 +196,12 @@ function ProtectedLayout() {
                 params={{ orgSlug: orgCtx.org.slug }}
                 icon={<Calendar className="w-5 h-5" />}
                 label="Schedules"
+              />
+              <NavItem
+                to="/orgs/$orgSlug/availability"
+                params={{ orgSlug: orgCtx.org.slug }}
+                icon={<CalendarCheck className="w-5 h-5" />}
+                label="Availability"
               />
               <NavItem
                 to="/orgs/$orgSlug/staff"
