@@ -9,9 +9,11 @@ import type {
   CreateRecurringAssignmentsInput,
   UpdateAssignmentInput,
   DeleteAssignmentInput,
+  PopulateFromPlatoonsInput,
   ScheduleView,
   ShiftAssignmentView,
 } from '@/lib/schedule.types'
+import type { RRuleEntry } from '@/lib/platoon.types'
 
 // ---------------------------------------------------------------------------
 // listSchedulesServerFn
@@ -619,4 +621,170 @@ export const createRecurringAssignmentsServerFn = createServerFn({ method: 'POST
     await env.DB.batch(stmts)
 
     return { success: true, assignments }
+  })
+
+// ---------------------------------------------------------------------------
+// populateFromPlatoonsServerFn
+// ---------------------------------------------------------------------------
+
+type PopulateFromPlatoonsOutput =
+  | { success: true; count: number }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'NO_ASSIGNMENTS' }
+
+function expandRRuleEntry(
+  entry: RRuleEntry,
+  platoonStartDate: string,
+  scheduleStartDate: string,
+  scheduleEndDate: string,
+): string[] {
+  // Parse INTERVAL from "FREQ=DAILY;INTERVAL=N" or similar
+  const intervalMatch = entry.rrule.match(/INTERVAL=(\d+)/i)
+  const interval = intervalMatch ? parseInt(intervalMatch[1], 10) : 1
+
+  // dtstart = platoon start_date + startOffset days
+  const dtstart = new Date(platoonStartDate + 'T00:00:00')
+  dtstart.setDate(dtstart.getDate() + entry.startOffset)
+
+  const schedStart = new Date(scheduleStartDate + 'T00:00:00')
+  const schedEnd = new Date(scheduleEndDate + 'T00:00:00')
+
+  // Advance dtstart forward by interval until >= schedule start
+  const current = new Date(dtstart)
+  if (current < schedStart) {
+    const diffDays = Math.ceil((schedStart.getTime() - current.getTime()) / 86400000)
+    const steps = Math.ceil(diffDays / interval)
+    current.setDate(current.getDate() + steps * interval)
+  }
+
+  const dates: string[] = []
+  while (current <= schedEnd) {
+    dates.push(current.toISOString().slice(0, 10))
+    current.setDate(current.getDate() + interval)
+  }
+  return dates
+}
+
+export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: PopulateFromPlatoonsInput) => d)
+  .handler(async (ctx): Promise<PopulateFromPlatoonsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'create-edit-schedules')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    // Fetch schedule (verify it belongs to this org)
+    type ScheduleRow = { id: string; start_date: string; end_date: string }
+    const schedule = await env.DB.prepare(
+      `SELECT id, start_date, end_date FROM schedule WHERE id = ? AND org_id = ?`,
+    )
+      .bind(data.scheduleId, membership.orgId)
+      .first<ScheduleRow>()
+    if (!schedule) return { success: false, error: 'NOT_FOUND' }
+
+    // Fetch platoons with members
+    type PlatoonMemberRow = {
+      platoon_id: string
+      rrules: string
+      start_date: string
+      shift_start_time: string
+      shift_end_time: string
+      staff_member_id: string
+    }
+
+    let platoonRows: PlatoonMemberRow[]
+
+    if (data.platoonIds.length > 0) {
+      // Filter to specific platoons. D1 doesn't support array binding, so build placeholders.
+      const placeholders = data.platoonIds.map(() => '?').join(', ')
+      const result = await env.DB.prepare(
+        `SELECT p.id AS platoon_id, p.rrules, p.start_date, p.shift_start_time, p.shift_end_time,
+                pm.staff_member_id
+         FROM platoon p
+         JOIN platoon_membership pm ON pm.platoon_id = p.id
+         WHERE p.org_id = ? AND p.id IN (${placeholders})`,
+      )
+        .bind(membership.orgId, ...data.platoonIds)
+        .all<PlatoonMemberRow>()
+      platoonRows = result.results ?? []
+    } else {
+      const result = await env.DB.prepare(
+        `SELECT p.id AS platoon_id, p.rrules, p.start_date, p.shift_start_time, p.shift_end_time,
+                pm.staff_member_id
+         FROM platoon p
+         JOIN platoon_membership pm ON pm.platoon_id = p.id
+         WHERE p.org_id = ?`,
+      )
+        .bind(membership.orgId)
+        .all<PlatoonMemberRow>()
+      platoonRows = result.results ?? []
+    }
+
+    // Group rows by platoon
+    type PlatoonData = {
+      rrules: RRuleEntry[]
+      start_date: string
+      shift_start_time: string
+      shift_end_time: string
+      staffMemberIds: string[]
+    }
+    const platoonMap = new Map<string, PlatoonData>()
+    for (const row of platoonRows) {
+      if (!platoonMap.has(row.platoon_id)) {
+        platoonMap.set(row.platoon_id, {
+          rrules: JSON.parse(row.rrules) as RRuleEntry[],
+          start_date: row.start_date,
+          shift_start_time: row.shift_start_time,
+          shift_end_time: row.shift_end_time,
+          staffMemberIds: [],
+        })
+      }
+      platoonMap.get(row.platoon_id)!.staffMemberIds.push(row.staff_member_id)
+    }
+
+    const now = new Date().toISOString()
+    const stmts: D1PreparedStatement[] = []
+
+    for (const platoon of platoonMap.values()) {
+      const crossesMidnight = platoon.shift_end_time <= platoon.shift_start_time
+
+      // Expand all RRuleEntries and deduplicate
+      const dateSet = new Set<string>()
+      for (const entry of platoon.rrules) {
+        for (const d of expandRRuleEntry(entry, platoon.start_date, schedule.start_date, schedule.end_date)) {
+          dateSet.add(d)
+        }
+      }
+
+      for (const dateStr of dateSet) {
+        const startDatetime = `${dateStr}T${platoon.shift_start_time}`
+
+        let endDatetime: string
+        if (crossesMidnight) {
+          const date = new Date(dateStr + 'T00:00:00')
+          date.setDate(date.getDate() + 1)
+          endDatetime = `${date.toISOString().slice(0, 10)}T${platoon.shift_end_time}`
+        } else {
+          endDatetime = `${dateStr}T${platoon.shift_end_time}`
+        }
+
+        for (const staffMemberId of platoon.staffMemberIds) {
+          stmts.push(
+            env.DB.prepare(
+              `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
+            ).bind(crypto.randomUUID(), data.scheduleId, staffMemberId, startDatetime, endDatetime, now, now),
+          )
+        }
+      }
+    }
+
+    if (stmts.length === 0) return { success: false, error: 'NO_ASSIGNMENTS' }
+
+    await env.DB.batch(stmts)
+
+    return { success: true, count: stmts.length }
   })

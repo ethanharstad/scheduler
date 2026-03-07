@@ -69,6 +69,12 @@ export interface DeleteAssignmentInput {
 
 export type RecurrenceMode = 'days-of-week' | 'every-n-days'
 
+export interface PopulateFromPlatoonsInput {
+  orgSlug: string
+  scheduleId: string
+  platoonIds: string[]   // empty = all platoons in org
+}
+
 export interface CreateRecurringAssignmentsInput {
   orgSlug: string
   scheduleId: string

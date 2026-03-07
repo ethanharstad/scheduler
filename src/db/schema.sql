@@ -169,3 +169,35 @@ CREATE TABLE IF NOT EXISTS shift_assignment (
 
 CREATE INDEX IF NOT EXISTS idx_shift_assignment_schedule ON shift_assignment(schedule_id);
 CREATE INDEX IF NOT EXISTS idx_shift_assignment_staff    ON shift_assignment(staff_member_id);
+
+-- Platoon Management (006-platoon-management)
+
+CREATE TABLE IF NOT EXISTS platoon (
+  id          TEXT NOT NULL PRIMARY KEY,            -- crypto.randomUUID()
+  org_id      TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,                        -- 2-100 chars; unique within org (case-insensitive)
+  shift_label TEXT NOT NULL,                        -- e.g. "A Shift", "B Shift"; user-editable; independent of rrules
+  rrules      TEXT NOT NULL,                        -- JSON: RRuleEntry[] = [{rrule, startOffset}]; each rrule anchors to start_date + startOffset days
+  start_date       TEXT NOT NULL,                   -- YYYY-MM-DD; anchors RRULE to calendar (acts as DTSTART)
+  shift_start_time TEXT NOT NULL DEFAULT '08:00',   -- HH:MM; start time of shift
+  shift_end_time   TEXT NOT NULL DEFAULT '08:00',   -- HH:MM; end time of shift (≤ start = crosses midnight)
+  description TEXT,                                 -- optional; free text
+  color       TEXT,                                 -- optional; e.g. "#e63946" or "red"
+  created_at  TEXT NOT NULL,                        -- ISO 8601
+  updated_at  TEXT NOT NULL                         -- ISO 8601
+);
+
+-- Case-insensitive unique name per org
+CREATE UNIQUE INDEX IF NOT EXISTS idx_platoon_org_name ON platoon(org_id, LOWER(name));
+CREATE        INDEX IF NOT EXISTS idx_platoon_org      ON platoon(org_id);
+
+CREATE TABLE IF NOT EXISTS platoon_membership (
+  id              TEXT NOT NULL PRIMARY KEY,         -- crypto.randomUUID()
+  platoon_id      TEXT NOT NULL REFERENCES platoon(id) ON DELETE CASCADE,
+  staff_member_id TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  assigned_at     TEXT NOT NULL                      -- ISO 8601; date of current assignment
+);
+
+-- Enforces one-platoon-per-member at the DB level (last-write-wins via INSERT OR REPLACE)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_platoon_membership_staff   ON platoon_membership(staff_member_id);
+CREATE        INDEX IF NOT EXISTS idx_platoon_membership_platoon ON platoon_membership(platoon_id);

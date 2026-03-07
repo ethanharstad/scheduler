@@ -1,22 +1,30 @@
 import { useState } from 'react'
-import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
 import { Plus, Trash2, Calendar } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { ScheduleView } from '@/lib/schedule.types'
+import type { PlatoonView } from '@/lib/platoon.types'
 import {
   listSchedulesServerFn,
   createScheduleServerFn,
   deleteScheduleServerFn,
+  populateFromPlatoonsServerFn,
 } from '@/server/schedule'
+import { listPlatoonsServerFn } from '@/server/platoons'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/schedules/')({
   head: () => ({
     meta: [{ title: 'Schedules | Scene Ready' }],
   }),
   loader: async ({ params }) => {
-    const result = await listSchedulesServerFn({ data: { orgSlug: params.orgSlug } })
-    if (!result.success) return { schedules: [] }
-    return { schedules: result.schedules }
+    const [schedulesResult, platoonsResult] = await Promise.all([
+      listSchedulesServerFn({ data: { orgSlug: params.orgSlug } }),
+      listPlatoonsServerFn({ data: { orgSlug: params.orgSlug } }),
+    ])
+    return {
+      schedules: schedulesResult.success ? schedulesResult.schedules : [],
+      platoons: platoonsResult.success ? platoonsResult.platoons : [],
+    }
   },
   component: SchedulesPage,
 })
@@ -45,7 +53,8 @@ function formatDateRange(start: string, end: string) {
 
 function SchedulesPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { schedules: initialSchedules } = Route.useLoaderData()
+  const { schedules: initialSchedules, platoons } = Route.useLoaderData()
+  const navigate = useNavigate()
 
   const [schedules, setSchedules] = useState<ScheduleView[]>(initialSchedules)
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -55,6 +64,9 @@ function SchedulesPage() {
   const [endDate, setEndDate] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
   const [createBusy, setCreateBusy] = useState(false)
+
+  const [populateEnabled, setPopulateEnabled] = useState(platoons.length > 0)
+  const [selectedPlatoonIds, setSelectedPlatoonIds] = useState<string[]>([])
 
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleteBusy, setDeleteBusy] = useState<string | null>(null)
@@ -74,9 +86,19 @@ function SchedulesPage() {
         data: { orgSlug: org.slug, name: name.trim(), startDate, endDate },
       })
       if (result.success) {
-        setSchedules((prev) => [result.schedule, ...prev])
-        setName(''); setStartDate(''); setEndDate('')
-        setShowCreateForm(false)
+        if (populateEnabled) {
+          await populateFromPlatoonsServerFn({
+            data: { orgSlug: org.slug, scheduleId: result.schedule.id, platoonIds: selectedPlatoonIds },
+          })
+          await navigate({
+            to: '/orgs/$orgSlug/schedules/$scheduleId',
+            params: { orgSlug: org.slug, scheduleId: result.schedule.id },
+          })
+        } else {
+          setSchedules((prev) => [result.schedule, ...prev])
+          setName(''); setStartDate(''); setEndDate('')
+          setShowCreateForm(false)
+        }
       } else {
         const msgs: Record<string, string> = {
           FORBIDDEN: 'You do not have permission to create schedules.',
@@ -162,6 +184,49 @@ function SchedulesPage() {
               />
             </div>
           </div>
+          {platoons.length > 0 && (
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={populateEnabled}
+                  onChange={(e) => setPopulateEnabled(e.target.checked)}
+                  className="rounded border-gray-300 text-navy-700 focus:ring-navy-700"
+                />
+                <span className="text-sm font-medium text-gray-700">Auto-populate from platoons</span>
+              </label>
+              {populateEnabled && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-gray-500">Leave all unchecked to include every platoon.</p>
+                  {platoons.map((p: PlatoonView) => (
+                    <label key={p.id} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedPlatoonIds.includes(p.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPlatoonIds((prev) => [...prev, p.id])
+                          } else {
+                            setSelectedPlatoonIds((prev) => prev.filter((id) => id !== p.id))
+                          }
+                        }}
+                        className="rounded border-gray-300 text-navy-700 focus:ring-navy-700"
+                      />
+                      <span className="text-sm text-gray-700">
+                        <span className="font-medium">{p.name}</span>
+                        <span className="text-gray-400 mx-1">·</span>
+                        <span className="text-gray-500">{p.shiftLabel}</span>
+                        <span className="text-gray-400 mx-1">·</span>
+                        <span className="text-gray-500">{p.shiftStartTime} → {p.shiftEndTime}</span>
+                        <span className="text-gray-400 mx-1">·</span>
+                        <span className="text-gray-500">{p.memberCount} member{p.memberCount !== 1 ? 's' : ''}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {createError && <p className="mt-3 text-sm text-danger">{createError}</p>}
           <div className="flex items-center gap-3 mt-4">
             <button
@@ -169,7 +234,7 @@ function SchedulesPage() {
               disabled={createBusy}
               className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors"
             >
-              {createBusy ? 'Creating…' : 'Create schedule'}
+              {createBusy ? (populateEnabled ? 'Creating & populating…' : 'Creating…') : 'Create schedule'}
             </button>
             <button
               type="button"
