@@ -1,4 +1,5 @@
-import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
+import { Fragment } from 'react'
 import { Building2, Calendar, Home, LogOut, Shield, UserCircle, UserCog, Users } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
@@ -26,6 +27,82 @@ export const Route = createFileRoute('/_protected')({
   },
   component: ProtectedLayout,
 })
+
+type Crumb = { label: string; to?: string; params?: Record<string, string> }
+
+function useBreadcrumbs(): Crumb[] {
+  const { pathname } = useLocation()
+  const matches = useMatches()
+  const { orgs } = Route.useLoaderData()
+
+  // Simple routes
+  if (pathname === '/home') return [{ label: 'Home' }]
+  if (pathname === '/profile') return [{ label: 'Profile' }]
+  if (pathname === '/create-org') return [{ label: 'Create Organization' }]
+  if (pathname === '/orgs') return [{ label: 'Organizations' }]
+  if (pathname === '/admin') return [{ label: 'Admin Dashboard' }]
+  if (pathname === '/admin/users') return [{ label: 'Admin Dashboard', to: '/admin' }, { label: 'Users' }]
+  if (pathname === '/admin/orgs') return [{ label: 'Admin Dashboard', to: '/admin' }, { label: 'Organizations' }]
+
+  // Org routes — extract slug from pathname, look up name from loader data
+  const orgMatch = pathname.match(/^\/orgs\/([^/]+)/)
+  if (orgMatch) {
+    const slug = orgMatch[1]
+    const org = orgs.find((o) => o.orgSlug === slug)
+    const orgName = org?.orgName ?? slug
+    const orgCrumb: Crumb = { label: 'Organizations', to: '/orgs' }
+    const orgNameCrumb: Crumb = { label: orgName, to: '/orgs/$orgSlug', params: { orgSlug: slug } }
+    const base = `/orgs/${slug}`
+
+    if (pathname === base) return [orgCrumb, orgNameCrumb]
+    if (pathname === `${base}/staff`) return [orgCrumb, orgNameCrumb, { label: 'Staff' }]
+    if (pathname === `${base}/staff/audit`) return [orgCrumb, orgNameCrumb, { label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: 'Audit Log' }]
+    if (pathname === `${base}/members`) return [orgCrumb, orgNameCrumb, { label: 'Members' }]
+    if (pathname === `${base}/schedules`) return [orgCrumb, orgNameCrumb, { label: 'Schedules' }]
+    if (pathname.startsWith(`${base}/schedules/`)) {
+      const scheduleMatch = matches.find((m) => (m.pathname as string | undefined)?.startsWith(`${base}/schedules/`))
+      const loaderData = scheduleMatch?.loaderData as { schedule: { name: string } | null } | undefined
+      const scheduleName = loaderData?.schedule?.name ?? 'Schedule'
+      return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: scheduleName }]
+    }
+  }
+
+  return []
+}
+
+function Breadcrumbs() {
+  const crumbs = useBreadcrumbs()
+
+  if (crumbs.length === 0) {
+    return <span className="text-sm font-medium text-navy-700">Scene Ready</span>
+  }
+
+  return (
+    <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm">
+      {crumbs.map((crumb, i) => {
+        const isLast = i === crumbs.length - 1
+        return (
+          <Fragment key={i}>
+            {i > 0 && <span className="text-gray-300 select-none">/</span>}
+            {!isLast && crumb.to ? (
+              <Link
+                to={crumb.to as never}
+                params={crumb.params}
+                className="text-gray-500 hover:text-navy-700 transition-colors"
+              >
+                {crumb.label}
+              </Link>
+            ) : (
+              <span className={isLast ? 'font-medium text-navy-700' : 'text-gray-500'}>
+                {crumb.label}
+              </span>
+            )}
+          </Fragment>
+        )
+      })}
+    </nav>
+  )
+}
 
 function NavItem({
   to,
@@ -152,23 +229,7 @@ function ProtectedLayout() {
       <div className="ml-64 flex-1 flex flex-col min-h-screen">
         {/* Top bar */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center px-6 shrink-0">
-          {orgCtx ? (
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Link to="/home" className="hover:text-navy-700 transition-colors">Home</Link>
-              <span className="text-gray-300">/</span>
-              <Link to="/orgs" className="hover:text-navy-700 transition-colors">Organizations</Link>
-              <span className="text-gray-300">/</span>
-              <Link
-                to="/orgs/$orgSlug"
-                params={{ orgSlug: orgCtx.org.slug }}
-                className="hover:text-navy-700 transition-colors font-medium text-navy-700"
-              >
-                {orgCtx.org.name}
-              </Link>
-            </div>
-          ) : (
-            <span className="text-sm font-medium text-navy-700">Scene Ready</span>
-          )}
+          <Breadcrumbs />
         </header>
 
         {/* Content */}
