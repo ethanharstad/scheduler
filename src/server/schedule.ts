@@ -162,6 +162,61 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
   })
 
 // ---------------------------------------------------------------------------
+// getTodayAssignmentsServerFn
+// ---------------------------------------------------------------------------
+
+export type TodayAssignment = {
+  staffMemberName: string
+  startDatetime: string
+  endDatetime: string
+  position: string | null
+}
+
+type GetTodayAssignmentsOutput =
+  | { success: true; assignments: TodayAssignment[] }
+  | { success: false; error: 'UNAUTHORIZED' }
+
+export const getTodayAssignmentsServerFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { orgSlug: string; date: string }) => d)
+  .handler(async (ctx): Promise<GetTodayAssignmentsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership || !canDo(membership.role, 'view-schedules')) {
+      return { success: false, error: 'UNAUTHORIZED' }
+    }
+
+    type Row = {
+      staff_member_name: string
+      start_datetime: string
+      end_datetime: string
+      position: string | null
+    }
+
+    const rows = await env.DB.prepare(
+      `SELECT sm.name AS staff_member_name, sa.start_datetime, sa.end_datetime, sa.position
+       FROM shift_assignment sa
+       JOIN schedule s ON s.id = sa.schedule_id
+       JOIN staff_member sm ON sm.id = sa.staff_member_id
+       WHERE s.org_id = ? AND s.status = 'published'
+         AND date(sa.start_datetime) = ?
+       ORDER BY sa.start_datetime ASC, sm.name ASC`,
+    )
+      .bind(membership.orgId, data.date)
+      .all<Row>()
+
+    const assignments: TodayAssignment[] = (rows.results ?? []).map((r) => ({
+      staffMemberName: r.staff_member_name,
+      startDatetime: r.start_datetime,
+      endDatetime: r.end_datetime,
+      position: r.position,
+    }))
+
+    return { success: true, assignments }
+  })
+
+// ---------------------------------------------------------------------------
 // createScheduleServerFn
 // ---------------------------------------------------------------------------
 
