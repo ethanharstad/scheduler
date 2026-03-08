@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { canDo } from '@/lib/rbac'
 import { requireOrgMembership } from '@/server/_helpers'
+import { checkSingleStaffEligibility } from '@/server/qualifications'
 import type {
   CreateScheduleInput,
   UpdateScheduleInput,
@@ -13,6 +14,7 @@ import type {
   ScheduleView,
   ShiftAssignmentView,
 } from '@/lib/schedule.types'
+import type { EligibilityWarning } from '@/lib/qualifications.types'
 import type { RRuleEntry } from '@/lib/platoon.types'
 
 // ---------------------------------------------------------------------------
@@ -179,12 +181,13 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
       start_datetime: string
       end_datetime: string
       position: string | null
+      position_id: string | null
       notes: string | null
     }
 
     const assignmentRows = await env.DB.prepare(
       `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
-              sa.start_datetime, sa.end_datetime, sa.position, sa.notes
+              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id, sa.notes
        FROM shift_assignment sa
        JOIN staff_member sm ON sm.id = sa.staff_member_id
        WHERE sa.schedule_id = ?
@@ -214,6 +217,7 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
       startDatetime: r.start_datetime,
       endDatetime: r.end_datetime,
       position: r.position,
+      positionId: r.position_id,
       notes: r.notes,
     }))
 
@@ -426,7 +430,7 @@ export const deleteScheduleServerFn = createServerFn({ method: 'POST' })
 // ---------------------------------------------------------------------------
 
 type CreateAssignmentOutput =
-  | { success: true; assignment: ShiftAssignmentView }
+  | { success: true; assignment: ShiftAssignmentView; warnings: EligibilityWarning[] }
   | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION_ERROR' }
 
 export const createAssignmentServerFn = createServerFn({ method: 'POST' })
@@ -465,10 +469,11 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
 
     const now = new Date().toISOString()
     const id = crypto.randomUUID()
+    const positionId = data.positionId ?? null
 
     await env.DB.prepare(
-      `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, position_id, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
@@ -477,11 +482,25 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
         data.startDatetime,
         data.endDatetime,
         data.position?.trim() || null,
+        positionId,
         data.notes?.trim() || null,
         now,
         now,
       )
       .run()
+
+    // Advisory eligibility check
+    let warnings: EligibilityWarning[] = []
+    if (positionId) {
+      const asOfDate = data.startDatetime.slice(0, 10)
+      warnings = await checkSingleStaffEligibility(
+        env,
+        membership.orgId,
+        data.staffMemberId,
+        positionId,
+        asOfDate,
+      )
+    }
 
     const assignment: ShiftAssignmentView = {
       id,
@@ -490,10 +509,11 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
       startDatetime: data.startDatetime,
       endDatetime: data.endDatetime,
       position: data.position?.trim() || null,
+      positionId,
       notes: data.notes?.trim() || null,
     }
 
-    return { success: true, assignment }
+    return { success: true, assignment, warnings }
   })
 
 // ---------------------------------------------------------------------------
@@ -501,7 +521,7 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
 // ---------------------------------------------------------------------------
 
 type UpdateAssignmentOutput =
-  | { success: true }
+  | { success: true; warnings: EligibilityWarning[] }
   | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION_ERROR' }
 
 export const updateAssignmentServerFn = createServerFn({ method: 'POST' })
@@ -523,10 +543,11 @@ export const updateAssignmentServerFn = createServerFn({ method: 'POST' })
       start_datetime: string
       end_datetime: string
       position: string | null
+      position_id: string | null
       notes: string | null
     }
     const existing = await env.DB.prepare(
-      `SELECT sa.id, sa.staff_member_id, sa.start_datetime, sa.end_datetime, sa.position, sa.notes
+      `SELECT sa.id, sa.staff_member_id, sa.start_datetime, sa.end_datetime, sa.position, sa.position_id, sa.notes
        FROM shift_assignment sa
        JOIN schedule s ON s.id = sa.schedule_id
        WHERE sa.id = ? AND s.org_id = ?`,
@@ -540,6 +561,7 @@ export const updateAssignmentServerFn = createServerFn({ method: 'POST' })
     const startDatetime = data.startDatetime ?? existing.start_datetime
     const endDatetime = data.endDatetime ?? existing.end_datetime
     const position = data.position !== undefined ? (data.position?.trim() || null) : existing.position
+    const positionId = data.positionId !== undefined ? (data.positionId ?? null) : existing.position_id
     const notes = data.notes !== undefined ? (data.notes?.trim() || null) : existing.notes
 
     if (endDatetime <= startDatetime) {
@@ -560,12 +582,25 @@ export const updateAssignmentServerFn = createServerFn({ method: 'POST' })
     const now = new Date().toISOString()
 
     await env.DB.prepare(
-      `UPDATE shift_assignment SET staff_member_id = ?, start_datetime = ?, end_datetime = ?, position = ?, notes = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE shift_assignment SET staff_member_id = ?, start_datetime = ?, end_datetime = ?, position = ?, position_id = ?, notes = ?, updated_at = ? WHERE id = ?`,
     )
-      .bind(staffMemberId, startDatetime, endDatetime, position, notes, now, data.assignmentId)
+      .bind(staffMemberId, startDatetime, endDatetime, position, positionId, notes, now, data.assignmentId)
       .run()
 
-    return { success: true }
+    // Advisory eligibility check
+    let warnings: EligibilityWarning[] = []
+    if (positionId) {
+      const asOfDate = startDatetime.slice(0, 10)
+      warnings = await checkSingleStaffEligibility(
+        env,
+        membership.orgId,
+        staffMemberId,
+        positionId,
+        asOfDate,
+      )
+    }
+
+    return { success: true, warnings }
   })
 
 // ---------------------------------------------------------------------------
@@ -1013,11 +1048,12 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
       start_datetime: string
       end_datetime: string
       position: string | null
+      position_id: string | null
       notes: string | null
     }
     const assignmentRows = await env.DB.prepare(
       `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
-              sa.start_datetime, sa.end_datetime, sa.position, sa.notes
+              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id, sa.notes
        FROM shift_assignment sa
        JOIN staff_member sm ON sm.id = sa.staff_member_id
        WHERE sa.schedule_id = ?`,
@@ -1088,6 +1124,7 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
           startDatetime: a.start_datetime,
           endDatetime: a.end_datetime,
           position: a.position,
+          positionId: a.position_id,
           notes: a.notes,
         })
         continue
@@ -1100,9 +1137,9 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
         const newId = crypto.randomUUID()
         stmts.push(
           env.DB.prepare(
-            `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).bind(newId, data.scheduleId, a.staff_member_id, iv.start, iv.end, a.position, a.notes, now, now),
+            `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, position_id, notes, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(newId, data.scheduleId, a.staff_member_id, iv.start, iv.end, a.position, a.position_id, a.notes, now, now),
         )
         newAssignments.push({
           id: newId,
@@ -1111,6 +1148,7 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
           startDatetime: iv.start,
           endDatetime: iv.end,
           position: a.position,
+          positionId: a.position_id,
           notes: a.notes,
         })
       }

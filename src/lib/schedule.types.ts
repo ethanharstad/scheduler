@@ -18,6 +18,7 @@ export interface ShiftAssignmentView {
   startDatetime: string
   endDatetime: string
   position: string | null
+  positionId: string | null
   notes: string | null
 }
 
@@ -49,6 +50,7 @@ export interface CreateAssignmentInput {
   startDatetime: string
   endDatetime: string
   position?: string
+  positionId?: string | null
   notes?: string
 }
 
@@ -59,6 +61,7 @@ export interface UpdateAssignmentInput {
   startDatetime?: string
   endDatetime?: string
   position?: string | null
+  positionId?: string | null
   notes?: string | null
 }
 

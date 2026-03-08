@@ -11,6 +11,7 @@ export type StaffAuditAction =
   | 'invitation_cancelled'
   | 'invitation_resent'
   | 'invitation_accepted'
+  | 'rank_changed'
 
 /** Returned by listStaffServerFn */
 export interface StaffMemberView {

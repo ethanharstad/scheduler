@@ -228,3 +228,94 @@ CREATE INDEX IF NOT EXISTS idx_staff_constraint_org     ON staff_constraint(org_
 CREATE INDEX IF NOT EXISTS idx_staff_constraint_member  ON staff_constraint(staff_member_id);
 CREATE INDEX IF NOT EXISTS idx_staff_constraint_pending ON staff_constraint(org_id, status) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_staff_constraint_dates   ON staff_constraint(staff_member_id, start_datetime, end_datetime);
+
+-- Qualifications (008-qualifications)
+
+CREATE TABLE IF NOT EXISTS rank (
+  id         TEXT NOT NULL PRIMARY KEY,
+  org_id     TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,           -- org-defined, e.g. "Captain"
+  sort_order INTEGER NOT NULL,        -- 1=lowest; higher=more senior
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (sort_order >= 1)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rank_org_name  ON rank(org_id, LOWER(name));
+CREATE        INDEX IF NOT EXISTS idx_rank_org_order ON rank(org_id, sort_order);
+
+-- Org-defined certification categories
+CREATE TABLE IF NOT EXISTS cert_type (
+  id          TEXT NOT NULL PRIMARY KEY,
+  org_id      TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,           -- org-defined; unique per org
+  description TEXT,
+  is_leveled  INTEGER NOT NULL DEFAULT 0,  -- 0=single credential, 1=has ordered levels
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cert_type_org_name ON cert_type(org_id, LOWER(name));
+CREATE        INDEX IF NOT EXISTS idx_cert_type_org      ON cert_type(org_id);
+
+-- Org-defined levels within a leveled cert_type
+CREATE TABLE IF NOT EXISTS cert_level (
+  id           TEXT NOT NULL PRIMARY KEY,
+  cert_type_id TEXT NOT NULL REFERENCES cert_type(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,         -- org-defined level name
+  level_order  INTEGER NOT NULL,      -- 1=lowest; higher=more advanced
+  created_at   TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cert_level_type_order ON cert_level(cert_type_id, level_order);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cert_level_type_name  ON cert_level(cert_type_id, LOWER(name));
+CREATE        INDEX IF NOT EXISTS idx_cert_level_type       ON cert_level(cert_type_id);
+
+-- Staff credential records (one active record per person per cert type)
+CREATE TABLE IF NOT EXISTS staff_certification (
+  id              TEXT NOT NULL PRIMARY KEY,
+  org_id          TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  staff_member_id TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  cert_type_id    TEXT NOT NULL REFERENCES cert_type(id) ON DELETE CASCADE,
+  cert_level_id   TEXT REFERENCES cert_level(id) ON DELETE SET NULL,
+  issued_at       TEXT,           -- ISO 8601 date or NULL
+  expires_at      TEXT,           -- ISO 8601 date or NULL (no expiry)
+  cert_number     TEXT,           -- license/cert number, optional
+  notes           TEXT,
+  status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','expired','revoked')),
+  added_by        TEXT REFERENCES user(id) ON DELETE SET NULL,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+-- One record per person per cert type; upgrading a level = UPDATE, not new row
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_cert_member_type ON staff_certification(staff_member_id, cert_type_id);
+CREATE        INDEX IF NOT EXISTS idx_staff_cert_org         ON staff_certification(org_id);
+CREATE        INDEX IF NOT EXISTS idx_staff_cert_member      ON staff_certification(staff_member_id);
+CREATE        INDEX IF NOT EXISTS idx_staff_cert_expiry
+  ON staff_certification(expires_at) WHERE expires_at IS NOT NULL AND status = 'active';
+
+-- Named shift positions with requirements
+CREATE TABLE IF NOT EXISTS position (
+  id          TEXT NOT NULL PRIMARY KEY,
+  org_id      TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  description TEXT,
+  min_rank_id TEXT REFERENCES rank(id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_position_org_name ON position(org_id, LOWER(name));
+CREATE        INDEX IF NOT EXISTS idx_position_org      ON position(org_id);
+
+-- Which cert types a position requires (AND logic: all must be met)
+CREATE TABLE IF NOT EXISTS position_cert_requirement (
+  id                TEXT NOT NULL PRIMARY KEY,
+  position_id       TEXT NOT NULL REFERENCES position(id) ON DELETE CASCADE,
+  cert_type_id      TEXT NOT NULL REFERENCES cert_type(id) ON DELETE CASCADE,
+  min_cert_level_id TEXT REFERENCES cert_level(id) ON DELETE SET NULL,
+  created_at        TEXT NOT NULL,
+  UNIQUE (position_id, cert_type_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pos_cert_req_position ON position_cert_requirement(position_id);
+
+ALTER TABLE staff_member     ADD COLUMN rank_id     TEXT REFERENCES rank(id)     ON DELETE SET NULL;
+ALTER TABLE shift_assignment ADD COLUMN position_id TEXT REFERENCES position(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_staff_member_rank      ON staff_member(rank_id)      WHERE rank_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_shift_assignment_posid ON shift_assignment(position_id) WHERE position_id IS NOT NULL;

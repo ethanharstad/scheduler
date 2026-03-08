@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment } from 'react'
-import { Building2, Calendar, CalendarCheck, Home, LogOut, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
+import { Building2, Calendar, CalendarCheck, GraduationCap, Home, LogOut, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -69,6 +69,16 @@ function useBreadcrumbs(): Crumb[] {
       const loaderData = scheduleMatch?.loaderData as { schedule: { name: string } | null } | undefined
       const scheduleName = loaderData?.schedule?.name ?? 'Schedule'
       return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: scheduleName }]
+    }
+    if (pathname === `${base}/qualifications`) return [orgCrumb, orgNameCrumb, { label: 'Qualifications' }]
+    if (pathname.startsWith(`${base}/qualifications/positions/`)) {
+      return [orgCrumb, orgNameCrumb, { label: 'Qualifications', to: '/orgs/$orgSlug/qualifications', params: { orgSlug: slug } }, { label: 'Eligibility' }]
+    }
+    if (pathname.startsWith(`${base}/staff/`)) {
+      const staffMatch = matches.find((m) => (m.pathname as string | undefined)?.startsWith(`${base}/staff/`))
+      const staffData = staffMatch?.loaderData as { staffMember: { name: string } | null } | undefined
+      const staffName = staffData?.staffMember?.name ?? 'Staff Member'
+      return [orgCrumb, orgNameCrumb, { label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: staffName }]
     }
   }
 
@@ -215,6 +225,14 @@ function ProtectedLayout() {
                 icon={<Layers className="w-5 h-5" />}
                 label="Platoons"
               />
+              {canDo(orgCtx.userRole, 'view-certifications') && (
+                <NavItem
+                  to="/orgs/$orgSlug/qualifications"
+                  params={{ orgSlug: orgCtx.org.slug }}
+                  icon={<GraduationCap className="w-5 h-5" />}
+                  label="Qualifications"
+                />
+              )}
               {canDo(orgCtx.userRole, 'assign-roles') && (
                 <NavItem
                   to="/orgs/$orgSlug/members"

@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { ScheduleView, ScheduleStatus, ShiftAssignmentView, RecurrenceMode } from '@/lib/schedule.types'
 import type { StaffMemberView } from '@/lib/staff.types'
+import type { PositionView, EligibilityWarning } from '@/lib/qualifications.types'
 import {
   getScheduleServerFn,
   updateScheduleServerFn,
@@ -15,6 +16,7 @@ import {
   applyConstraintsToScheduleServerFn,
 } from '@/server/schedule'
 import { listStaffServerFn } from '@/server/staff'
+import { listPositionsServerFn } from '@/server/qualifications'
 
 export const Route = createFileRoute(
   '/_protected/orgs/$orgSlug/schedules/$scheduleId',
@@ -23,19 +25,21 @@ export const Route = createFileRoute(
     meta: [{ title: 'Schedule Detail | Scene Ready' }],
   }),
   loader: async ({ params }) => {
-    const [scheduleResult, staffResult] = await Promise.all([
+    const [scheduleResult, staffResult, positionsResult] = await Promise.all([
       getScheduleServerFn({ data: { orgSlug: params.orgSlug, scheduleId: params.scheduleId } }),
       listStaffServerFn({ data: { orgSlug: params.orgSlug } }),
+      listPositionsServerFn({ data: { orgSlug: params.orgSlug } }),
     ])
 
     if (!scheduleResult.success) {
-      return { schedule: null, assignments: [], staffMembers: [] }
+      return { schedule: null, assignments: [], staffMembers: [], positions: [] }
     }
 
     return {
       schedule: scheduleResult.schedule,
       assignments: scheduleResult.assignments,
       staffMembers: staffResult.success ? staffResult.members.filter((m) => m.status !== 'removed') : [],
+      positions: positionsResult.success ? positionsResult.positions : [],
     }
   },
   component: ScheduleDetailPage,
@@ -120,6 +124,9 @@ function ScheduleDetailPage() {
   const [schedule, setSchedule] = useState<ScheduleView>(loaderData.schedule)
   const [assignments, setAssignments] = useState<ShiftAssignmentView[]>(loaderData.assignments)
   const staffMembers: StaffMemberView[] = loaderData.staffMembers
+  const positions: PositionView[] = loaderData.positions
+  // Map of assignmentId → eligibility warnings
+  const [assignmentWarnings, setAssignmentWarnings] = useState<Map<string, EligibilityWarning[]>>(new Map())
 
   // Edit schedule state
   const [editing, setEditing] = useState(false)
@@ -135,6 +142,7 @@ function ScheduleDetailPage() {
   const [addStartDatetime, setAddStartDatetime] = useState('')
   const [addEndDatetime, setAddEndDatetime] = useState('')
   const [addPosition, setAddPosition] = useState('')
+  const [addPositionId, setAddPositionId] = useState('')
   const [addNotes, setAddNotes] = useState('')
   const [addBusy, setAddBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
@@ -152,6 +160,7 @@ function ScheduleDetailPage() {
   const [editAssignStart, setEditAssignStart] = useState('')
   const [editAssignEnd, setEditAssignEnd] = useState('')
   const [editAssignPosition, setEditAssignPosition] = useState('')
+  const [editAssignPositionId, setEditAssignPositionId] = useState('')
   const [editAssignNotes, setEditAssignNotes] = useState('')
   const [editAssignBusy, setEditAssignBusy] = useState(false)
 
@@ -250,7 +259,7 @@ function ScheduleDetailPage() {
     setAddStartTime(''); setAddEndTime(''); setAddDaysOfWeek([])
     setAddEveryNDays(1); setAddStartingFrom(schedule.startDate)
     setAddRecurrenceMode('days-of-week')
-    setAddPosition(''); setAddNotes(''); setAddRecurring(false)
+    setAddPosition(''); setAddPositionId(''); setAddNotes(''); setAddRecurring(false)
     setShowAddForm(false)
   }
 
@@ -317,6 +326,7 @@ function ScheduleDetailPage() {
             startDatetime: addStartDatetime,
             endDatetime: addEndDatetime,
             position: addPosition.trim() || undefined,
+            positionId: addPositionId || null,
             notes: addNotes.trim() || undefined,
           },
         })
@@ -325,6 +335,9 @@ function ScheduleDetailPage() {
             [...prev, result.assignment].sort((a, b) => a.startDatetime.localeCompare(b.startDatetime)),
           )
           setSchedule((s) => ({ ...s, assignmentCount: s.assignmentCount + 1 }))
+          if (result.warnings.length > 0) {
+            setAssignmentWarnings((prev) => new Map(prev).set(result.assignment.id, result.warnings))
+          }
           resetAddForm()
         } else {
           const msgs: Record<string, string> = {
@@ -346,6 +359,7 @@ function ScheduleDetailPage() {
     setEditAssignStart(a.startDatetime.slice(0, 16))
     setEditAssignEnd(a.endDatetime.slice(0, 16))
     setEditAssignPosition(a.position ?? '')
+    setEditAssignPositionId(a.positionId ?? '')
     setEditAssignNotes(a.notes ?? '')
   }
 
@@ -360,6 +374,7 @@ function ScheduleDetailPage() {
           startDatetime: editAssignStart,
           endDatetime: editAssignEnd,
           position: editAssignPosition.trim() || null,
+          positionId: editAssignPositionId || null,
           notes: editAssignNotes.trim() || null,
         },
       })
@@ -376,12 +391,18 @@ function ScheduleDetailPage() {
                     startDatetime: editAssignStart,
                     endDatetime: editAssignEnd,
                     position: editAssignPosition.trim() || null,
+                    positionId: editAssignPositionId || null,
                     notes: editAssignNotes.trim() || null,
                   }
                 : a,
             )
             .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime)),
         )
+        if (result.warnings.length > 0) {
+          setAssignmentWarnings((prev) => new Map(prev).set(assignmentId, result.warnings))
+        } else {
+          setAssignmentWarnings((prev) => { const m = new Map(prev); m.delete(assignmentId); return m })
+        }
         setEditingAssignment(null)
       }
     } finally {
@@ -587,13 +608,45 @@ function ScheduleDetailPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Position</label>
-                  <input
-                    type="text"
-                    value={addPosition}
-                    onChange={(e) => setAddPosition(e.target.value)}
-                    placeholder="e.g. Engine 1, Medic 2"
-                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
-                  />
+                  {positions.length > 0 ? (
+                    <div className="relative">
+                      <select
+                        value={addPositionId}
+                        onChange={(e) => {
+                          const posId = e.target.value
+                          setAddPositionId(posId)
+                          if (posId) {
+                            const pos = positions.find((p) => p.id === posId)
+                            if (pos) setAddPosition(pos.name)
+                          } else {
+                            setAddPosition('')
+                          }
+                        }}
+                        className="w-full appearance-none px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+                      >
+                        <option value="">Custom / none</option>
+                        {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={addPosition}
+                      onChange={(e) => setAddPosition(e.target.value)}
+                      placeholder="e.g. Engine 1, Medic 2"
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
+                    />
+                  )}
+                  {positions.length > 0 && !addPositionId && (
+                    <input
+                      type="text"
+                      value={addPosition}
+                      onChange={(e) => setAddPosition(e.target.value)}
+                      placeholder="Custom label (optional)"
+                      className="w-full mt-1 px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
+                    />
+                  )}
                 </div>
                 {addRecurring ? (
                   <>
@@ -816,7 +869,33 @@ function ScheduleDetailPage() {
                             </div>
                           </td>
                           <td className="px-4 py-2">
-                            <input type="text" value={editAssignPosition} onChange={(e) => setEditAssignPosition(e.target.value)} className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500" />
+                            {positions.length > 0 ? (
+                              <div>
+                                <div className="relative mb-1">
+                                  <select
+                                    value={editAssignPositionId}
+                                    onChange={(e) => {
+                                      const posId = e.target.value
+                                      setEditAssignPositionId(posId)
+                                      if (posId) {
+                                        const pos = positions.find((p) => p.id === posId)
+                                        if (pos) setEditAssignPosition(pos.name)
+                                      }
+                                    }}
+                                    className="w-full appearance-none px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500"
+                                  >
+                                    <option value="">Custom / none</option>
+                                    {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </select>
+                                  <ChevronDown className="absolute right-1 top-1.5 w-3 h-3 text-gray-400 pointer-events-none" />
+                                </div>
+                                {!editAssignPositionId && (
+                                  <input type="text" value={editAssignPosition} onChange={(e) => setEditAssignPosition(e.target.value)} className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500" placeholder="Custom label" />
+                                )}
+                              </div>
+                            ) : (
+                              <input type="text" value={editAssignPosition} onChange={(e) => setEditAssignPosition(e.target.value)} className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500" />
+                            )}
                           </td>
                           <td className="px-4 py-2">
                             <input type="text" value={editAssignNotes} onChange={(e) => setEditAssignNotes(e.target.value)} className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500" />
@@ -838,9 +917,20 @@ function ScheduleDetailPage() {
                     const confirming = confirmDeleteAssignment === a.id
                     const busy = deleteAssignmentBusy === a.id
 
+                    const rowWarnings = assignmentWarnings.get(a.id) ?? []
+
                     return (
                       <tr key={a.id} className="border-b border-gray-200 last:border-0 hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900 font-medium truncate">{a.staffMemberName}</td>
+                        <td className="px-4 py-2 text-gray-900 font-medium truncate">
+                          <div className="flex items-center gap-1.5">
+                            {a.staffMemberName}
+                            {rowWarnings.length > 0 && (
+                              <span title={rowWarnings.map((w) => w.type + (w.certTypeName ? `: ${w.certTypeName}` : '')).join(', ')}>
+                                <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-2 text-gray-500 whitespace-nowrap">
                           {formatTime(a.startDatetime)} – {formatTime(a.endDatetime)}
                           <span className="ml-1.5 text-xs text-gray-400">({formatDuration(a.startDatetime, a.endDatetime)})</span>

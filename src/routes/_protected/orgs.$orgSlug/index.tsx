@@ -1,9 +1,12 @@
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { Shield, Users } from 'lucide-react'
+import { AlertTriangle, Shield, Users } from 'lucide-react'
 import { listStaffServerFn } from '@/server/staff'
 import { listPlatoonsServerFn } from '@/server/platoons'
 import { getTodayAssignmentsServerFn } from '@/server/schedule'
+import { getExpiringCertsServerFn } from '@/server/qualifications'
+import { canDo } from '@/lib/rbac'
 import type { TodayAssignment } from '@/server/schedule'
+import type { ExpiringCertView } from '@/lib/qualifications.types'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
   head: () => ({
@@ -11,19 +14,22 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
   }),
   loader: async ({ params }) => {
     const today = new Date().toISOString().slice(0, 10)
-    const [staffResult, platoonsResult, todayResult] = await Promise.all([
+    const [staffResult, platoonsResult, todayResult, expiringResult] = await Promise.all([
       listStaffServerFn({ data: { orgSlug: params.orgSlug } }),
       listPlatoonsServerFn({ data: { orgSlug: params.orgSlug } }),
       getTodayAssignmentsServerFn({ data: { orgSlug: params.orgSlug, date: today } }),
+      getExpiringCertsServerFn({ data: { orgSlug: params.orgSlug } }),
     ])
     const members = staffResult.success ? staffResult.members : []
     const platoons = platoonsResult.success ? platoonsResult.platoons : []
     const todayAssignments = todayResult.success ? todayResult.assignments : []
+    const expiringCerts = expiringResult.success ? expiringResult.certs : []
     return {
       activeCount: members.filter((m) => m.status !== 'pending').length,
       totalCount: members.length,
       platoonCount: platoons.length,
       todayAssignments,
+      expiringCerts,
       today,
     }
   },
@@ -78,9 +84,49 @@ function OnShiftToday({ assignments, today }: { assignments: TodayAssignment[]; 
   )
 }
 
+function ExpiringCertsWidget({
+  certs,
+  orgSlug,
+}: {
+  certs: ExpiringCertView[]
+  orgSlug: string
+}) {
+  if (certs.length === 0) return null
+  return (
+    <div className="rounded-lg border border-warning bg-warning-bg p-6">
+      <div className="flex items-center gap-2 mb-3">
+        <AlertTriangle className="w-4 h-4 text-warning" />
+        <h2 className="text-xs font-semibold text-warning uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+          Certifications Expiring Within 30 Days
+        </h2>
+      </div>
+      <ul className="divide-y divide-warning/20">
+        {certs.map((c, i) => (
+          <li key={i} className="flex items-center justify-between py-2">
+            <div>
+              <Link
+                to="/orgs/$orgSlug/staff/$staffMemberId"
+                params={{ orgSlug, staffMemberId: c.staffMemberId }}
+                className="text-sm font-medium text-navy-700 hover:underline"
+              >
+                {c.staffMemberName}
+              </Link>
+              <span className="text-sm text-gray-600 ml-1.5">— {c.certTypeName}</span>
+            </div>
+            <span className="text-xs text-warning font-semibold">
+              {c.daysUntilExpiry === 0 ? 'Today' : `${c.daysUntilExpiry}d`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function OrgDashboard() {
-  const { org } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { activeCount, totalCount, platoonCount, todayAssignments, today } = Route.useLoaderData()
+  const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
+  const { activeCount, totalCount, platoonCount, todayAssignments, expiringCerts, today } = Route.useLoaderData()
+  const canViewCerts = canDo(userRole, 'view-certifications')
 
   const createdDate = new Date(org.createdAt).toLocaleDateString(undefined, {
     year: 'numeric',
@@ -95,6 +141,7 @@ function OrgDashboard() {
         <p className="text-gray-500 text-sm">Created {createdDate}</p>
       </div>
 
+      {canViewCerts && <ExpiringCertsWidget certs={expiringCerts} orgSlug={org.slug} />}
       <OnShiftToday assignments={todayAssignments} today={today} />
 
       <div className="grid grid-cols-2 gap-4">
