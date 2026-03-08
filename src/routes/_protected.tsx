@@ -4,8 +4,8 @@ import { Building2, Calendar, CalendarCheck, GraduationCap, Home, LogOut, Shield
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
-import { useOrgContext } from '@/lib/org-context'
 import { canDo } from '@/lib/rbac'
+import type { OrgView, OrgRole } from '@/lib/org.types'
 
 export const Route = createFileRoute('/_protected')({
   beforeLoad: async ({ location }) => {
@@ -145,7 +145,11 @@ function NavItem({
 function ProtectedLayout() {
   const navigate = useNavigate()
   const { session } = Route.useRouteContext()
-  const orgCtx = useOrgContext()
+  const matches = useMatches()
+  const orgMatch = matches.find((m) => m.routeId === '/_protected/orgs/$orgSlug')
+  const orgCtx = orgMatch
+    ? (orgMatch.context as unknown as { org: OrgView; userRole: OrgRole })
+    : null
 
   async function handleLogout() {
     await logoutServerFn()
