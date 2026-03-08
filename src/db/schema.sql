@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS staff_member (
   added_by     TEXT REFERENCES user(id) ON DELETE SET NULL,
   created_at   TEXT NOT NULL,                           -- ISO 8601
   updated_at   TEXT NOT NULL,                           -- ISO 8601
+  rank_id      TEXT REFERENCES rank(id)     ON DELETE SET NULL,
+  position_id  TEXT REFERENCES position(id) ON DELETE SET NULL,
 
   CHECK (email IS NOT NULL OR phone IS NOT NULL)
 );
@@ -314,8 +316,28 @@ CREATE TABLE IF NOT EXISTS position_cert_requirement (
   UNIQUE (position_id, cert_type_id)
 );
 CREATE INDEX IF NOT EXISTS idx_pos_cert_req_position ON position_cert_requirement(position_id);
-
-ALTER TABLE staff_member     ADD COLUMN rank_id     TEXT REFERENCES rank(id)     ON DELETE SET NULL;
-ALTER TABLE shift_assignment ADD COLUMN position_id TEXT REFERENCES position(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_staff_member_rank      ON staff_member(rank_id)      WHERE rank_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_shift_assignment_posid ON shift_assignment(position_id) WHERE position_id IS NOT NULL;
+
+-- Schedule Requirements (009-schedule-requirements)
+
+CREATE TABLE IF NOT EXISTS schedule_requirement (
+  id               TEXT NOT NULL PRIMARY KEY,
+  org_id           TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name             TEXT NOT NULL,                         -- 1-100 chars
+  position_id      TEXT REFERENCES position(id) ON DELETE SET NULL,
+  min_staff        INTEGER NOT NULL DEFAULT 1,
+  max_staff        INTEGER,                               -- NULL = no cap; if set, >= min_staff
+  effective_start  TEXT NOT NULL,                         -- YYYY-MM-DD inclusive
+  effective_end    TEXT,                                  -- YYYY-MM-DD inclusive; NULL = no end date
+  rrule            TEXT NOT NULL,                         -- single RFC 5545 RRULE string (no "RRULE:" prefix)
+  created_by       TEXT REFERENCES user(id) ON DELETE SET NULL,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL,
+  CHECK (effective_end IS NULL OR effective_end >= effective_start),
+  CHECK (min_staff >= 0),
+  CHECK (max_staff IS NULL OR max_staff >= min_staff)
+);
+
+CREATE INDEX IF NOT EXISTS idx_schedule_req_org       ON schedule_requirement(org_id);
+CREATE INDEX IF NOT EXISTS idx_schedule_req_org_dates ON schedule_requirement(org_id, effective_start, effective_end);

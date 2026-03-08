@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { useRef, useMemo, useState } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { ScheduleView, ScheduleStatus, ShiftAssignmentView, RecurrenceMode } from '@/lib/schedule.types'
 import type { StaffMemberView } from '@/lib/staff.types'
 import type { PositionView, EligibilityWarning } from '@/lib/qualifications.types'
+import type { ScheduleRequirementView } from '@/lib/schedule-requirement.types'
 import {
   getScheduleServerFn,
   updateScheduleServerFn,
@@ -17,6 +18,7 @@ import {
 } from '@/server/schedule'
 import { listStaffServerFn } from '@/server/staff'
 import { listPositionsServerFn } from '@/server/qualifications'
+import { listScheduleRequirementsServerFn } from '@/server/schedule-requirements'
 
 export const Route = createFileRoute(
   '/_protected/orgs/$orgSlug/schedules/$scheduleId',
@@ -25,14 +27,15 @@ export const Route = createFileRoute(
     meta: [{ title: 'Schedule Detail | Scene Ready' }],
   }),
   loader: async ({ params }) => {
-    const [scheduleResult, staffResult, positionsResult] = await Promise.all([
+    const [scheduleResult, staffResult, positionsResult, requirementsResult] = await Promise.all([
       getScheduleServerFn({ data: { orgSlug: params.orgSlug, scheduleId: params.scheduleId } }),
       listStaffServerFn({ data: { orgSlug: params.orgSlug } }),
       listPositionsServerFn({ data: { orgSlug: params.orgSlug } }),
+      listScheduleRequirementsServerFn({ data: { orgSlug: params.orgSlug } }),
     ])
 
     if (!scheduleResult.success) {
-      return { schedule: null, assignments: [], staffMembers: [], positions: [] }
+      return { schedule: null, assignments: [], staffMembers: [], positions: [], requirements: [] }
     }
 
     return {
@@ -40,6 +43,7 @@ export const Route = createFileRoute(
       assignments: scheduleResult.assignments,
       staffMembers: staffResult.success ? staffResult.members.filter((m) => m.status !== 'removed') : [],
       positions: positionsResult.success ? positionsResult.positions : [],
+      requirements: requirementsResult.success ? requirementsResult.requirements : [],
     }
   },
   component: ScheduleDetailPage,
@@ -103,6 +107,145 @@ function groupByDate(assignments: ShiftAssignmentView[], allDates: string[]): Re
   return groups
 }
 
+// --- Requirement evaluation ---
+
+const RRULE_DAY_MAP: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 }
+
+/** Returns array of day-of-week numbers (0=Sun…6=Sat) the rrule applies to, or null if every day. */
+function parseRruleDays(rrule: string): number[] | null {
+  if (rrule.startsWith('FREQ=DAILY')) return null
+  const match = rrule.match(/BYDAY=([^;]+)/)
+  if (!match) return null
+  const days = match[1].split(',').map((d) => RRULE_DAY_MAP[d.trim()]).filter((n) => n !== undefined)
+  return days.length > 0 ? days : null
+}
+
+type RequirementViolation = {
+  date: string
+  count: number
+  minStaff: number
+  maxStaff: number | null
+}
+
+type RequirementEvaluation = {
+  requirement: ScheduleRequirementView
+  violations: RequirementViolation[]
+  applicableDates: number
+}
+
+function evaluateRequirements(
+  requirements: ScheduleRequirementView[],
+  assignments: ShiftAssignmentView[],
+  allDates: string[],
+): RequirementEvaluation[] {
+  return requirements.map((req) => {
+    const allowedDays = parseRruleDays(req.rrule)
+    const violations: RequirementViolation[] = []
+    let applicableDates = 0
+
+    for (const date of allDates) {
+      if (date < req.effectiveStart) continue
+      if (req.effectiveEnd && date > req.effectiveEnd) continue
+      if (allowedDays !== null) {
+        const dow = new Date(date + 'T00:00:00').getDay()
+        if (!allowedDays.includes(dow)) continue
+      }
+      applicableDates++
+
+      const count = assignments.filter((a) => {
+        if (a.startDatetime.slice(0, 10) !== date) return false
+        if (req.positionId && a.positionId !== req.positionId) return false
+        return true
+      }).length
+
+      if (count < req.minStaff || (req.maxStaff !== null && count > req.maxStaff)) {
+        violations.push({ date, count, minStaff: req.minStaff, maxStaff: req.maxStaff })
+      }
+    }
+
+    return { requirement: req, violations, applicableDates }
+  })
+}
+
+function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation[] }) {
+  const [open, setOpen] = useState(true)
+
+  if (evaluations.length === 0) return null
+
+  const failingCount = evaluations.filter((e) => e.violations.length > 0).length
+  const allMet = failingCount === 0
+
+  return (
+    <div className="mb-6 border border-gray-200 rounded-lg bg-white overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-navy-700">Requirements</span>
+          {allMet ? (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-success-bg text-success" style={{ fontFamily: 'var(--font-condensed)' }}>
+              All met
+            </span>
+          ) : (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-danger-bg text-danger" style={{ fontFamily: 'var(--font-condensed)' }}>
+              {failingCount} issue{failingCount !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-200 divide-y divide-gray-100">
+          {evaluations.map((ev) => {
+            const na = ev.applicableDates === 0
+            const ok = !na && ev.violations.length === 0
+
+            return (
+              <div key={ev.requirement.id} className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  {na ? (
+                    <span className="w-4 h-4 text-gray-300 text-sm leading-none shrink-0">—</span>
+                  ) : ok ? (
+                    <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-danger shrink-0" />
+                  )}
+                  <span className="text-sm font-medium text-navy-700">{ev.requirement.name}</span>
+                  {ev.requirement.positionName && (
+                    <span className="text-xs text-gray-500">({ev.requirement.positionName})</span>
+                  )}
+                  <span className="text-xs text-gray-400 ml-auto">
+                    min {ev.requirement.minStaff}{ev.requirement.maxStaff != null ? ` / max ${ev.requirement.maxStaff}` : ''}
+                  </span>
+                  {na && <span className="text-xs text-gray-400 italic">No applicable dates in range</span>}
+                </div>
+                {ev.violations.length > 0 && (
+                  <div className="ml-6 mt-1 space-y-0.5">
+                    {ev.violations.slice(0, 5).map((v) => (
+                      <p key={v.date} className="text-xs text-danger">
+                        {new Date(v.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        {': '}
+                        {v.count} assigned
+                        {v.count < v.minStaff ? ` (need ≥ ${v.minStaff})` : v.maxStaff !== null ? ` (max ${v.maxStaff})` : ''}
+                      </p>
+                    ))}
+                    {ev.violations.length > 5 && (
+                      <p className="text-xs text-gray-400">+{ev.violations.length - 5} more dates</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ScheduleDetailPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
   const navigate = useNavigate()
@@ -125,8 +268,26 @@ function ScheduleDetailPage() {
   const [assignments, setAssignments] = useState<ShiftAssignmentView[]>(loaderData.assignments)
   const staffMembers: StaffMemberView[] = loaderData.staffMembers
   const positions: PositionView[] = loaderData.positions
+  const requirements: ScheduleRequirementView[] = loaderData.requirements
   // Map of assignmentId → eligibility warnings
   const [assignmentWarnings, setAssignmentWarnings] = useState<Map<string, EligibilityWarning[]>>(new Map())
+
+  const allDatesForEval = useMemo(() => getDatesInRange(schedule.startDate, schedule.endDate), [schedule.startDate, schedule.endDate])
+  const requirementEvaluations = useMemo(
+    () => evaluateRequirements(requirements, assignments, allDatesForEval),
+    [requirements, assignments, allDatesForEval],
+  )
+  const dateViolationMap = useMemo(() => {
+    const map = new Map<string, Array<{ name: string; count: number; minStaff: number; maxStaff: number | null; positionId: string | null; positionName: string | null }>>()
+    for (const ev of requirementEvaluations) {
+      for (const v of ev.violations) {
+        const existing = map.get(v.date) ?? []
+        existing.push({ name: ev.requirement.name, count: v.count, minStaff: v.minStaff, maxStaff: v.maxStaff, positionId: ev.requirement.positionId, positionName: ev.requirement.positionName })
+        map.set(v.date, existing)
+      }
+    }
+    return map
+  }, [requirementEvaluations])
 
   // Edit schedule state
   const [editing, setEditing] = useState(false)
@@ -177,11 +338,17 @@ function ScheduleDetailPage() {
 
   const addFormRef = useRef<HTMLFormElement>(null)
 
-  function quickAddForDate(date: string) {
+  function quickAddForDate(date: string, positionId?: string | null, positionName?: string | null) {
     resetAddForm()
     setAddRecurring(false)
     setAddStartDatetime(`${date}T08:00`)
     setAddEndDatetime(`${date}T16:00`)
+    if (positionId) {
+      setAddPositionId(positionId)
+      setAddPosition(positionName ?? '')
+    } else if (positionName) {
+      setAddPosition(positionName)
+    }
     setShowAddForm(true)
     setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
@@ -793,6 +960,9 @@ function ScheduleDetailPage() {
         </div>
       )}
 
+      {/* Requirements evaluation */}
+      <RequirementsPanel evaluations={requirementEvaluations} />
+
       {/* Assignments grouped by date */}
       <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
           <table className="w-full text-sm table-fixed">
@@ -819,15 +989,30 @@ function ScheduleDetailPage() {
                 <>
                   <tr key={`date-${date}`} className="border-b border-gray-200 bg-gray-50/50">
                     <td colSpan={canEdit ? 5 : 4} className="px-4 py-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide shrink-0" style={{ fontFamily: 'var(--font-condensed)' }}>
                           {formatDate(date + 'T00:00:00')}
                         </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {(dateViolationMap.get(date) ?? []).map((v, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => quickAddForDate(date, v.positionId, v.positionName)}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-danger-bg text-danger text-xs font-semibold hover:opacity-75 transition-opacity"
+                              title={v.count < v.minStaff ? `${v.name}: ${v.count} assigned, need ≥ ${v.minStaff} — click to add` : `${v.name}: ${v.count} assigned, max ${v.maxStaff} — click to add`}
+                              style={{ fontFamily: 'var(--font-condensed)' }}
+                            >
+                              <AlertCircle className="w-3 h-3 shrink-0" />
+                              {v.name}: {v.count}/{v.count < v.minStaff ? v.minStaff : v.maxStaff}
+                            </button>
+                          ))}
+                        </div>
                         {canEdit && (
                           <button
                             type="button"
                             onClick={() => quickAddForDate(date)}
-                            className="flex items-center gap-1 px-2 py-0.5 text-xs text-gray-400 hover:text-navy-700 hover:bg-white rounded transition-colors"
+                            className="flex items-center gap-1 px-2 py-0.5 text-xs text-gray-400 hover:text-navy-700 hover:bg-white rounded transition-colors shrink-0"
                           >
                             <Plus className="w-3 h-3" />
                             Add
