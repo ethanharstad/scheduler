@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS platoon_membership (
   id              TEXT NOT NULL PRIMARY KEY,         -- crypto.randomUUID()
   platoon_id      TEXT NOT NULL REFERENCES platoon(id) ON DELETE CASCADE,
   staff_member_id TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  position_id     TEXT REFERENCES position(id) ON DELETE SET NULL, -- optional; role/position within the platoon
   assigned_at     TEXT NOT NULL                      -- ISO 8601; date of current assignment
 );
 
@@ -331,12 +332,16 @@ CREATE TABLE IF NOT EXISTS schedule_requirement (
   effective_start  TEXT NOT NULL,                         -- YYYY-MM-DD inclusive
   effective_end    TEXT,                                  -- YYYY-MM-DD inclusive; NULL = no end date
   rrule            TEXT NOT NULL,                         -- single RFC 5545 RRULE string (no "RRULE:" prefix)
+  window_start_time     TEXT,                            -- HH:MM; start of staffing window; NULL = no time constraint
+  window_end_time       TEXT,                            -- HH:MM; end of staffing window; NULL = no time constraint
+  window_end_day_offset INTEGER,                         -- days after RRULE anchor that window ends (0=same day); NULL = no time window
   created_by       TEXT REFERENCES user(id) ON DELETE SET NULL,
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL,
   CHECK (effective_end IS NULL OR effective_end >= effective_start),
   CHECK (min_staff >= 0),
-  CHECK (max_staff IS NULL OR max_staff >= min_staff)
+  CHECK (max_staff IS NULL OR max_staff >= min_staff),
+  CHECK (window_end_day_offset IS NULL OR window_end_day_offset >= 0)
 );
 
 CREATE INDEX IF NOT EXISTS idx_schedule_req_org       ON schedule_requirement(org_id);

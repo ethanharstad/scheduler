@@ -862,7 +862,7 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
       .first<ScheduleRow>()
     if (!schedule) return { success: false, error: 'NOT_FOUND' }
 
-    // Fetch platoons with members
+    // Fetch platoons with members (including per-member position from platoon_membership)
     type PlatoonMemberRow = {
       platoon_id: string
       rrules: string
@@ -870,6 +870,8 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
       shift_start_time: string
       shift_end_time: string
       staff_member_id: string
+      position_id: string | null
+      position_name: string | null
     }
 
     let platoonRows: PlatoonMemberRow[]
@@ -879,9 +881,10 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
       const placeholders = data.platoonIds.map(() => '?').join(', ')
       const result = await env.DB.prepare(
         `SELECT p.id AS platoon_id, p.rrules, p.start_date, p.shift_start_time, p.shift_end_time,
-                pm.staff_member_id
+                pm.staff_member_id, pm.position_id, pos.name AS position_name
          FROM platoon p
          JOIN platoon_membership pm ON pm.platoon_id = p.id
+         LEFT JOIN position pos ON pos.id = pm.position_id
          WHERE p.org_id = ? AND p.id IN (${placeholders})`,
       )
         .bind(membership.orgId, ...data.platoonIds)
@@ -890,9 +893,10 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
     } else {
       const result = await env.DB.prepare(
         `SELECT p.id AS platoon_id, p.rrules, p.start_date, p.shift_start_time, p.shift_end_time,
-                pm.staff_member_id
+                pm.staff_member_id, pm.position_id, pos.name AS position_name
          FROM platoon p
          JOIN platoon_membership pm ON pm.platoon_id = p.id
+         LEFT JOIN position pos ON pos.id = pm.position_id
          WHERE p.org_id = ?`,
       )
         .bind(membership.orgId)
@@ -901,12 +905,13 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
     }
 
     // Group rows by platoon
+    type StaffMemberEntry = { id: string; positionId: string | null; positionName: string | null }
     type PlatoonData = {
       rrules: RRuleEntry[]
       start_date: string
       shift_start_time: string
       shift_end_time: string
-      staffMemberIds: string[]
+      staffMembers: StaffMemberEntry[]
     }
     const platoonMap = new Map<string, PlatoonData>()
     for (const row of platoonRows) {
@@ -916,10 +921,14 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
           start_date: row.start_date,
           shift_start_time: row.shift_start_time,
           shift_end_time: row.shift_end_time,
-          staffMemberIds: [],
+          staffMembers: [],
         })
       }
-      platoonMap.get(row.platoon_id)!.staffMemberIds.push(row.staff_member_id)
+      platoonMap.get(row.platoon_id)!.staffMembers.push({
+        id: row.staff_member_id,
+        positionId: row.position_id,
+        positionName: row.position_name,
+      })
     }
 
     const now = new Date().toISOString()
@@ -927,7 +936,7 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
 
     // Fetch approved blocking constraints for all affected staff members
     const allStaffIds = Array.from(
-      new Set(Array.from(platoonMap.values()).flatMap((p) => p.staffMemberIds)),
+      new Set(Array.from(platoonMap.values()).flatMap((p) => p.staffMembers.map((s) => s.id))),
     )
     const constraintsByStaff = new Map<string, ConstraintInfo[]>()
     if (allStaffIds.length > 0) {
@@ -987,16 +996,16 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
           endDatetime = `${dateStr}T${platoon.shift_end_time}`
         }
 
-        for (const staffMemberId of platoon.staffMemberIds) {
-          const constraints = constraintsByStaff.get(staffMemberId) ?? []
+        for (const staffMember of platoon.staffMembers) {
+          const constraints = constraintsByStaff.get(staffMember.id) ?? []
           const freeIntervals = subtractConstraints(startDatetime, endDatetime, constraints)
 
           for (const iv of freeIntervals) {
             stmts.push(
               env.DB.prepare(
-                `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
-              ).bind(crypto.randomUUID(), data.scheduleId, staffMemberId, iv.start, iv.end, now, now),
+                `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, position_id, notes, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+              ).bind(crypto.randomUUID(), data.scheduleId, staffMember.id, iv.start, iv.end, staffMember.positionName, staffMember.positionId, now, now),
             )
           }
         }

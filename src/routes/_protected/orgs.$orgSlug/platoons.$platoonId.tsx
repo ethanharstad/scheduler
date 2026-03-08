@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute, Link, redirect, useRouteContext } from '@tanstack/react-router'
 import { ChevronLeft, Edit2, Trash2, UserPlus, X } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
-import type { PlatoonDetailView, PlatoonMemberView, StaffOption, RRuleEntry } from '@/lib/platoon.types'
+import type { PlatoonDetailView, PlatoonMemberView, StaffOption, PositionOption, RRuleEntry } from '@/lib/platoon.types'
 import {
   getPlatoonServerFn,
   updatePlatoonServerFn,
@@ -22,7 +22,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/platoons/$platoo
     if (!result.success) {
       throw redirect({ to: '/orgs/$orgSlug/platoons', params: { orgSlug: params.orgSlug } })
     }
-    return { platoon: result.platoon, allStaff: result.allStaff }
+    return { platoon: result.platoon, allStaff: result.allStaff, positions: result.positions }
   },
   component: PlatoonDetailPage,
 })
@@ -296,6 +296,7 @@ function AssignMemberPanel({
   platoonId,
   members,
   allStaff,
+  positions,
   onAssigned,
   onCancel,
 }: {
@@ -303,13 +304,15 @@ function AssignMemberPanel({
   platoonId: string
   members: PlatoonMemberView[]
   allStaff: StaffOption[]
-  onAssigned: (staffMemberId: string, name: string) => void
+  positions: PositionOption[]
+  onAssigned: (staffMemberId: string, name: string, positionId: string | null, positionName: string | null) => void
   onCancel: () => void
 }) {
   const assignedIds = new Set(members.map((m) => m.staffMemberId))
   const available = allStaff.filter((s) => !assignedIds.has(s.id))
 
   const [selectedId, setSelectedId] = useState('')
+  const [selectedPositionId, setSelectedPositionId] = useState('')
   const [pendingMove, setPendingMove] = useState<{ movedFrom: string; staffMemberId: string; name: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -317,9 +320,11 @@ function AssignMemberPanel({
   async function doAssign(staffMemberId: string, name: string) {
     setError(null)
     setSubmitting(true)
+    const positionId = selectedPositionId || undefined
+    const positionName = positionId ? (positions.find((p) => p.id === positionId)?.name ?? null) : null
     try {
       const result = await assignMemberServerFn({
-        data: { orgSlug, platoonId, staffMemberId },
+        data: { orgSlug, platoonId, staffMemberId, positionId },
       })
       if (!result.success) {
         if (result.error === 'MEMBER_NOT_FOUND') setError('Staff member not found.')
@@ -328,8 +333,9 @@ function AssignMemberPanel({
         else setError('An error occurred. Please try again.')
         return
       }
-      onAssigned(staffMemberId, name)
+      onAssigned(staffMemberId, name, positionId ?? null, positionName)
       setSelectedId('')
+      setSelectedPositionId('')
       setPendingMove(null)
     } finally {
       setSubmitting(false)
@@ -400,25 +406,39 @@ function AssignMemberPanel({
       )}
 
       {!pendingMove && (
-        <div className="flex gap-2">
-          <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-700"
-          >
-            <option value="" disabled>Select a staff member…</option>
-            {available.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => handleAssignClick()}
-            disabled={!selectedId || submitting}
-            className="px-4 py-2 bg-red-700 text-white text-sm font-medium rounded-lg hover:bg-red-800 disabled:opacity-50 transition-colors"
-          >
-            Assign
-          </button>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <select
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-700"
+            >
+              <option value="" disabled>Select a staff member…</option>
+              {available.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            {positions.length > 0 && (
+              <select
+                value={selectedPositionId}
+                onChange={(e) => setSelectedPositionId(e.target.value)}
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-700"
+              >
+                <option value="">No position</option>
+                {positions.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={() => handleAssignClick()}
+              disabled={!selectedId || submitting}
+              className="px-4 py-2 bg-red-700 text-white text-sm font-medium rounded-lg hover:bg-red-800 disabled:opacity-50 transition-colors"
+            >
+              Assign
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -428,7 +448,7 @@ function AssignMemberPanel({
 function PlatoonDetailPage() {
   const { orgSlug, platoonId } = Route.useParams()
   const { userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { platoon: initialPlatoon, allStaff } = Route.useLoaderData()
+  const { platoon: initialPlatoon, allStaff, positions } = Route.useLoaderData()
   const navigate = Route.useNavigate()
 
   const [platoon, setPlatoon] = useState<PlatoonDetailView>(initialPlatoon)
@@ -446,10 +466,10 @@ function PlatoonDetailPage() {
     setShowEdit(false)
   }
 
-  function handleAssigned(staffMemberId: string, name: string) {
+  function handleAssigned(staffMemberId: string, name: string, positionId: string | null, positionName: string | null) {
     setMembers((prev) => {
       const filtered = prev.filter((m) => m.staffMemberId !== staffMemberId)
-      return [...filtered, { staffMemberId, name }].sort((a, b) =>
+      return [...filtered, { staffMemberId, name, positionId, positionName }].sort((a, b) =>
         a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
       )
     })
@@ -611,6 +631,7 @@ function PlatoonDetailPage() {
             platoonId={platoonId}
             members={members}
             allStaff={allStaff}
+            positions={positions}
             onAssigned={handleAssigned}
             onCancel={() => setShowAssign(false)}
           />
@@ -622,11 +643,21 @@ function PlatoonDetailPage() {
           <ul className="divide-y divide-gray-100">
             {members.map((m) => (
               <li key={m.staffMemberId} className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-gray-800">{m.name}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm text-gray-800">{m.name}</span>
+                  {m.positionName && (
+                    <span
+                      className="rounded-full text-xs font-semibold uppercase tracking-wide px-2 py-0.5 bg-gray-100 text-gray-600 shrink-0"
+                      style={{ fontFamily: 'var(--font-condensed)' }}
+                    >
+                      {m.positionName}
+                    </span>
+                  )}
+                </div>
                 {canEdit && (
                   <button
                     onClick={() => void handleRemoveMember(m.staffMemberId)}
-                    className="text-gray-400 hover:text-red-600 transition-colors p-1"
+                    className="text-gray-400 hover:text-red-600 transition-colors p-1 shrink-0"
                     title="Remove from platoon"
                   >
                     <X className="w-4 h-4" />

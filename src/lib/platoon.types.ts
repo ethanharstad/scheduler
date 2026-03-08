@@ -19,6 +19,7 @@ export interface PlatoonMembership {
   id: string
   platoon_id: string
   staff_member_id: string
+  position_id: string | null
   assigned_at: string
 }
 
@@ -69,6 +70,8 @@ export interface PlatoonDetailView {
 export interface PlatoonMemberView {
   staffMemberId: string
   name: string
+  positionId: string | null
+  positionName: string | null
 }
 
 /** A staff member available for assignment */
@@ -76,6 +79,12 @@ export interface StaffOption {
   id: string
   name: string
   currentPlatoonName: string | null
+}
+
+/** A position available for selection when assigning a member */
+export interface PositionOption {
+  id: string
+  name: string
 }
 
 // Server function I/O types
@@ -89,7 +98,7 @@ export type ListPlatoonsOutput =
 // --- Get detail ---
 export type GetPlatoonInput = { orgSlug: string; platoonId: string }
 export type GetPlatoonOutput =
-  | { success: true; platoon: PlatoonDetailView; allStaff: StaffOption[] }
+  | { success: true; platoon: PlatoonDetailView; allStaff: StaffOption[]; positions: PositionOption[] }
   | { success: false; error: 'UNAUTHORIZED' | 'NOT_FOUND' }
 
 // --- Create ---
@@ -136,6 +145,7 @@ export type AssignMemberInput = {
   orgSlug: string
   platoonId: string
   staffMemberId: string
+  positionId?: string
 }
 export type AssignMemberOutput =
   | { success: true; movedFrom: string | null }

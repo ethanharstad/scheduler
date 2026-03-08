@@ -20,6 +20,7 @@ import type {
   PlatoonView,
   PlatoonMemberView,
   StaffOption,
+  PositionOption,
   RRuleEntry,
 } from '@/lib/platoon.types'
 
@@ -208,11 +209,12 @@ export const getPlatoonServerFn = createServerFn({ method: 'GET' })
       .first<PlatoonRow>()
     if (!platoonRow) return { success: false, error: 'NOT_FOUND' }
 
-    type MemberRow = { staff_member_id: string; name: string }
+    type MemberRow = { staff_member_id: string; name: string; position_id: string | null; position_name: string | null }
     const memberRows = await env.DB.prepare(
-      `SELECT sm.id AS staff_member_id, sm.name
+      `SELECT sm.id AS staff_member_id, sm.name, pm.position_id, pos.name AS position_name
        FROM platoon_membership pm
        JOIN staff_member sm ON sm.id = pm.staff_member_id
+       LEFT JOIN position pos ON pos.id = pm.position_id
        WHERE pm.platoon_id = ?
        ORDER BY sm.name ASC`,
     )
@@ -231,15 +233,29 @@ export const getPlatoonServerFn = createServerFn({ method: 'GET' })
       .bind(membership.orgId)
       .all<StaffRow>()
 
+    type PositionRow = { id: string; name: string }
+    const positionRows = await env.DB.prepare(
+      `SELECT id, name FROM position WHERE org_id = ? ORDER BY LOWER(name) ASC`,
+    )
+      .bind(membership.orgId)
+      .all<PositionRow>()
+
     const members: PlatoonMemberView[] = (memberRows.results ?? []).map((r) => ({
       staffMemberId: r.staff_member_id,
       name: r.name,
+      positionId: r.position_id,
+      positionName: r.position_name,
     }))
 
     const allStaff: StaffOption[] = (staffRows.results ?? []).map((r) => ({
       id: r.id,
       name: r.name,
       currentPlatoonName: r.current_platoon_name,
+    }))
+
+    const positions: PositionOption[] = (positionRows.results ?? []).map((r) => ({
+      id: r.id,
+      name: r.name,
     }))
 
     return {
@@ -257,6 +273,7 @@ export const getPlatoonServerFn = createServerFn({ method: 'GET' })
         members,
       },
       allStaff,
+      positions,
     }
   })
 
@@ -463,10 +480,10 @@ export const assignMemberServerFn = createServerFn({ method: 'POST' })
     const movedFrom = existingRow ? existingRow.platoon_name : null
 
     await env.DB.prepare(
-      `INSERT OR REPLACE INTO platoon_membership(id, platoon_id, staff_member_id, assigned_at)
-       VALUES(?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO platoon_membership(id, platoon_id, staff_member_id, position_id, assigned_at)
+       VALUES(?, ?, ?, ?, ?)`,
     )
-      .bind(crypto.randomUUID(), data.platoonId, data.staffMemberId, new Date().toISOString())
+      .bind(crypto.randomUUID(), data.platoonId, data.staffMemberId, data.positionId ?? null, new Date().toISOString())
       .run()
 
     return { success: true, movedFrom }
