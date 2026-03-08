@@ -85,11 +85,13 @@ function formatDate(datetime: string) {
 
 function getDatesInRange(startDate: string, endDate: string): string[] {
   const dates: string[] = []
-  const current = new Date(startDate + 'T00:00:00')
-  const end = new Date(endDate + 'T00:00:00')
+  const [sy, sm, sd] = startDate.split('-').map(Number)
+  const [ey, em, ed] = endDate.split('-').map(Number)
+  let current = Date.UTC(sy, sm - 1, sd)
+  const end = Date.UTC(ey, em - 1, ed)
   while (current <= end) {
-    dates.push(current.toISOString().slice(0, 10))
-    current.setDate(current.getDate() + 1)
+    dates.push(new Date(current).toISOString().slice(0, 10))
+    current += 86400000 // +1 day in ms
   }
   return dates
 }
@@ -122,9 +124,10 @@ function parseRruleDays(rrule: string): number[] | null {
 
 type RequirementViolation = {
   date: string
-  count: number
+  minCoverage: number
   minStaff: number
   maxStaff: number | null
+  overstaffed: boolean
 }
 
 type RequirementEvaluation = {
@@ -133,33 +136,127 @@ type RequirementEvaluation = {
   applicableDates: number
 }
 
+function addDays(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
+function computeRequirementWindow(date: string, req: ScheduleRequirementView): { winStart: string; winEnd: string } {
+  if (!req.windowStartTime || !req.windowEndTime || req.windowEndDayOffset == null) {
+    return { winStart: `${date}T00:00`, winEnd: `${addDays(date, 1)}T00:00` }
+  }
+  return {
+    winStart: `${date}T${req.windowStartTime}`,
+    winEnd: `${addDays(date, req.windowEndDayOffset)}T${req.windowEndTime}`,
+  }
+}
+
+/** Normalize datetime strings to YYYY-MM-DDTHH:MM format for consistent string comparison. */
+function normalizeDt(dt: string): string {
+  // Strip seconds if present: "2026-03-15T08:00:00" → "2026-03-15T08:00"
+  // Also strip milliseconds/timezone suffix
+  const t = dt.slice(0, 16)
+  return t
+}
+
 function evaluateRequirements(
   requirements: ScheduleRequirementView[],
   assignments: ShiftAssignmentView[],
   allDates: string[],
 ): RequirementEvaluation[] {
+  // --- Phase 1: Expand all requirement windows ---
+  type ReqWindow = {
+    reqId: string; date: string
+    winStart: string; winEnd: string
+    positionId: string | null; minStaff: number; maxStaff: number | null
+  }
+  const reqWindows: ReqWindow[] = []
+  for (const req of requirements) {
+    const allowedDays = parseRruleDays(req.rrule)
+    for (const date of allDates) {
+      if (date < req.effectiveStart) continue
+      if (req.effectiveEnd && date > req.effectiveEnd) continue
+      if (allowedDays !== null) {
+        const [dy, dm, dd] = date.split('-').map(Number); const dow = new Date(Date.UTC(dy, dm - 1, dd)).getUTCDay()
+        if (!allowedDays.includes(dow)) continue
+      }
+      const { winStart, winEnd } = computeRequirementWindow(date, req)
+      reqWindows.push({ reqId: req.id, date, winStart, winEnd, positionId: req.positionId, minStaff: req.minStaff, maxStaff: req.maxStaff })
+    }
+  }
+
+  // --- Phase 2: Build unified timeline ---
+  const timePoints = new Set<string>()
+  for (const rw of reqWindows) { timePoints.add(rw.winStart); timePoints.add(rw.winEnd) }
+  for (const a of assignments) { timePoints.add(normalizeDt(a.startDatetime)); timePoints.add(normalizeDt(a.endDatetime)) }
+  const sortedTimes = [...timePoints].sort()
+
+  // --- Phase 3: Per-segment matching ---
+  type WindowStats = { minAllocated: number; maxEligible: number }
+  const windowStats = new Map<string, WindowStats>()
+  for (const rw of reqWindows) {
+    windowStats.set(`${rw.reqId}:${rw.winStart}`, { minAllocated: rw.minStaff, maxEligible: 0 })
+  }
+
+  for (let i = 0; i < sortedTimes.length - 1; i++) {
+    const segStart = sortedTimes[i]
+    const segEnd = sortedTimes[i + 1]
+
+    const activeReqs = reqWindows.filter(rw => rw.winStart <= segStart && rw.winEnd >= segEnd)
+    if (activeReqs.length === 0) continue
+
+    const activeStaff = assignments
+      .filter(a => normalizeDt(a.startDatetime) <= segStart && normalizeDt(a.endDatetime) >= segEnd)
+      .map(a => ({ id: a.id, positionId: a.positionId }))
+
+    // Position-constrained requirements first (fewer eligible staff)
+    const sortedReqs = [...activeReqs].sort((a, b) =>
+      (a.positionId ? 0 : 1) - (b.positionId ? 0 : 1)
+    )
+    const pool = [...activeStaff]
+
+    for (const rw of sortedReqs) {
+      const key = `${rw.reqId}:${rw.winStart}`
+      const eligibleIdxs: number[] = []
+      for (let j = 0; j < pool.length; j++) {
+        if (!rw.positionId || pool[j].positionId === rw.positionId) eligibleIdxs.push(j)
+      }
+      const totalEligible = eligibleIdxs.length
+      const allocated = Math.min(totalEligible, rw.minStaff)
+
+      // Remove allocated staff from pool
+      const toRemove = eligibleIdxs.slice(0, allocated).sort((a, b) => b - a)
+      for (const idx of toRemove) pool.splice(idx, 1)
+
+      const stats = windowStats.get(key)!
+      stats.minAllocated = Math.min(stats.minAllocated, allocated)
+      stats.maxEligible = Math.max(stats.maxEligible, totalEligible)
+    }
+  }
+
+  // --- Phase 4: Build RequirementEvaluation results ---
   return requirements.map((req) => {
     const allowedDays = parseRruleDays(req.rrule)
-    const violations: RequirementViolation[] = []
     let applicableDates = 0
+    const violations: RequirementViolation[] = []
 
     for (const date of allDates) {
       if (date < req.effectiveStart) continue
       if (req.effectiveEnd && date > req.effectiveEnd) continue
       if (allowedDays !== null) {
-        const dow = new Date(date + 'T00:00:00').getDay()
+        const [dy, dm, dd] = date.split('-').map(Number); const dow = new Date(Date.UTC(dy, dm - 1, dd)).getUTCDay()
         if (!allowedDays.includes(dow)) continue
       }
       applicableDates++
 
-      const count = assignments.filter((a) => {
-        if (a.startDatetime.slice(0, 10) !== date) return false
-        if (req.positionId && a.positionId !== req.positionId) return false
-        return true
-      }).length
+      const { winStart } = computeRequirementWindow(date, req)
+      const stats = windowStats.get(`${req.id}:${winStart}`)
+      const minCoverage = stats?.minAllocated ?? 0
+      const maxEligible = stats?.maxEligible ?? 0
+      const overstaffed = req.maxStaff !== null && maxEligible > req.maxStaff
 
-      if (count < req.minStaff || (req.maxStaff !== null && count > req.maxStaff)) {
-        violations.push({ date, count, minStaff: req.minStaff, maxStaff: req.maxStaff })
+      if (minCoverage < req.minStaff || overstaffed) {
+        violations.push({ date, minCoverage, minStaff: req.minStaff, maxStaff: req.maxStaff, overstaffed })
       }
     }
 
@@ -228,8 +325,11 @@ function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation
                       <p key={v.date} className="text-xs text-danger">
                         {new Date(v.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                         {': '}
-                        {v.count} assigned
-                        {v.count < v.minStaff ? ` (need ≥ ${v.minStaff})` : v.maxStaff !== null ? ` (max ${v.maxStaff})` : ''}
+                        {v.minCoverage < v.minStaff
+                          ? `${v.minCoverage} of ${v.minStaff} required`
+                          : v.overstaffed && v.maxStaff !== null
+                            ? `overstaffed (max ${v.maxStaff})`
+                            : ''}
                       </p>
                     ))}
                     {ev.violations.length > 5 && (
@@ -278,11 +378,11 @@ function ScheduleDetailPage() {
     [requirements, assignments, allDatesForEval],
   )
   const dateViolationMap = useMemo(() => {
-    const map = new Map<string, Array<{ name: string; count: number; minStaff: number; maxStaff: number | null; positionId: string | null; positionName: string | null }>>()
+    const map = new Map<string, Array<{ name: string; minCoverage: number; minStaff: number; maxStaff: number | null; overstaffed: boolean; positionId: string | null; positionName: string | null }>>()
     for (const ev of requirementEvaluations) {
       for (const v of ev.violations) {
         const existing = map.get(v.date) ?? []
-        existing.push({ name: ev.requirement.name, count: v.count, minStaff: v.minStaff, maxStaff: v.maxStaff, positionId: ev.requirement.positionId, positionName: ev.requirement.positionName })
+        existing.push({ name: ev.requirement.name, minCoverage: v.minCoverage, minStaff: v.minStaff, maxStaff: v.maxStaff, overstaffed: v.overstaffed, positionId: ev.requirement.positionId, positionName: ev.requirement.positionName })
         map.set(v.date, existing)
       }
     }
@@ -1000,11 +1100,11 @@ function ScheduleDetailPage() {
                               type="button"
                               onClick={() => quickAddForDate(date, v.positionId, v.positionName)}
                               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-danger-bg text-danger text-xs font-semibold hover:opacity-75 transition-opacity"
-                              title={v.count < v.minStaff ? `${v.name}: ${v.count} assigned, need ≥ ${v.minStaff} — click to add` : `${v.name}: ${v.count} assigned, max ${v.maxStaff} — click to add`}
+                              title={v.minCoverage < v.minStaff ? `${v.name}: ${v.minCoverage} assigned, need ≥ ${v.minStaff} — click to add` : `${v.name}: overstaffed (max ${v.maxStaff}) — click to add`}
                               style={{ fontFamily: 'var(--font-condensed)' }}
                             >
                               <AlertCircle className="w-3 h-3 shrink-0" />
-                              {v.name}: {v.count}/{v.count < v.minStaff ? v.minStaff : v.maxStaff}
+                              {v.name}: {v.minCoverage < v.minStaff ? `${v.minCoverage}/${v.minStaff}` : `over ${v.maxStaff}`}
                             </button>
                           ))}
                         </div>
