@@ -1419,7 +1419,65 @@ export const checkPositionEligibilityServerFn = createServerFn({ method: 'GET' }
         rankName: staff.rank_name,
         certsSummary,
         hasExpiringCerts,
+        constraintType: null,
       })
+    }
+
+    // Fetch availability constraints for eligible staff on the target date
+    if (eligible.length > 0) {
+      const eligibleIds = eligible.map((e) => e.staffMemberId)
+      const placeholders = eligibleIds.map(() => '?').join(',')
+      // Query constraints that overlap the target date (entire day)
+      const dayStart = data.asOfDate + 'T00:00:00'
+      const dayEnd = data.asOfDate + 'T23:59:59'
+      type ConstraintRow = {
+        staff_member_id: string
+        type: string
+        start_datetime: string
+        end_datetime: string
+        days_of_week: string | null
+      }
+      const constraintRows = await env.DB.prepare(
+        `SELECT staff_member_id, type, start_datetime, end_datetime, days_of_week
+         FROM staff_constraint
+         WHERE org_id = ? AND staff_member_id IN (${placeholders})
+           AND status = 'approved'
+           AND start_datetime < ? AND end_datetime > ?`,
+      )
+        .bind(membership.orgId, ...eligibleIds, dayEnd, dayStart)
+        .all<ConstraintRow>()
+
+      // Map: staffMemberId → most restrictive constraint type
+      // Priority: time_off/unavailable > not_preferred > preferred
+      const constraintPriority: Record<string, number> = {
+        time_off: 3,
+        unavailable: 3,
+        not_preferred: 2,
+        preferred: 1,
+      }
+      const staffConstraintMap = new Map<string, string>()
+      const targetDayOfWeek = new Date(data.asOfDate + 'T00:00:00').getDay()
+
+      for (const row of constraintRows.results) {
+        // For recurring constraints, check day-of-week match
+        if (row.days_of_week !== null) {
+          const days: number[] = JSON.parse(row.days_of_week)
+          if (!days.includes(targetDayOfWeek)) continue
+        }
+        const existing = staffConstraintMap.get(row.staff_member_id)
+        const existingPriority = existing ? (constraintPriority[existing] ?? 0) : 0
+        const newPriority = constraintPriority[row.type] ?? 0
+        if (newPriority > existingPriority) {
+          staffConstraintMap.set(row.staff_member_id, row.type)
+        }
+      }
+
+      for (const member of eligible) {
+        const ct = staffConstraintMap.get(member.staffMemberId)
+        if (ct === 'time_off' || ct === 'unavailable' || ct === 'preferred' || ct === 'not_preferred') {
+          member.constraintType = ct
+        }
+      }
     }
 
     return { success: true, eligible, positionName: pos.name }

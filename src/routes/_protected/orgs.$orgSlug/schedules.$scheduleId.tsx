@@ -1,6 +1,6 @@
 import { useRef, useMemo, useState, useEffect, Fragment } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2, List, CalendarDays } from 'lucide-react'
+import { AlertTriangle, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2, List, CalendarDays, Star, ThumbsDown, Clock } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import { formatTime, formatDuration, formatDate, getDatesInRange, addDays } from '@/lib/date-utils'
 import { ScheduleCalendar } from '@/components/ScheduleCalendar'
@@ -394,6 +394,78 @@ function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StaffHoursSummary({ assignments }: { assignments: ShiftAssignmentView[] }) {
+  const [open, setOpen] = useState(false)
+
+  const staffHours = useMemo(() => {
+    const map = new Map<string, { name: string; totalMinutes: number; shiftCount: number }>()
+    for (const a of assignments) {
+      const existing = map.get(a.staffMemberId)
+      const ms = new Date(a.endDatetime).getTime() - new Date(a.startDatetime).getTime()
+      const minutes = Math.round(ms / 60000)
+      if (existing) {
+        existing.totalMinutes += minutes
+        existing.shiftCount += 1
+      } else {
+        map.set(a.staffMemberId, { name: a.staffMemberName, totalMinutes: minutes, shiftCount: 1 })
+      }
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [assignments])
+
+  if (staffHours.length === 0) return null
+
+  const totalHours = staffHours.reduce((sum, s) => sum + s.totalMinutes, 0)
+
+  function fmtHours(minutes: number) {
+    const h = Math.floor(minutes / 60)
+    const m = minutes % 60
+    return m === 0 ? `${h}h` : `${h}h ${m}m`
+  }
+
+  return (
+    <div className="mb-6 border border-gray-200 rounded-lg bg-white overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-gray-400" />
+          <span className="text-sm font-semibold text-navy-700">Staff Hours</span>
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>
+            {staffHours.length} staff &middot; {fmtHours(totalHours)} total
+          </span>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-200">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-left">
+                <th className="px-4 py-2 font-semibold text-gray-600">Name</th>
+                <th className="px-4 py-2 font-semibold text-gray-600 text-right">Shifts</th>
+                <th className="px-4 py-2 font-semibold text-gray-600 text-right">Hours</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {staffHours.map((s) => (
+                <tr key={s.name}>
+                  <td className="px-4 py-2 text-gray-900">{s.name}</td>
+                  <td className="px-4 py-2 text-gray-600 text-right">{s.shiftCount}</td>
+                  <td className="px-4 py-2 text-gray-900 font-medium text-right">{fmtHours(s.totalMinutes)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -1194,6 +1266,9 @@ function ScheduleDetailPage() {
       {/* Requirements evaluation */}
       <RequirementsPanel evaluations={requirementEvaluations} />
 
+      {/* Staff hours summary */}
+      <StaffHoursSummary assignments={assignments} />
+
       {/* Assignments */}
       {viewType === 'calendar' ? (
         <ScheduleCalendar
@@ -1499,6 +1574,27 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
     )
   }, [assignments, localDate])
 
+  const staffStats = useMemo(() => {
+    const map = new Map<string, { shifts: number; minutes: number }>()
+    for (const a of assignments) {
+      const existing = map.get(a.staffMemberId)
+      const ms = new Date(a.endDatetime).getTime() - new Date(a.startDatetime).getTime()
+      const mins = Math.round(ms / 60000)
+      if (existing) { existing.shifts += 1; existing.minutes += mins }
+      else map.set(a.staffMemberId, { shifts: 1, minutes: mins })
+    }
+    return map
+  }, [assignments])
+
+  function fmtStaffStats(staffMemberId: string) {
+    const s = staffStats.get(staffMemberId)
+    if (!s) return null
+    const h = Math.floor(s.minutes / 60)
+    const m = s.minutes % 60
+    const hrs = m === 0 ? `${h}h` : `${h}h ${m}m`
+    return `${s.shifts} shift${s.shifts !== 1 ? 's' : ''} · ${hrs}`
+  }
+
   useEffect(() => {
     if (!localDate) {
       setEligible(null)
@@ -1526,13 +1622,18 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
           rankName: null,
           certsSummary: '',
           hasExpiringCerts: false,
+          constraintType: null,
         })),
       )
     }
   }, [localDate, positionId, orgSlug, allStaff])
 
-  const available = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId)) ?? []
+  const preferred = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === 'preferred') ?? []
+  const available = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === null) ?? []
+  const notPreferred = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === 'not_preferred') ?? []
+  const unavailable = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && (s.constraintType === 'time_off' || s.constraintType === 'unavailable')) ?? []
   const alreadyScheduled = eligible?.filter((s) => scheduledIds.has(s.staffMemberId)) ?? []
+  const selectableCount = preferred.length + available.length + notPreferred.length
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1565,12 +1666,55 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
             <p className="text-sm text-gray-400 text-center py-6">Loading…</p>
           ) : error ? (
             <p className="text-sm text-danger text-center py-6">{error}</p>
-          ) : eligible !== null && available.length === 0 && alreadyScheduled.length === 0 ? (
+          ) : eligible !== null && selectableCount === 0 && unavailable.length === 0 && alreadyScheduled.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-6">No staff found.</p>
           ) : eligible !== null ? (
             <>
-              {available.length > 0 && (
+              {preferred.length > 0 && (
                 <div>
+                  <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
+                    Preferred ({preferred.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {preferred.map((s) => (
+                      <button
+                        key={s.staffMemberId}
+                        type="button"
+                        onClick={() => onSelect(s.staffMemberId)}
+                        className="w-full text-left px-3 py-2.5 rounded-lg border border-green-300 bg-green-50 hover:border-green-500 hover:bg-green-100 transition-colors group"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 group-hover:text-green-800">{s.name}</p>
+                            {(s.rankName || s.certsSummary) && (
+                              <p className="text-xs text-gray-500 truncate mt-0.5">
+                                {[s.rankName, s.certsSummary].filter(Boolean).join(' · ')}
+                              </p>
+                            )}
+                            {fmtStaffStats(s.staffMemberId) && (
+                              <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {s.hasExpiringCerts && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-warning-bg text-warning text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                                <AlertTriangle className="w-3 h-3" />
+                                Expiring
+                              </span>
+                            )}
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                              <Star className="w-3 h-3" />
+                              Preferred
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {available.length > 0 && (
+                <div className={preferred.length > 0 ? 'mt-4' : ''}>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
                     Available ({available.length})
                   </p>
@@ -1590,6 +1734,9 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                                 {[s.rankName, s.certsSummary].filter(Boolean).join(' · ')}
                               </p>
                             )}
+                            {fmtStaffStats(s.staffMemberId) && (
+                              <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
+                            )}
                           </div>
                           {s.hasExpiringCerts && (
                             <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-warning-bg text-warning text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -1603,10 +1750,78 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                   </div>
                 </div>
               )}
-              {alreadyScheduled.length > 0 && (
-                <div className={available.length > 0 ? 'mt-4' : ''}>
+              {notPreferred.length > 0 && (
+                <div className={preferred.length + available.length > 0 ? 'mt-4' : ''}>
+                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
+                    Not Preferred ({notPreferred.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {notPreferred.map((s) => (
+                      <button
+                        key={s.staffMemberId}
+                        type="button"
+                        onClick={() => onSelect(s.staffMemberId)}
+                        className="w-full text-left px-3 py-2.5 rounded-lg border border-amber-300 bg-amber-50 hover:border-amber-500 hover:bg-amber-100 transition-colors group"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 group-hover:text-amber-800">{s.name}</p>
+                            {(s.rankName || s.certsSummary) && (
+                              <p className="text-xs text-gray-500 truncate mt-0.5">
+                                {[s.rankName, s.certsSummary].filter(Boolean).join(' · ')}
+                              </p>
+                            )}
+                            {fmtStaffStats(s.staffMemberId) && (
+                              <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {s.hasExpiringCerts && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-warning-bg text-warning text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                                <AlertTriangle className="w-3 h-3" />
+                                Expiring
+                              </span>
+                            )}
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                              <ThumbsDown className="w-3 h-3" />
+                              Not Preferred
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {unavailable.length > 0 && (
+                <div className={selectableCount > 0 ? 'mt-4' : ''}>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
-                    Already scheduled ({alreadyScheduled.length})
+                    Unavailable ({unavailable.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {unavailable.map((s) => (
+                      <div
+                        key={s.staffMemberId}
+                        className="px-3 py-2.5 rounded-lg border border-gray-100 bg-gray-50 opacity-60"
+                      >
+                        <p className="text-sm font-medium text-gray-500">{s.name}</p>
+                        {(s.rankName || s.certsSummary) && (
+                          <p className="text-xs text-gray-400 truncate mt-0.5">
+                            {[s.rankName, s.certsSummary].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                        {fmtStaffStats(s.staffMemberId) && (
+                          <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {alreadyScheduled.length > 0 && (
+                <div className={selectableCount + unavailable.length > 0 ? 'mt-4' : ''}>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
+                    Already Scheduled ({alreadyScheduled.length})
                   </p>
                   <div className="space-y-1.5">
                     {alreadyScheduled.map((s) => (
@@ -1619,6 +1834,9 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                           <p className="text-xs text-gray-400 truncate mt-0.5">
                             {[s.rankName, s.certsSummary].filter(Boolean).join(' · ')}
                           </p>
+                        )}
+                        {fmtStaffStats(s.staffMemberId) && (
+                          <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
                         )}
                       </div>
                     ))}

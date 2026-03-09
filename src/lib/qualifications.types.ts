@@ -58,6 +58,7 @@ export interface EligibleStaffMember {
   rankName: string | null
   certsSummary: string
   hasExpiringCerts: boolean
+  constraintType: 'preferred' | 'not_preferred' | 'unavailable' | 'time_off' | null
 }
 
 export interface EligibilityWarning {
