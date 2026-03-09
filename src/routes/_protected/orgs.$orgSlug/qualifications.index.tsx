@@ -604,7 +604,121 @@ function CertTypesTab({
 }
 
 // ---------------------------------------------------------------------------
-// Positions tab
+// Positions tab — shared sub-components (defined outside PositionsTab so React
+// sees a stable component identity across re-renders)
+// ---------------------------------------------------------------------------
+
+function RequirementEditor({
+  reqs,
+  setReqs,
+  certTypes,
+}: {
+  reqs: Array<{ certTypeId: string; minCertLevelId: string }>
+  setReqs: React.Dispatch<React.SetStateAction<Array<{ certTypeId: string; minCertLevelId: string }>>>
+  certTypes: CertTypeView[]
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Cert Requirements</p>
+      {reqs.map((req, i) => {
+        const ct = certTypes.find((c) => c.id === req.certTypeId)
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <select
+                value={req.certTypeId}
+                onChange={(e) => setReqs((prev) => prev.map((r, ii) => ii === i ? { ...r, certTypeId: e.target.value, minCertLevelId: '' } : r))}
+                className="w-full appearance-none px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+              >
+                <option value="">Select cert type…</option>
+                {certTypes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <ChevronDown className="absolute right-1.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            </div>
+            {ct?.isLeveled && ct.levels.length > 0 && (
+              <div className="relative flex-1">
+                <select
+                  value={req.minCertLevelId}
+                  onChange={(e) => setReqs((prev) => prev.map((r, ii) => ii === i ? { ...r, minCertLevelId: e.target.value } : r))}
+                  className="w-full appearance-none px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+                >
+                  <option value="">Any level</option>
+                  {ct.levels.map((l) => <option key={l.id} value={l.id}>Min: {l.name}</option>)}
+                </select>
+                <ChevronDown className="absolute right-1.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+              </div>
+            )}
+            <button type="button" onClick={() => setReqs((prev) => prev.filter((_, ii) => ii !== i))} className="text-gray-400 hover:text-danger">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )
+      })}
+      <button
+        type="button"
+        onClick={() => setReqs((prev) => [...prev, { certTypeId: '', minCertLevelId: '' }])}
+        className="text-xs text-navy-600 hover:text-navy-800 font-medium"
+      >
+        + Add cert requirement
+      </button>
+    </div>
+  )
+}
+
+function PositionForm({
+  name, setName, description, setDescription, minRankId, setMinRankId,
+  sortOrder, setSortOrder,
+  reqs, setReqs, onSubmit, busy, error, onCancel, submitLabel,
+  ranks, certTypes,
+}: {
+  name: string; setName: (v: string) => void
+  description: string; setDescription: (v: string) => void
+  minRankId: string; setMinRankId: (v: string) => void
+  sortOrder: number; setSortOrder: (v: number) => void
+  reqs: Array<{ certTypeId: string; minCertLevelId: string }>
+  setReqs: React.Dispatch<React.SetStateAction<Array<{ certTypeId: string; minCertLevelId: string }>>>
+  onSubmit: (e: React.FormEvent) => void
+  busy: boolean; error: string | null; onCancel: () => void; submitLabel: string
+  ranks: RankView[]; certTypes: CertTypeView[]
+}) {
+  return (
+    <form onSubmit={onSubmit} className="p-5 rounded-lg border border-gray-200 bg-white space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Name <span className="text-danger">*</span></label>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Description</label>
+          <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">Priority</label>
+          <input type="number" value={sortOrder} onChange={(e) => setSortOrder(parseInt(e.target.value, 10) || 0)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">Minimum Rank</label>
+        <div className="relative w-64">
+          <select value={minRankId} onChange={(e) => setMinRankId(e.target.value)} className="w-full appearance-none px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500">
+            <option value="">No rank requirement</option>
+            {ranks.map((r) => <option key={r.id} value={r.id}>{r.name} (order {r.sortOrder})</option>)}
+          </select>
+          <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+      <RequirementEditor reqs={reqs} setReqs={setReqs} certTypes={certTypes} />
+      {error && <p className="text-sm text-danger">{error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={busy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors">
+          {busy ? '…' : submitLabel}
+        </button>
+        <button type="button" onClick={onCancel} className="px-3 py-2 text-gray-500 hover:text-gray-900 text-sm transition-colors">Cancel</button>
+      </div>
+    </form>
+  )
+}
+
 // ---------------------------------------------------------------------------
 
 function PositionsTab({
@@ -731,113 +845,6 @@ function PositionsTab({
     }
   }
 
-  function RequirementEditor({
-    reqs,
-    setReqs,
-  }: {
-    reqs: Array<{ certTypeId: string; minCertLevelId: string }>
-    setReqs: React.Dispatch<React.SetStateAction<Array<{ certTypeId: string; minCertLevelId: string }>>>
-  }) {
-    return (
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Cert Requirements</p>
-        {reqs.map((req, i) => {
-          const ct = certTypes.find((c) => c.id === req.certTypeId)
-          return (
-            <div key={i} className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <select
-                  value={req.certTypeId}
-                  onChange={(e) => setReqs((prev) => prev.map((r, ii) => ii === i ? { ...r, certTypeId: e.target.value, minCertLevelId: '' } : r))}
-                  className="w-full appearance-none px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
-                >
-                  <option value="">Select cert type…</option>
-                  {certTypes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <ChevronDown className="absolute right-1.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-              </div>
-              {ct?.isLeveled && ct.levels.length > 0 && (
-                <div className="relative flex-1">
-                  <select
-                    value={req.minCertLevelId}
-                    onChange={(e) => setReqs((prev) => prev.map((r, ii) => ii === i ? { ...r, minCertLevelId: e.target.value } : r))}
-                    className="w-full appearance-none px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
-                  >
-                    <option value="">Any level</option>
-                    {ct.levels.map((l) => <option key={l.id} value={l.id}>Min: {l.name}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-1.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-                </div>
-              )}
-              <button type="button" onClick={() => setReqs((prev) => prev.filter((_, ii) => ii !== i))} className="text-gray-400 hover:text-danger">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )
-        })}
-        <button
-          type="button"
-          onClick={() => setReqs((prev) => [...prev, { certTypeId: '', minCertLevelId: '' }])}
-          className="text-xs text-navy-600 hover:text-navy-800 font-medium"
-        >
-          + Add cert requirement
-        </button>
-      </div>
-    )
-  }
-
-  function PositionForm({
-    name, setName, description, setDescription, minRankId, setMinRankId,
-    sortOrder, setSortOrder,
-    reqs, setReqs, onSubmit, busy, error, onCancel, submitLabel,
-  }: {
-    name: string; setName: (v: string) => void
-    description: string; setDescription: (v: string) => void
-    minRankId: string; setMinRankId: (v: string) => void
-    sortOrder: number; setSortOrder: (v: number) => void
-    reqs: Array<{ certTypeId: string; minCertLevelId: string }>
-    setReqs: React.Dispatch<React.SetStateAction<Array<{ certTypeId: string; minCertLevelId: string }>>>
-    onSubmit: (e: React.FormEvent) => void
-    busy: boolean; error: string | null; onCancel: () => void; submitLabel: string
-  }) {
-    return (
-      <form onSubmit={onSubmit} className="p-5 rounded-lg border border-gray-200 bg-white space-y-3">
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Name <span className="text-danger">*</span></label>
-            <input autoFocus type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Description</label>
-            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">Priority</label>
-            <input type="number" value={sortOrder} onChange={(e) => setSortOrder(parseInt(e.target.value, 10) || 0)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">Minimum Rank</label>
-          <div className="relative w-64">
-            <select value={minRankId} onChange={(e) => setMinRankId(e.target.value)} className="w-full appearance-none px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500">
-              <option value="">No rank requirement</option>
-              {ranks.map((r) => <option key={r.id} value={r.id}>{r.name} (order {r.sortOrder})</option>)}
-            </select>
-            <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
-        <RequirementEditor reqs={reqs} setReqs={setReqs} />
-        {error && <p className="text-sm text-danger">{error}</p>}
-        <div className="flex gap-2">
-          <button type="submit" disabled={busy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors">
-            {busy ? '…' : submitLabel}
-          </button>
-          <button type="button" onClick={onCancel} className="px-3 py-2 text-gray-500 hover:text-gray-900 text-sm transition-colors">Cancel</button>
-        </div>
-      </form>
-    )
-  }
-
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -867,6 +874,7 @@ function PositionsTab({
             onSubmit={handleAdd} busy={addBusy} error={addError}
             onCancel={() => { setShowAdd(false); setAddError(null) }}
             submitLabel="Add Position"
+            ranks={ranks} certTypes={certTypes}
           />
         </div>
       )}
@@ -903,6 +911,7 @@ function PositionsTab({
                         busy={editBusy} error={editError}
                         onCancel={() => { setEditingId(null); setEditError(null) }}
                         submitLabel="Save"
+                        ranks={ranks} certTypes={certTypes}
                       />
                     </td>
                   ) : (
