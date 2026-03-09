@@ -204,9 +204,10 @@ function ProtectedLayout() {
           {/* Org-specific nav */}
           {orgCtx && (
             <>
+              {/* Scheduling */}
               <div className="mt-4 mb-1 px-4">
                 <span className="text-white/40 text-xs font-semibold uppercase tracking-widest" style={{ fontFamily: 'var(--font-condensed)' }}>
-                  {orgCtx.org.name}
+                  Scheduling
                 </span>
               </div>
               <NavItem
@@ -227,6 +228,13 @@ function ProtectedLayout() {
                 icon={<CalendarCheck className="w-5 h-5" />}
                 label="Availability"
               />
+
+              {/* Personnel */}
+              <div className="mt-4 mb-1 px-4">
+                <span className="text-white/40 text-xs font-semibold uppercase tracking-widest" style={{ fontFamily: 'var(--font-condensed)' }}>
+                  Personnel
+                </span>
+              </div>
               <NavItem
                 to="/orgs/$orgSlug/staff"
                 params={{ orgSlug: orgCtx.org.slug }}
@@ -247,21 +255,32 @@ function ProtectedLayout() {
                   label="Qualifications"
                 />
               )}
-              {canDo(orgCtx.userRole, 'assign-roles') && (
-                <NavItem
-                  to="/orgs/$orgSlug/members"
-                  params={{ orgSlug: orgCtx.org.slug }}
-                  icon={<Users className="w-5 h-5" />}
-                  label="Members"
-                />
-              )}
-              {canDo(orgCtx.userRole, 'edit-org-settings') && (
-                <NavItem
-                  to="/orgs/$orgSlug/settings"
-                  params={{ orgSlug: orgCtx.org.slug }}
-                  icon={<Settings className="w-5 h-5" />}
-                  label="Settings"
-                />
+
+              {/* Administration */}
+              {(canDo(orgCtx.userRole, 'assign-roles') || canDo(orgCtx.userRole, 'edit-org-settings')) && (
+                <>
+                  <div className="mt-4 mb-1 px-4">
+                    <span className="text-white/40 text-xs font-semibold uppercase tracking-widest" style={{ fontFamily: 'var(--font-condensed)' }}>
+                      Administration
+                    </span>
+                  </div>
+                  {canDo(orgCtx.userRole, 'assign-roles') && (
+                    <NavItem
+                      to="/orgs/$orgSlug/members"
+                      params={{ orgSlug: orgCtx.org.slug }}
+                      icon={<Users className="w-5 h-5" />}
+                      label="Members"
+                    />
+                  )}
+                  {canDo(orgCtx.userRole, 'edit-org-settings') && (
+                    <NavItem
+                      to="/orgs/$orgSlug/settings"
+                      params={{ orgSlug: orgCtx.org.slug }}
+                      icon={<Settings className="w-5 h-5" />}
+                      label="Settings"
+                    />
+                  )}
+                </>
               )}
             </>
           )}
