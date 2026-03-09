@@ -1,4 +1,4 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Scripts, createRootRoute, Link } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 
@@ -39,7 +39,23 @@ export const Route = createRootRoute({
     ],
   }),
   shellComponent: RootDocument,
+  notFoundComponent: NotFound,
 })
+
+function NotFound() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <p className="text-8xl font-bold text-navy-700" style={{ fontFamily: 'var(--font-condensed)' }}>404</p>
+        <h1 className="mt-4 text-2xl font-semibold text-gray-900">Page not found</h1>
+        <p className="mt-2 text-gray-500">The page you're looking for doesn't exist.</p>
+        <Link to="/" className="mt-6 inline-block px-4 py-2 bg-red-700 text-white rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">
+          Go home
+        </Link>
+      </div>
+    </div>
+  )
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
