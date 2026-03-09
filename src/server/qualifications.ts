@@ -1420,6 +1420,7 @@ export const checkPositionEligibilityServerFn = createServerFn({ method: 'GET' }
         certsSummary,
         hasExpiringCerts,
         constraintType: null,
+        isScheduledAdjacent: false,
       })
     }
 
@@ -1476,6 +1477,34 @@ export const checkPositionEligibilityServerFn = createServerFn({ method: 'GET' }
         const ct = staffConstraintMap.get(member.staffMemberId)
         if (ct === 'time_off' || ct === 'unavailable' || ct === 'preferred' || ct === 'not_preferred') {
           member.constraintType = ct
+        }
+      }
+
+      // Check for adjacent-day assignments across all org schedules
+      const prevDate = new Date(data.asOfDate + 'T00:00:00')
+      prevDate.setDate(prevDate.getDate() - 1)
+      const nextDate = new Date(data.asOfDate + 'T00:00:00')
+      nextDate.setDate(nextDate.getDate() + 1)
+      const prevStr = prevDate.toISOString().slice(0, 10)
+      const nextStr = nextDate.toISOString().slice(0, 10)
+
+      type AdjacentRow = { staff_member_id: string }
+      const adjacentRows = await env.DB.prepare(
+        `SELECT DISTINCT sa.staff_member_id
+         FROM shift_assignment sa
+         JOIN schedule s ON s.id = sa.schedule_id
+         WHERE s.org_id = ? AND sa.staff_member_id IN (${placeholders})
+           AND (
+             sa.start_datetime LIKE ? OR sa.start_datetime LIKE ?
+           )`,
+      )
+        .bind(membership.orgId, ...eligibleIds, prevStr + '%', nextStr + '%')
+        .all<AdjacentRow>()
+
+      const adjacentIds = new Set(adjacentRows.results.map((r) => r.staff_member_id))
+      for (const member of eligible) {
+        if (adjacentIds.has(member.staffMemberId)) {
+          member.isScheduledAdjacent = true
         }
       }
     }

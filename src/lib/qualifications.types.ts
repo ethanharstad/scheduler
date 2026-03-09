@@ -59,6 +59,7 @@ export interface EligibleStaffMember {
   certsSummary: string
   hasExpiringCerts: boolean
   constraintType: 'preferred' | 'not_preferred' | 'unavailable' | 'time_off' | null
+  isScheduledAdjacent: boolean
 }
 
 export interface EligibilityWarning {

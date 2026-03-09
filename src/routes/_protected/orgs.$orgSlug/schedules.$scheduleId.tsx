@@ -1574,6 +1574,25 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
     )
   }, [assignments, localDate])
 
+  const adjacentIds = useMemo(() => {
+    if (!localDate) return new Set<string>()
+    const d = new Date(localDate + 'T00:00:00')
+    const prev = new Date(d)
+    prev.setDate(prev.getDate() - 1)
+    const next = new Date(d)
+    next.setDate(next.getDate() + 1)
+    const prevStr = prev.toISOString().slice(0, 10)
+    const nextStr = next.toISOString().slice(0, 10)
+    return new Set(
+      assignments
+        .filter((a) => {
+          const aDate = a.startDatetime.slice(0, 10)
+          return aDate === prevStr || aDate === nextStr
+        })
+        .map((a) => a.staffMemberId),
+    )
+  }, [assignments, localDate])
+
   const staffStats = useMemo(() => {
     const map = new Map<string, { shifts: number; minutes: number }>()
     for (const a of assignments) {
@@ -1607,7 +1626,10 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
       checkPositionEligibilityServerFn({ data: { orgSlug, positionId, asOfDate: localDate } })
         .then((result) => {
           if (result.success) {
-            setEligible(result.eligible)
+            setEligible(result.eligible.map((e) => ({
+              ...e,
+              isScheduledAdjacent: e.isScheduledAdjacent || adjacentIds.has(e.staffMemberId),
+            })))
           } else {
             setError('Failed to load eligible staff.')
           }
@@ -1623,17 +1645,19 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
           certsSummary: '',
           hasExpiringCerts: false,
           constraintType: null,
+          isScheduledAdjacent: adjacentIds.has(s.id),
         })),
       )
     }
-  }, [localDate, positionId, orgSlug, allStaff])
+  }, [localDate, positionId, orgSlug, allStaff, adjacentIds])
 
   const preferred = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === 'preferred') ?? []
-  const available = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === null) ?? []
+  const available = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === null && !s.isScheduledAdjacent) ?? []
+  const scheduledAdjacent = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === null && s.isScheduledAdjacent) ?? []
   const notPreferred = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === 'not_preferred') ?? []
   const unavailable = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && (s.constraintType === 'time_off' || s.constraintType === 'unavailable')) ?? []
   const alreadyScheduled = eligible?.filter((s) => scheduledIds.has(s.staffMemberId)) ?? []
-  const selectableCount = preferred.length + available.length + notPreferred.length
+  const selectableCount = preferred.length + available.length + scheduledAdjacent.length + notPreferred.length
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1702,6 +1726,12 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                                 Expiring
                               </span>
                             )}
+                            {s.isScheduledAdjacent && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                                <CalendarDays className="w-3 h-3" />
+                                Adjacent
+                              </span>
+                            )}
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
                               <Star className="w-3 h-3" />
                               Preferred
@@ -1750,8 +1780,51 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                   </div>
                 </div>
               )}
-              {notPreferred.length > 0 && (
+              {scheduledAdjacent.length > 0 && (
                 <div className={preferred.length + available.length > 0 ? 'mt-4' : ''}>
+                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
+                    Scheduled Adjacent ({scheduledAdjacent.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {scheduledAdjacent.map((s) => (
+                      <button
+                        key={s.staffMemberId}
+                        type="button"
+                        onClick={() => onSelect(s.staffMemberId)}
+                        className="w-full text-left px-3 py-2.5 rounded-lg border border-amber-300 bg-amber-50 hover:border-amber-500 hover:bg-amber-100 transition-colors group"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 group-hover:text-amber-800">{s.name}</p>
+                            {(s.rankName || s.certsSummary) && (
+                              <p className="text-xs text-gray-500 truncate mt-0.5">
+                                {[s.rankName, s.certsSummary].filter(Boolean).join(' · ')}
+                              </p>
+                            )}
+                            {fmtStaffStats(s.staffMemberId) && (
+                              <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {s.hasExpiringCerts && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-warning-bg text-warning text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                                <AlertTriangle className="w-3 h-3" />
+                                Expiring
+                              </span>
+                            )}
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                              <CalendarDays className="w-3 h-3" />
+                              Adjacent
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {notPreferred.length > 0 && (
+                <div className={preferred.length + available.length + scheduledAdjacent.length > 0 ? 'mt-4' : ''}>
                   <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
                     Not Preferred ({notPreferred.length})
                   </p>
@@ -1782,6 +1855,12 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                                 Expiring
                               </span>
                             )}
+                            {s.isScheduledAdjacent && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                                <CalendarDays className="w-3 h-3" />
+                                Adjacent
+                              </span>
+                            )}
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
                               <ThumbsDown className="w-3 h-3" />
                               Not Preferred
@@ -1797,6 +1876,7 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                 <div className={selectableCount > 0 ? 'mt-4' : ''}>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
                     Unavailable ({unavailable.length})
+
                   </p>
                   <div className="space-y-1.5">
                     {unavailable.map((s) => (
