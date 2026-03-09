@@ -1,6 +1,6 @@
 import { useRef, useMemo, useState, useEffect, Fragment } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2 } from 'lucide-react'
+import { AlertTriangle, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2 } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { ScheduleView, ScheduleStatus, ShiftAssignmentView, RecurrenceMode } from '@/lib/schedule.types'
 import type { StaffMemberView } from '@/lib/staff.types'
@@ -312,11 +312,27 @@ function evaluateRequirements(
 
 function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation[] }) {
   const [open, setOpen] = useState(true)
+  const [expandedReqs, setExpandedReqs] = useState<Set<string>>(new Set())
 
   if (evaluations.length === 0) return null
 
   const failingCount = evaluations.filter((e) => e.violations.length > 0).length
   const allMet = failingCount === 0
+
+  function toggleExpanded(reqId: string) {
+    setExpandedReqs((prev) => {
+      const next = new Set(prev)
+      if (next.has(reqId)) next.delete(reqId)
+      else next.add(reqId)
+      return next
+    })
+  }
+
+  // Earliest unfilled date across all violations
+  const earliestViolation = evaluations
+    .flatMap((e) => e.violations)
+    .map((v) => v.date)
+    .sort()[0]
 
   return (
     <div className="mb-6 border border-gray-200 rounded-lg bg-white overflow-hidden">
@@ -342,9 +358,20 @@ function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation
 
       {open && (
         <div className="border-t border-gray-200 divide-y divide-gray-100">
+          {!allMet && earliestViolation && (
+            <div className="px-4 py-2 bg-danger-bg/40 flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5 text-danger shrink-0" />
+              <span className="text-xs text-danger font-medium">
+                Earliest gap: {new Date(earliestViolation + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </span>
+            </div>
+          )}
           {evaluations.map((ev) => {
             const na = ev.applicableDates === 0
             const ok = !na && ev.violations.length === 0
+            const expanded = expandedReqs.has(ev.requirement.id)
+            // Deduplicate violations by date (take worst per date)
+            const uniqueDates = [...new Set(ev.violations.map((v) => v.date))].sort()
 
             return (
               <div key={ev.requirement.id} className="px-4 py-3">
@@ -365,21 +392,33 @@ function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation
                   </span>
                   {na && <span className="text-xs text-gray-400 italic">No applicable dates in range</span>}
                 </div>
-                {ev.violations.length > 0 && (
-                  <div className="ml-6 mt-1 space-y-0.5">
-                    {ev.violations.slice(0, 5).map((v) => (
-                      <p key={v.date} className="text-xs text-danger">
-                        {new Date(v.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                        {': '}
-                        {v.minCoverage < v.minStaff
-                          ? `${v.minCoverage} of ${v.minStaff} required`
-                          : v.overstaffed && v.maxStaff !== null
-                            ? `overstaffed (max ${v.maxStaff})`
-                            : ''}
-                      </p>
-                    ))}
-                    {ev.violations.length > 5 && (
-                      <p className="text-xs text-gray-400">+{ev.violations.length - 5} more dates</p>
+                {uniqueDates.length > 0 && (
+                  <div className="ml-6 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(ev.requirement.id)}
+                      className="flex items-center gap-1.5 text-xs text-danger font-medium hover:underline"
+                    >
+                      <span>{uniqueDates.length} day{uniqueDates.length !== 1 ? 's' : ''} with gaps</span>
+                      <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                    </button>
+                    {expanded && (
+                      <div className="mt-1.5 space-y-0.5 pl-1">
+                        {uniqueDates.map((date) => {
+                          const v = ev.violations.find((vv) => vv.date === date)!
+                          return (
+                            <p key={date} className="text-xs text-danger">
+                              {new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                              {': '}
+                              {v.minCoverage < v.minStaff
+                                ? `${v.minCoverage} of ${v.minStaff} required`
+                                : v.overstaffed && v.maxStaff !== null
+                                  ? `overstaffed (max ${v.maxStaff})`
+                                  : ''}
+                            </p>
+                          )
+                        })}
+                      </div>
                     )}
                   </div>
                 )}
@@ -583,6 +622,33 @@ function ScheduleDetailPage() {
     )
   }
 
+  function applyQuickShift(preset: '24h' | 'day' | 'night') {
+    const dateStr = addStartDatetime ? addStartDatetime.slice(0, 10) : schedule.startDate
+    const [y, m, d] = dateStr.split('-').map(Number)
+    const nextDay = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
+    if (preset === '24h') {
+      setAddStartDatetime(`${dateStr}T07:00`)
+      setAddEndDatetime(`${nextDay}T07:00`)
+    } else if (preset === 'day') {
+      setAddStartDatetime(`${dateStr}T07:00`)
+      setAddEndDatetime(`${dateStr}T19:00`)
+    } else {
+      setAddStartDatetime(`${dateStr}T19:00`)
+      setAddEndDatetime(`${nextDay}T07:00`)
+    }
+  }
+
+  function getShiftPreview(): string | null {
+    if (!addStartDatetime || !addEndDatetime) return null
+    const start = new Date(addStartDatetime)
+    const end = new Date(addEndDatetime)
+    const ms = end.getTime() - start.getTime()
+    if (ms <= 0) return null
+    const hours = Math.round(ms / 3600000)
+    const dayLabel = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    return `${hours}h · ${dayLabel}`
+  }
+
   async function handleAddAssignment(e: React.FormEvent) {
     e.preventDefault()
     setAddError(null)
@@ -746,16 +812,6 @@ function ScheduleDetailPage() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      {/* Back link */}
-      <Link
-        to="/orgs/$orgSlug/schedules"
-        params={{ orgSlug: org.slug }}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-navy-700 transition-colors mb-4"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to schedules
-      </Link>
-
       {/* Schedule Header */}
       {editing && canEdit ? (
         <form onSubmit={handleUpdateSchedule} className="mb-6 p-5 rounded-lg border border-gray-200 bg-white">
@@ -830,11 +886,11 @@ function ScheduleDetailPage() {
                 <button
                   onClick={() => void handleApplyConstraints()}
                   disabled={applyConstraintsBusy}
-                  title="Re-process all assignments against current approved constraints"
+                  title="Re-evaluate schedule requirements and flag staffing gaps — does not modify assignments"
                   className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 rounded-md text-sm transition-colors"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${applyConstraintsBusy ? 'animate-spin' : ''}`} />
-                  {applyConstraintsBusy ? 'Applying…' : 'Apply Constraints'}
+                  {applyConstraintsBusy ? 'Checking…' : 'Check Requirements'}
                 </button>
                 {applyConstraintsChanged !== null && (
                   <span className="text-xs text-gray-500">
@@ -923,7 +979,7 @@ function ScheduleDetailPage() {
                     <button
                       type="button"
                       onClick={() => setShowWizard(true)}
-                      className="mt-1.5 flex items-center gap-1 text-xs text-navy-700 hover:text-navy-900 font-medium transition-colors"
+                      className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1 border border-navy-500 text-navy-700 hover:bg-navy-50 rounded-md text-xs font-medium transition-colors"
                     >
                       <Wand2 className="w-3.5 h-3.5" />
                       Find Available Staff
@@ -1068,6 +1124,27 @@ function ScheduleDetailPage() {
                   </>
                 ) : (
                   <>
+                    <div className="sm:col-span-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-600">Quick Shift</span>
+                      </div>
+                      <div className="flex gap-2">
+                        {([
+                          { label: '24h (7A–7A)', preset: '24h' as const },
+                          { label: 'Day (7A–7P)', preset: 'day' as const },
+                          { label: 'Night (7P–7A)', preset: 'night' as const },
+                        ] as const).map(({ label, preset }) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => applyQuickShift(preset)}
+                            className="px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 hover:bg-navy-700 hover:text-white transition-colors"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-600 mb-1">
                         Start <span className="text-danger">*</span>
@@ -1089,6 +1166,9 @@ function ScheduleDetailPage() {
                         onChange={(e) => setAddEndDatetime(e.target.value)}
                         className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
                       />
+                      {getShiftPreview() && (
+                        <p className="mt-1 text-xs text-gray-500 font-medium">{getShiftPreview()}</p>
+                      )}
                     </div>
                   </>
                 )}
@@ -1142,21 +1222,38 @@ function ScheduleDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {sortedDates.map((date) => (
+              {sortedDates.map((date) => {
+                const dayViolations = dateViolationMap.get(date) ?? []
+                const staffCount = grouped[date].length
+                const hasViolations = dayViolations.length > 0
+                const hasRequirements = requirements.length > 0
+                const dayBorderClass = hasViolations
+                  ? 'border-l-4 border-l-danger'
+                  : hasRequirements
+                    ? 'border-l-4 border-l-success'
+                    : ''
+                return (
                 <Fragment key={date}>
-                  <tr className="border-b border-gray-200 bg-gray-50/50">
+                  <tr className={`border-b border-gray-200 bg-gray-50/50 ${dayBorderClass}`}>
                     <td colSpan={canEdit ? 5 : 4} className="px-4 py-2">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide shrink-0" style={{ fontFamily: 'var(--font-condensed)' }}>
-                          {formatDate(date + 'T00:00:00')}
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
+                            {formatDate(date + 'T00:00:00')}
+                          </span>
+                          {staffCount > 0 && (
+                            <span className={`text-xs font-medium ${hasViolations ? 'text-danger' : hasRequirements ? 'text-success' : 'text-gray-400'}`}>
+                              {staffCount} staff
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {(dateViolationMap.get(date) ?? []).map((v, i) => (
+                          {dayViolations.map((v, i) => (
                             <button
                               key={i}
                               type="button"
                               onClick={() => quickAddForDate(date, v.positionId, v.positionName)}
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-danger-bg text-danger text-xs font-semibold hover:opacity-75 transition-opacity"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-danger bg-danger-bg text-danger text-xs font-semibold hover:opacity-75 transition-opacity"
                               title={v.minCoverage < v.minStaff ? `${v.name}: ${v.minCoverage} assigned, need ≥ ${v.minStaff} — click to add` : `${v.name}: overstaffed (max ${v.maxStaff}) — click to add`}
                               style={{ fontFamily: 'var(--font-condensed)' }}
                             >
@@ -1188,68 +1285,107 @@ function ScheduleDetailPage() {
                   {grouped[date].map((a) => {
                     if (editingAssignment === a.id && canEdit) {
                       return (
-                        <tr key={a.id} className="border-b border-gray-200 last:border-0 bg-gray-50">
-                          <td className="px-4 py-2">
-                            <div className="relative">
-                              <select
-                                value={editAssignStaffId}
-                                onChange={(e) => setEditAssignStaffId(e.target.value)}
-                                className="w-full appearance-none px-2 py-1 bg-white border border-gray-300 rounded-md text-gray-900 text-xs focus:outline-none focus:border-navy-500"
-                              >
-                                {staffMembers.map((s) => (
-                                  <option key={s.id} value={s.id}>{s.name}</option>
-                                ))}
-                              </select>
-                              <ChevronDown className="absolute right-1 top-1.5 w-3 h-3 text-gray-400 pointer-events-none" />
-                            </div>
-                          </td>
-                          <td className="px-4 py-2">
-                            <div className="flex items-center gap-1">
-                              <input type="datetime-local" value={editAssignStart} onChange={(e) => setEditAssignStart(e.target.value)} className="px-1 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500 w-full" />
-                              <span className="text-gray-400 shrink-0">–</span>
-                              <input type="datetime-local" value={editAssignEnd} onChange={(e) => setEditAssignEnd(e.target.value)} className="px-1 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500 w-full" />
-                            </div>
-                          </td>
-                          <td className="px-4 py-2">
-                            {positions.length > 0 ? (
-                              <div>
-                                <div className="relative mb-1">
-                                  <select
-                                    value={editAssignPositionId}
-                                    onChange={(e) => {
-                                      const posId = e.target.value
-                                      setEditAssignPositionId(posId)
-                                      if (posId) {
-                                        const pos = positions.find((p) => p.id === posId)
-                                        if (pos) setEditAssignPosition(pos.name)
-                                      }
-                                    }}
-                                    className="w-full appearance-none px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500"
-                                  >
-                                    <option value="">Custom / none</option>
-                                    {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                  </select>
-                                  <ChevronDown className="absolute right-1 top-1.5 w-3 h-3 text-gray-400 pointer-events-none" />
+                        <tr key={a.id} className="border-b border-gray-200 last:border-0">
+                          <td colSpan={canEdit ? 5 : 4} className="p-0">
+                            <div className="border-l-4 border-l-navy-500 bg-blue-50/40 px-4 py-3 space-y-3">
+                              {/* Row 1: Staff + Position */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Staff Member</label>
+                                  <div className="relative">
+                                    <select
+                                      value={editAssignStaffId}
+                                      onChange={(e) => setEditAssignStaffId(e.target.value)}
+                                      className="w-full appearance-none px-2 py-1.5 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+                                    >
+                                      {staffMembers.map((s) => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                      ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-1.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                                  </div>
                                 </div>
-                                {!editAssignPositionId && (
-                                  <input type="text" value={editAssignPosition} onChange={(e) => setEditAssignPosition(e.target.value)} className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500" placeholder="Custom label" />
-                                )}
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Position</label>
+                                  {positions.length > 0 ? (
+                                    <div>
+                                      <div className="relative">
+                                        <select
+                                          value={editAssignPositionId}
+                                          onChange={(e) => {
+                                            const posId = e.target.value
+                                            setEditAssignPositionId(posId)
+                                            if (posId) {
+                                              const pos = positions.find((p) => p.id === posId)
+                                              if (pos) setEditAssignPosition(pos.name)
+                                            }
+                                          }}
+                                          className="w-full appearance-none px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+                                        >
+                                          <option value="">Custom / none</option>
+                                          {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        </select>
+                                        <ChevronDown className="absolute right-1.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                                      </div>
+                                      {!editAssignPositionId && (
+                                        <input type="text" value={editAssignPosition} onChange={(e) => setEditAssignPosition(e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" placeholder="Custom label" />
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <input type="text" value={editAssignPosition} onChange={(e) => setEditAssignPosition(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" />
+                                  )}
+                                </div>
                               </div>
-                            ) : (
-                              <input type="text" value={editAssignPosition} onChange={(e) => setEditAssignPosition(e.target.value)} className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500" />
-                            )}
-                          </td>
-                          <td className="px-4 py-2">
-                            <input type="text" value={editAssignNotes} onChange={(e) => setEditAssignNotes(e.target.value)} className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500" />
-                          </td>
-                          <td className="px-4 py-2">
-                            <div className="flex items-center justify-end gap-1">
-                              <button onClick={() => void handleUpdateAssignment(a.id)} disabled={editAssignBusy} className="p-1 text-success hover:bg-success-bg rounded transition-colors">
-                                <Check className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => setEditingAssignment(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded transition-colors">
-                                <X className="w-4 h-4" />
-                              </button>
+                              {/* Row 2: Start → End + Notes + Actions */}
+                              <div className="flex items-end gap-3">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
+                                  <div className="flex gap-1">
+                                    <input
+                                      type="date"
+                                      value={editAssignStart.slice(0, 10)}
+                                      onChange={(e) => setEditAssignStart(e.target.value + 'T' + (editAssignStart.slice(11, 16) || '00:00'))}
+                                      className="px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500"
+                                    />
+                                    <input
+                                      type="time"
+                                      value={editAssignStart.slice(11, 16)}
+                                      onChange={(e) => setEditAssignStart((editAssignStart.slice(0, 10) || '') + 'T' + e.target.value)}
+                                      className="px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500 w-24"
+                                    />
+                                  </div>
+                                </div>
+                                <span className="text-gray-400 pb-2">→</span>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">End</label>
+                                  <div className="flex gap-1">
+                                    <input
+                                      type="date"
+                                      value={editAssignEnd.slice(0, 10)}
+                                      onChange={(e) => setEditAssignEnd(e.target.value + 'T' + (editAssignEnd.slice(11, 16) || '00:00'))}
+                                      className="px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500"
+                                    />
+                                    <input
+                                      type="time"
+                                      value={editAssignEnd.slice(11, 16)}
+                                      onChange={(e) => setEditAssignEnd((editAssignEnd.slice(0, 10) || '') + 'T' + e.target.value)}
+                                      className="px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500 w-24"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex-1">
+                                  <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                                  <input type="text" value={editAssignNotes} onChange={(e) => setEditAssignNotes(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" placeholder="Optional" />
+                                </div>
+                                <div className="flex items-center gap-1 pb-0.5">
+                                  <button onClick={() => void handleUpdateAssignment(a.id)} disabled={editAssignBusy} className="p-1.5 text-success hover:bg-success-bg rounded transition-colors" title="Save">
+                                    <Check className="w-4 h-4" />
+                                  </button>
+                                  <button onClick={() => setEditingAssignment(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded transition-colors" title="Cancel">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -1262,7 +1398,7 @@ function ScheduleDetailPage() {
                     const rowWarnings = assignmentWarnings.get(a.id) ?? []
 
                     return (
-                      <tr key={a.id} className="border-b border-gray-200 last:border-0 hover:bg-gray-50">
+                      <tr key={a.id} className="group border-b border-gray-200 last:border-0 hover:bg-gray-50">
                         <td className="px-4 py-2 text-gray-900 font-medium truncate">
                           <div className="flex items-center gap-1.5">
                             {a.staffMemberName}
@@ -1281,10 +1417,11 @@ function ScheduleDetailPage() {
                         <td className="px-4 py-2 text-gray-500 truncate">{a.notes ?? '—'}</td>
                         {canEdit && (
                           <td className="px-4 py-2">
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className={`flex items-center justify-end gap-2 transition-opacity ${confirming ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                               <button onClick={() => startEditAssignment(a)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors">
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
+                              <div className="w-px h-3.5 bg-gray-200 shrink-0" />
                               {confirming ? (
                                 <div className="flex items-center gap-1">
                                   <button onClick={() => void handleDeleteAssignment(a.id)} disabled={busy} className="px-2 py-0.5 bg-danger hover:opacity-90 disabled:opacity-50 text-white rounded text-xs">
@@ -1306,7 +1443,8 @@ function ScheduleDetailPage() {
                     )
                   })}
                 </Fragment>
-              ))}
+              )
+              })}
             </tbody>
           </table>
         </div>
