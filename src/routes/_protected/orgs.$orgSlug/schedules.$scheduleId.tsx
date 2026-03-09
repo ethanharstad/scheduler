@@ -1,7 +1,9 @@
 import { useRef, useMemo, useState, useEffect, Fragment } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2 } from 'lucide-react'
+import { AlertTriangle, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2, List, CalendarDays } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
+import { formatTime, formatDuration, formatDate, getDatesInRange, addDays } from '@/lib/date-utils'
+import { ScheduleCalendar } from '@/components/ScheduleCalendar'
 import type { ScheduleView, ScheduleStatus, ShiftAssignmentView, RecurrenceMode } from '@/lib/schedule.types'
 import type { StaffMemberView } from '@/lib/staff.types'
 import type { PositionView, EligibilityWarning, EligibleStaffMember } from '@/lib/qualifications.types'
@@ -64,37 +66,6 @@ function statusBadge(status: ScheduleStatus) {
   )
 }
 
-function formatTime(datetime: string) {
-  const d = new Date(datetime)
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-}
-
-function formatDuration(start: string, end: string) {
-  const ms = new Date(end).getTime() - new Date(start).getTime()
-  const totalMinutes = Math.round(ms / 60000)
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  if (minutes === 0) return `${hours}h`
-  return `${hours}h ${minutes}m`
-}
-
-function formatDate(datetime: string) {
-  const d = new Date(datetime)
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-}
-
-function getDatesInRange(startDate: string, endDate: string): string[] {
-  const dates: string[] = []
-  const [sy, sm, sd] = startDate.split('-').map(Number)
-  const [ey, em, ed] = endDate.split('-').map(Number)
-  let current = Date.UTC(sy, sm - 1, sd)
-  const end = Date.UTC(ey, em - 1, ed)
-  while (current <= end) {
-    dates.push(new Date(current).toISOString().slice(0, 10))
-    current += 86400000 // +1 day in ms
-  }
-  return dates
-}
 
 function groupByDate(assignments: ShiftAssignmentView[], allDates: string[]): Record<string, ShiftAssignmentView[]> {
   const groups: Record<string, ShiftAssignmentView[]> = {}
@@ -136,10 +107,6 @@ type RequirementEvaluation = {
   applicableDates: number
 }
 
-function addDays(dateStr: string, n: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
-}
 
 function computeRequirementWindow(
   date: string,
@@ -458,6 +425,7 @@ function ScheduleDetailPage() {
   const requirements: ScheduleRequirementView[] = loaderData.requirements
   // Map of assignmentId → eligibility warnings
   const [assignmentWarnings, setAssignmentWarnings] = useState<Map<string, EligibilityWarning[]>>(new Map())
+  const [viewType, setViewType] = useState<'table' | 'calendar'>('table')
 
   const allDatesForEval = useMemo(() => getDatesInRange(schedule.startDate, schedule.endDate), [schedule.startDate, schedule.endDate])
   const requirementEvaluations = useMemo(
@@ -867,12 +835,32 @@ function ScheduleDetailPage() {
               <h1 className="text-2xl font-bold text-navy-700">{schedule.name}</h1>
               {statusBadge(schedule.status)}
             </div>
-            <p className="text-sm text-gray-500 mt-1">
-              {new Date(schedule.startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-              {' – '}
-              {new Date(schedule.endDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-              {schedule.createdByName && <> &middot; Created by {schedule.createdByName}</>}
-            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-sm text-gray-500">
+                {new Date(schedule.startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                {' – '}
+                {new Date(schedule.endDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                {schedule.createdByName && <> &middot; Created by {schedule.createdByName}</>}
+              </p>
+              <div className="flex items-center bg-gray-100 rounded-md p-0.5 ml-3">
+                <button
+                  type="button"
+                  onClick={() => setViewType('table')}
+                  className={`p-1.5 rounded transition-colors ${viewType === 'table' ? 'bg-white text-navy-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                  title="Table view"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewType('calendar')}
+                  className={`p-1.5 rounded transition-colors ${viewType === 'calendar' ? 'bg-white text-navy-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                  title="Calendar view"
+                >
+                  <CalendarDays className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </div>
           {canEdit && (
             <div className="flex items-center gap-2">
@@ -1206,7 +1194,15 @@ function ScheduleDetailPage() {
       {/* Requirements evaluation */}
       <RequirementsPanel evaluations={requirementEvaluations} />
 
-      {/* Assignments grouped by date */}
+      {/* Assignments */}
+      {viewType === 'calendar' ? (
+        <ScheduleCalendar
+          schedule={schedule}
+          assignments={assignments}
+          onEditAssignment={canEdit ? (a) => startEditAssignment(a) : undefined}
+          onQuickAdd={canEdit ? (date) => quickAddForDate(date) : undefined}
+        />
+      ) : (
       <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
           <table className="w-full text-sm table-fixed">
             <colgroup>
@@ -1458,6 +1454,8 @@ function ScheduleDetailPage() {
             </tbody>
           </table>
         </div>
+      )}
+
 
       {showWizard && (
         <StaffingWizardModal
