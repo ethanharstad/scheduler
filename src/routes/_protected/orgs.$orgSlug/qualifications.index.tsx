@@ -152,7 +152,7 @@ function RanksTab({
       )}
 
       {showAdd && canManage && (
-        <form onSubmit={handleAdd} className="mb-4 p-4 rounded-lg border border-gray-200 bg-white flex items-end gap-3">
+        <form onSubmit={handleAdd} className="mb-4 p-5 rounded-lg border border-gray-200 bg-white flex items-end gap-3">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-600 mb-1">Name</label>
             <input
@@ -161,7 +161,7 @@ function RanksTab({
               value={addName}
               onChange={(e) => setAddName(e.target.value)}
               placeholder="e.g. Captain"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500"
             />
           </div>
           <div className="w-32">
@@ -171,54 +171,57 @@ function RanksTab({
               min={1}
               value={addSortOrder}
               onChange={(e) => setAddSortOrder(parseInt(e.target.value) || 1)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
             />
           </div>
           <div className="flex gap-2">
-            <button type="submit" disabled={addBusy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold">
+            <button type="submit" disabled={addBusy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors">
               {addBusy ? '…' : 'Add'}
             </button>
-            <button type="button" onClick={() => { setShowAdd(false); setAddError(null) }} className="px-3 py-2 text-gray-500 hover:text-gray-900 text-sm">Cancel</button>
+            <button type="button" onClick={() => { setShowAdd(false); setAddError(null) }} className="px-3 py-2 text-gray-500 hover:text-gray-900 text-sm transition-colors">Cancel</button>
           </div>
           {addError && <p className="text-sm text-danger mt-1">{addError}</p>}
         </form>
       )}
 
       {ranks.length === 0 ? (
-        <p className="text-sm text-gray-400 italic">No ranks defined yet.</p>
+        <div className="rounded-lg border border-gray-200 bg-white py-10 text-center">
+          <p className="text-sm text-gray-500">No ranks defined yet.</p>
+          <p className="text-xs text-gray-400 mt-1">Add a rank to define your organization's hierarchy.</p>
+        </div>
       ) : (
         <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
-                <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide w-32" style={{ fontFamily: 'var(--font-condensed)' }}>Sort Order</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide w-32" style={{ fontFamily: 'var(--font-condensed)' }}>Sort Order</th>
                 {canManage && <th className="w-24" />}
               </tr>
             </thead>
             <tbody>
               {ranks.map((r) => (
-                <tr key={r.id} className="border-b border-gray-200 last:border-0 hover:bg-gray-50">
+                <tr key={r.id} className="group border-b border-gray-200 last:border-0 hover:bg-gray-50">
                   {editingId === r.id ? (
                     <>
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-3">
                         <input
                           type="text"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          className="w-full px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+                          className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
                         />
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-3">
                         <input
                           type="number"
                           min={1}
                           value={editSortOrder}
                           onChange={(e) => setEditSortOrder(parseInt(e.target.value) || 1)}
-                          className="w-24 px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+                          className="w-24 px-2 py-1 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
                         />
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-1 justify-end">
                           <button onClick={() => void handleEdit(r.id)} disabled={editBusy} className="p-1 text-success hover:bg-success-bg rounded">
                             <Check className="w-4 h-4" />
@@ -231,14 +234,15 @@ function RanksTab({
                     </>
                   ) : (
                     <>
-                      <td className="px-4 py-2 font-medium text-navy-700">{r.name}</td>
-                      <td className="px-4 py-2 text-gray-500">{r.sortOrder}</td>
+                      <td className="px-4 py-3 font-medium text-navy-700">{r.name}</td>
+                      <td className="px-4 py-3 text-gray-500">{r.sortOrder}</td>
                       {canManage && (
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-1 justify-end">
-                            <button onClick={() => startEdit(r)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded">
+                        <td className="px-4 py-3">
+                          <div className={`flex items-center gap-1.5 justify-end transition-opacity ${confirmDelete === r.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                            <button onClick={() => startEdit(r)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors">
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
+                            <div className="w-px h-3.5 bg-gray-200 shrink-0" />
                             {confirmDelete === r.id ? (
                               <div className="flex items-center gap-1">
                                 <button onClick={() => void handleDelete(r.id)} disabled={deleteBusy === r.id} className="px-2 py-0.5 bg-danger text-white rounded text-xs">
@@ -247,7 +251,7 @@ function RanksTab({
                                 <button onClick={() => setConfirmDelete(null)} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">No</button>
                               </div>
                             ) : (
-                              <button onClick={() => setConfirmDelete(r.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded">
+                              <button onClick={() => setConfirmDelete(r.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded transition-colors">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
@@ -420,15 +424,15 @@ function CertTypesTab({
       )}
 
       {showAdd && canManage && (
-        <form onSubmit={handleAdd} className="mb-4 p-4 rounded-lg border border-gray-200 bg-white space-y-3">
+        <form onSubmit={handleAdd} className="mb-4 p-5 rounded-lg border border-gray-200 bg-white space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Name <span className="text-danger">*</span></label>
-              <input autoFocus type="text" value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="e.g. EMT Certification" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" />
+              <input autoFocus type="text" value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="e.g. EMT Certification" className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:border-navy-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Description</label>
-              <input type="text" value={addDescription} onChange={(e) => setAddDescription(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" />
+              <input type="text" value={addDescription} onChange={(e) => setAddDescription(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -460,29 +464,32 @@ function CertTypesTab({
           )}
           {addError && <p className="text-sm text-danger">{addError}</p>}
           <div className="flex gap-2">
-            <button type="submit" disabled={addBusy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold">
+            <button type="submit" disabled={addBusy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors">
               {addBusy ? '…' : 'Add'}
             </button>
-            <button type="button" onClick={() => { setShowAdd(false); setAddError(null) }} className="px-3 py-2 text-gray-500 hover:text-gray-900 text-sm">Cancel</button>
+            <button type="button" onClick={() => { setShowAdd(false); setAddError(null) }} className="px-3 py-2 text-gray-500 hover:text-gray-900 text-sm transition-colors">Cancel</button>
           </div>
         </form>
       )}
 
       {certTypes.length === 0 ? (
-        <p className="text-sm text-gray-400 italic">No cert types defined yet.</p>
+        <div className="rounded-lg border border-gray-200 bg-white py-10 text-center">
+          <p className="text-sm text-gray-500">No certification types defined yet.</p>
+          <p className="text-xs text-gray-400 mt-1">Add a cert type to track staff certifications.</p>
+        </div>
       ) : (
         <div className="space-y-2">
           {certTypes.map((ct) => (
             <div key={ct.id} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
               {editingId === ct.id ? (
-                <div className="p-4 flex items-end gap-3">
+                <div className="p-5 flex items-end gap-3">
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-600 mb-1">Name</label>
-                    <input autoFocus type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" />
+                    <input autoFocus type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
                   </div>
                   <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-600 mb-1">Description</label>
-                    <input type="text" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" />
+                    <input type="text" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => void handleEditName(ct.id)} disabled={editBusy} className="p-2 text-success hover:bg-success-bg rounded">
@@ -787,21 +794,21 @@ function PositionsTab({
     busy: boolean; error: string | null; onCancel: () => void; submitLabel: string
   }) {
     return (
-      <form onSubmit={onSubmit} className="p-4 rounded-lg border border-gray-200 bg-white space-y-3">
+      <form onSubmit={onSubmit} className="p-5 rounded-lg border border-gray-200 bg-white space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Name <span className="text-danger">*</span></label>
-            <input autoFocus type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" />
+            <input autoFocus type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Description</label>
-            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" />
+            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-600 mb-1">Minimum Rank</label>
           <div className="relative w-64">
-            <select value={minRankId} onChange={(e) => setMinRankId(e.target.value)} className="w-full appearance-none px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500">
+            <select value={minRankId} onChange={(e) => setMinRankId(e.target.value)} className="w-full appearance-none px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500">
               <option value="">No rank requirement</option>
               {ranks.map((r) => <option key={r.id} value={r.id}>{r.name} (order {r.sortOrder})</option>)}
             </select>
@@ -811,10 +818,10 @@ function PositionsTab({
         <RequirementEditor reqs={reqs} setReqs={setReqs} />
         {error && <p className="text-sm text-danger">{error}</p>}
         <div className="flex gap-2">
-          <button type="submit" disabled={busy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold">
+          <button type="submit" disabled={busy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors">
             {busy ? '…' : submitLabel}
           </button>
-          <button type="button" onClick={onCancel} className="px-3 py-2 text-gray-500 hover:text-gray-900 text-sm">Cancel</button>
+          <button type="button" onClick={onCancel} className="px-3 py-2 text-gray-500 hover:text-gray-900 text-sm transition-colors">Cancel</button>
         </div>
       </form>
     )
@@ -853,21 +860,24 @@ function PositionsTab({
       )}
 
       {positions.length === 0 ? (
-        <p className="text-sm text-gray-400 italic">No positions defined yet.</p>
+        <div className="rounded-lg border border-gray-200 bg-white py-10 text-center">
+          <p className="text-sm text-gray-500">No positions defined yet.</p>
+          <p className="text-xs text-gray-400 mt-1">Add a position to define shift roles with rank and cert requirements.</p>
+        </div>
       ) : (
         <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
-                <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Min Rank</th>
-                <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Cert Requirements</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Min Rank</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Cert Requirements</th>
                 <th className="w-32" />
               </tr>
             </thead>
             <tbody>
               {positions.map((p) => (
-                <tr key={p.id} className="border-b border-gray-200 last:border-0 hover:bg-gray-50 align-top">
+                <tr key={p.id} className="group border-b border-gray-200 last:border-0 hover:bg-gray-50 align-top">
                   {editingId === p.id ? (
                     <td colSpan={4} className="px-4 py-3">
                       <PositionForm
@@ -904,20 +914,22 @@ function PositionsTab({
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 justify-end">
+                        <div className={`flex items-center gap-1.5 justify-end transition-opacity ${confirmDelete === p.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                           <Link
                             to="/orgs/$orgSlug/qualifications/positions/$positionId"
                             params={{ orgSlug, positionId: p.id }}
-                            className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded"
+                            className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors"
                             title="View eligibility"
                           >
                             <ChevronRight className="w-3.5 h-3.5" />
                           </Link>
                           {canManage && (
                             <>
-                              <button onClick={() => startEdit(p)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded">
+                              <div className="w-px h-3.5 bg-gray-200 shrink-0" />
+                              <button onClick={() => startEdit(p)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors">
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
+                              <div className="w-px h-3.5 bg-gray-200 shrink-0" />
                               {confirmDelete === p.id ? (
                                 <div className="flex items-center gap-1">
                                   <button onClick={() => void handleDelete(p.id)} disabled={deleteBusy === p.id} className="px-2 py-0.5 bg-danger text-white rounded text-xs">
@@ -926,7 +938,7 @@ function PositionsTab({
                                   <button onClick={() => setConfirmDelete(null)} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">No</button>
                                 </div>
                               ) : (
-                                <button onClick={() => setConfirmDelete(p.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded">
+                                <button onClick={() => setConfirmDelete(p.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded transition-colors">
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
@@ -963,9 +975,9 @@ function QualificationsPage() {
   ]
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-navy-700 mb-1">Qualifications</h1>
+        <h1 className="text-2xl font-bold text-navy-700 mb-1">Qualifications</h1>
         <p className="text-gray-500 text-sm">Manage ranks, certifications, and named shift positions for {org.name}.</p>
       </div>
 

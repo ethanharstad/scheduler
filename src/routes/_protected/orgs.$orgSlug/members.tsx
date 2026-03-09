@@ -114,7 +114,7 @@ function MembersPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl">
       <h1 className="text-2xl font-bold text-navy-700 mb-6">Members</h1>
 
       {members.length === 0 ? (

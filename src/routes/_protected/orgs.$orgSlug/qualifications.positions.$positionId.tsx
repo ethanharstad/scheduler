@@ -49,7 +49,7 @@ function EligibilityPage() {
 
   if (error === 'NOT_FOUND') {
     return (
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-3xl">
         <p className="text-gray-500">Position not found.</p>
         <Link to="/orgs/$orgSlug/qualifications" params={{ orgSlug: org.slug }} className="text-navy-700 hover:underline text-sm mt-2 inline-block">
           Back to Qualifications
@@ -59,7 +59,7 @@ function EligibilityPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl">
       <Link
         to="/orgs/$orgSlug/qualifications"
         params={{ orgSlug: org.slug }}
