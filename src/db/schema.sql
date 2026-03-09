@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS shift_assignment (
   start_datetime  TEXT NOT NULL,                     -- ISO 8601 datetime
   end_datetime    TEXT NOT NULL,                     -- ISO 8601 datetime
   position        TEXT,                              -- e.g. "Engine 1", "Medic 2"
+  position_id     TEXT REFERENCES position(id) ON DELETE SET NULL, -- optional; links to named position
   notes           TEXT,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL,
@@ -322,8 +323,7 @@ CREATE TABLE IF NOT EXISTS position_cert_requirement (
   UNIQUE (position_id, cert_type_id)
 );
 CREATE INDEX IF NOT EXISTS idx_pos_cert_req_position ON position_cert_requirement(position_id);
-CREATE INDEX IF NOT EXISTS idx_staff_member_rank      ON staff_member(rank_id)      WHERE rank_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_shift_assignment_posid ON shift_assignment(position_id) WHERE position_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_staff_member_rank ON staff_member(rank_id) WHERE rank_id IS NOT NULL;
 
 -- Schedule Requirements (009-schedule-requirements)
 

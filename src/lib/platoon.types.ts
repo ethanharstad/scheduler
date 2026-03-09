@@ -92,7 +92,7 @@ export interface PositionOption {
 // --- List ---
 export type ListPlatoonsInput = { orgSlug: string }
 export type ListPlatoonsOutput =
-  | { success: true; platoons: PlatoonView[] }
+  | { success: true; platoons: PlatoonView[]; scheduleDayStart: string }
   | { success: false; error: 'UNAUTHORIZED' }
 
 // --- Get detail ---

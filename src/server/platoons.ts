@@ -136,6 +136,13 @@ export const listPlatoonsServerFn = createServerFn({ method: 'GET' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
+    type OrgSettingsRow = { schedule_day_start: string }
+    const orgSettings = await env.DB.prepare(
+      `SELECT schedule_day_start FROM organization WHERE id = ?`,
+    )
+      .bind(membership.orgId)
+      .first<OrgSettingsRow>()
+
     type PlatoonRow = {
       id: string
       name: string
@@ -174,7 +181,7 @@ export const listPlatoonsServerFn = createServerFn({ method: 'GET' })
       memberCount: r.member_count,
     }))
 
-    return { success: true, platoons }
+    return { success: true, platoons, scheduleDayStart: orgSettings?.schedule_day_start ?? '00:00' }
   })
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { ArrowLeft, AlertTriangle, Star, Award, ChevronDown, X } from 'lucide-react'
+import { createFileRoute, useRouteContext } from '@tanstack/react-router'
+import { AlertTriangle, Star, Award, ChevronDown, X } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { StaffCertView, StaffMemberDetailView } from '@/lib/qualifications.types'
 import {
@@ -113,11 +113,8 @@ function StaffDetailPage() {
 
   if (!staffMember) {
     return (
-      <div className="max-w-3xl mx-auto">
+      <div>
         <p className="text-gray-500">Staff member not found.</p>
-        <Link to="/orgs/$orgSlug/staff" params={{ orgSlug: org.slug }} className="text-navy-700 hover:underline text-sm mt-2 inline-block">
-          Back to Staff
-        </Link>
       </div>
     )
   }
@@ -219,16 +216,7 @@ function StaffDetailPage() {
   const selectedCertType = certTypes.find((ct) => ct.id === certFormTypeId)
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <Link
-        to="/orgs/$orgSlug/staff"
-        params={{ orgSlug: org.slug }}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-navy-700 transition-colors mb-4"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Staff
-      </Link>
-
+    <div>
       {/* Profile header */}
       <div className="rounded-lg border border-gray-200 bg-white p-6 mb-6">
         <div className="flex items-start justify-between">

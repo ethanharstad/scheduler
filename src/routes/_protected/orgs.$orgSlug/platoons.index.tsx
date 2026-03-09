@@ -11,7 +11,10 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/platoons/')({
   }),
   loader: async ({ params }) => {
     const result = await listPlatoonsServerFn({ data: { orgSlug: params.orgSlug } })
-    return { platoons: result.success ? result.platoons : [] }
+    return {
+      platoons: result.success ? result.platoons : [],
+      scheduleDayStart: result.success ? result.scheduleDayStart : '00:00',
+    }
   },
   component: PlatoonsPage,
 })
@@ -97,10 +100,12 @@ function RRulesEditor({
 
 function CreatePlatoonForm({
   orgSlug,
+  defaultShiftStartTime,
   onSuccess,
   onCancel,
 }: {
   orgSlug: string
+  defaultShiftStartTime: string
   onSuccess: (platoon: PlatoonView) => void
   onCancel: () => void
 }) {
@@ -108,7 +113,7 @@ function CreatePlatoonForm({
   const [shiftLabel, setShiftLabel] = useState('')
   const [rrules, setRrules] = useState<RRuleEntry[]>([{ rrule: '', startOffset: 0 }])
   const [startDate, setStartDate] = useState('')
-  const [shiftStartTime, setShiftStartTime] = useState('08:00')
+  const [shiftStartTime, setShiftStartTime] = useState(defaultShiftStartTime)
   const [shiftEndTime, setShiftEndTime] = useState('08:00')
   const [description, setDescription] = useState('')
   const [color, setColor] = useState('')
@@ -293,7 +298,7 @@ function CreatePlatoonForm({
 function PlatoonsPage() {
   const { orgSlug } = Route.useParams()
   const { userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { platoons: initialPlatoons } = Route.useLoaderData()
+  const { platoons: initialPlatoons, scheduleDayStart } = Route.useLoaderData()
 
   const [platoons, setPlatoons] = useState<PlatoonView[]>(initialPlatoons)
   const [showCreate, setShowCreate] = useState(false)
@@ -326,6 +331,7 @@ function PlatoonsPage() {
       {showCreate && (
         <CreatePlatoonForm
           orgSlug={orgSlug}
+          defaultShiftStartTime={scheduleDayStart}
           onSuccess={handleCreated}
           onCancel={() => setShowCreate(false)}
         />

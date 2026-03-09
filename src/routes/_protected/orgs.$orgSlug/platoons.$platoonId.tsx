@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { createFileRoute, Link, redirect, useRouteContext } from '@tanstack/react-router'
-import { ChevronLeft, Edit2, Trash2, UserPlus, X } from 'lucide-react'
+import { createFileRoute, redirect, useRouteContext } from '@tanstack/react-router'
+import { Edit2, Trash2, UserPlus, X } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { PlatoonDetailView, PlatoonMemberView, StaffOption, PositionOption, RRuleEntry } from '@/lib/platoon.types'
 import {
@@ -504,16 +504,6 @@ function PlatoonDetailPage() {
 
   return (
     <div className="max-w-3xl">
-      {/* Back link */}
-      <Link
-        to="/orgs/$orgSlug/platoons"
-        params={{ orgSlug }}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-navy-700 mb-4 transition-colors"
-      >
-        <ChevronLeft className="w-4 h-4" />
-        Platoons
-      </Link>
-
       {showEdit ? (
         <EditPlatoonForm
           orgSlug={orgSlug}
