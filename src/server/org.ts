@@ -5,7 +5,10 @@ import {
   type OrgMembershipView,
   type OrgRole,
   type OrgView,
+  type UpdateOrgSettingsInput,
+  type UpdateOrgSettingsOutput,
 } from '@/lib/org.types'
+import { canDo } from '@/lib/rbac'
 
 // ---------------------------------------------------------------------------
 // Internal: session helper
@@ -158,10 +161,11 @@ export const getOrgServerFn = createServerFn({ method: 'GET' })
       slug: string
       name: string
       plan: string
+      schedule_day_start: string
       created_at: string
     }
     const orgRow = await env.DB.prepare(
-      `SELECT id, slug, name, plan, created_at
+      `SELECT id, slug, name, plan, schedule_day_start, created_at
        FROM organization WHERE slug = ? AND status = 'active'`,
     )
       .bind(data.slug)
@@ -186,8 +190,53 @@ export const getOrgServerFn = createServerFn({ method: 'GET' })
         slug: orgRow.slug,
         name: orgRow.name,
         plan: orgRow.plan,
+        scheduleDayStart: orgRow.schedule_day_start,
         createdAt: orgRow.created_at,
       },
       userRole: memberRow ? (memberRow.role as OrgRole) : ('owner' as OrgRole),
     }
+  })
+
+// ---------------------------------------------------------------------------
+// updateOrgSettingsServerFn
+// ---------------------------------------------------------------------------
+
+export const updateOrgSettingsServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: UpdateOrgSettingsInput) => d)
+  .handler(async (ctx): Promise<UpdateOrgSettingsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const auth = await getAuthenticatedUser(env)
+    if (!auth) return { success: false, error: 'UNAUTHORIZED' }
+
+    if (!/^\d{2}:\d{2}$/.test(data.scheduleDayStart)) {
+      return { success: false, error: 'VALIDATION_ERROR' }
+    }
+
+    type OrgMemberRow = { org_id: string; role: string }
+    const row = await env.DB.prepare(
+      `SELECT o.id as org_id, m.role
+       FROM organization o
+       JOIN org_membership m ON o.id = m.org_id
+       WHERE o.slug = ? AND o.status = 'active'
+         AND m.user_id = ? AND m.status = 'active'`,
+    ).bind(data.orgSlug, auth.userId).first<OrgMemberRow>()
+
+    if (!row && !auth.isSystemAdmin) return { success: false, error: 'UNAUTHORIZED' }
+    if (row && !canDo(row.role as OrgRole, 'edit-org-settings')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    const orgId = row?.org_id ?? (await env.DB.prepare(
+      `SELECT id FROM organization WHERE slug = ? AND status = 'active'`,
+    ).bind(data.orgSlug).first<{ id: string }>())?.id
+
+    if (!orgId) return { success: false, error: 'UNAUTHORIZED' }
+
+    await env.DB.prepare(
+      `UPDATE organization SET schedule_day_start = ? WHERE id = ?`,
+    ).bind(data.scheduleDayStart, orgId).run()
+
+    return { success: true }
   })

@@ -53,13 +53,18 @@ CREATE        INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_token(user_i
 
 -- Organization & Membership (003-create-org)
 CREATE TABLE IF NOT EXISTS organization (
-  id         TEXT NOT NULL PRIMARY KEY,              -- crypto.randomUUID()
-  slug       TEXT NOT NULL UNIQUE,                   -- 2-50 chars, lowercase [a-z0-9-], globally unique URL handle
-  name       TEXT NOT NULL,                          -- 2-100 chars, display name
-  plan       TEXT NOT NULL DEFAULT 'free',           -- 'free' (Phase 8 adds more)
-  status     TEXT NOT NULL DEFAULT 'active',         -- 'active' (deletion deferred to future feature)
-  created_at TEXT NOT NULL                           -- ISO 8601
+  id                  TEXT NOT NULL PRIMARY KEY,              -- crypto.randomUUID()
+  slug                TEXT NOT NULL UNIQUE,                   -- 2-50 chars, lowercase [a-z0-9-], globally unique URL handle
+  name                TEXT NOT NULL,                          -- 2-100 chars, display name
+  plan                TEXT NOT NULL DEFAULT 'free',           -- 'free' (Phase 8 adds more)
+  status              TEXT NOT NULL DEFAULT 'active',         -- 'active' (deletion deferred to future feature)
+  schedule_day_start  TEXT NOT NULL DEFAULT '00:00',          -- HH:MM; start of scheduling day (e.g. '07:00' for 24-hr fire shifts)
+  created_at          TEXT NOT NULL                           -- ISO 8601
 );
+
+-- Migration for existing DBs:
+-- wrangler d1 execute scheduler-auth --local --command="ALTER TABLE organization ADD COLUMN schedule_day_start TEXT NOT NULL DEFAULT '00:00'"
+-- wrangler d1 execute scheduler-auth --command="ALTER TABLE organization ADD COLUMN schedule_day_start TEXT NOT NULL DEFAULT '00:00'"
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_org_slug   ON organization(slug);
 CREATE        INDEX IF NOT EXISTS idx_org_status ON organization(status);

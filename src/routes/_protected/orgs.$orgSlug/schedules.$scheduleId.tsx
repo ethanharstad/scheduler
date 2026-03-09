@@ -141,9 +141,13 @@ function addDays(dateStr: string, n: number): string {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
 }
 
-function computeRequirementWindow(date: string, req: ScheduleRequirementView): { winStart: string; winEnd: string } {
+function computeRequirementWindow(
+  date: string,
+  req: ScheduleRequirementView,
+  scheduleDayStart: string,
+): { winStart: string; winEnd: string } {
   if (!req.windowStartTime || !req.windowEndTime || req.windowEndDayOffset == null) {
-    return { winStart: `${date}T00:00`, winEnd: `${addDays(date, 1)}T00:00` }
+    return { winStart: `${date}T${scheduleDayStart}`, winEnd: `${addDays(date, 1)}T${scheduleDayStart}` }
   }
   return {
     winStart: `${date}T${req.windowStartTime}`,
@@ -159,29 +163,72 @@ function normalizeDt(dt: string): string {
   return t
 }
 
+/**
+ * Splits a declared requirement window [winStart, winEnd] into per-org-day sub-windows.
+ * Each sub-window is bounded by that org day's boundaries [dayStart, +1d dayStart).
+ * Violations are attributed to the orgDate of each sub-window, not the RRULE anchor date.
+ */
+function expandToOrgDaySubWindows(
+  winStart: string,
+  winEnd: string,
+  scheduleDayStart: string,
+): Array<{ orgDate: string; subStart: string; subEnd: string }> {
+  const result: Array<{ orgDate: string; subStart: string; subEnd: string }> = []
+  // Find the org date containing winStart: if winStart's time >= dayStart, it's the same calendar date; otherwise the day before.
+  const winStartDate = winStart.slice(0, 10)
+  const winStartTime = winStart.slice(11, 16)
+  let orgDate = winStartTime >= scheduleDayStart ? winStartDate : addDays(winStartDate, -1)
+  while (true) {
+    const orgDayStart = `${orgDate}T${scheduleDayStart}`
+    const orgDayEnd = `${addDays(orgDate, 1)}T${scheduleDayStart}`
+    if (orgDayStart >= winEnd) break
+    const subStart = winStart > orgDayStart ? winStart : orgDayStart
+    const subEnd = winEnd < orgDayEnd ? winEnd : orgDayEnd
+    if (subStart < subEnd) result.push({ orgDate, subStart, subEnd })
+    orgDate = addDays(orgDate, 1)
+  }
+  return result
+}
+
 function evaluateRequirements(
   requirements: ScheduleRequirementView[],
   assignments: ShiftAssignmentView[],
   allDates: string[],
+  scheduleDayStart: string,
 ): RequirementEvaluation[] {
-  // --- Phase 1: Expand all requirement windows ---
+  if (allDates.length === 0) return requirements.map(req => ({ requirement: req, violations: [], applicableDates: 0 }))
+  const scheduleStart = allDates[0]
+  const scheduleEnd = allDates[allDates.length - 1]
+  const allDatesSet = new Set(allDates)
+
+  // --- Phase 1: Expand all requirement windows into per-org-day sub-windows ---
+  // Look back windowEndDayOffset days before the schedule start so that windows anchored before
+  // the schedule (e.g. a Fri–Sun window when the schedule starts on Sunday) are still evaluated
+  // for the days they cover within the schedule.
   type ReqWindow = {
-    reqId: string; date: string
-    winStart: string; winEnd: string
+    reqId: string
+    orgDate: string   // the org day this sub-window belongs to (may differ from the RRULE anchor date)
+    winStart: string
+    winEnd: string
     positionId: string | null; minStaff: number; maxStaff: number | null
   }
   const reqWindows: ReqWindow[] = []
   for (const req of requirements) {
     const allowedDays = parseRruleDays(req.rrule)
-    for (const date of allDates) {
-      if (date < req.effectiveStart) continue
-      if (req.effectiveEnd && date > req.effectiveEnd) continue
+    const lookback = req.windowEndDayOffset ?? 1
+    const anchorDates = getDatesInRange(addDays(scheduleStart, -lookback), scheduleEnd)
+    for (const anchorDate of anchorDates) {
+      if (anchorDate < req.effectiveStart) continue
+      if (req.effectiveEnd && anchorDate > req.effectiveEnd) continue
       if (allowedDays !== null) {
-        const [dy, dm, dd] = date.split('-').map(Number); const dow = new Date(Date.UTC(dy, dm - 1, dd)).getUTCDay()
+        const [dy, dm, dd] = anchorDate.split('-').map(Number); const dow = new Date(Date.UTC(dy, dm - 1, dd)).getUTCDay()
         if (!allowedDays.includes(dow)) continue
       }
-      const { winStart, winEnd } = computeRequirementWindow(date, req)
-      reqWindows.push({ reqId: req.id, date, winStart, winEnd, positionId: req.positionId, minStaff: req.minStaff, maxStaff: req.maxStaff })
+      const { winStart, winEnd } = computeRequirementWindow(anchorDate, req, scheduleDayStart)
+      for (const sw of expandToOrgDaySubWindows(winStart, winEnd, scheduleDayStart)) {
+        if (!allDatesSet.has(sw.orgDate)) continue
+        reqWindows.push({ reqId: req.id, orgDate: sw.orgDate, winStart: sw.subStart, winEnd: sw.subEnd, positionId: req.positionId, minStaff: req.minStaff, maxStaff: req.maxStaff })
+      }
     }
   }
 
@@ -235,28 +282,27 @@ function evaluateRequirements(
   }
 
   // --- Phase 4: Build RequirementEvaluation results ---
+  // Group sub-windows by requirement for efficient lookup; violations are attributed to orgDate.
+  const reqWindowsByReqId = new Map<string, ReqWindow[]>()
+  for (const rw of reqWindows) {
+    const arr = reqWindowsByReqId.get(rw.reqId)
+    if (arr) arr.push(rw)
+    else reqWindowsByReqId.set(rw.reqId, [rw])
+  }
+
   return requirements.map((req) => {
-    const allowedDays = parseRruleDays(req.rrule)
-    let applicableDates = 0
+    const windows = reqWindowsByReqId.get(req.id) ?? []
+    const applicableDates = new Set(windows.map(w => w.orgDate)).size
     const violations: RequirementViolation[] = []
 
-    for (const date of allDates) {
-      if (date < req.effectiveStart) continue
-      if (req.effectiveEnd && date > req.effectiveEnd) continue
-      if (allowedDays !== null) {
-        const [dy, dm, dd] = date.split('-').map(Number); const dow = new Date(Date.UTC(dy, dm - 1, dd)).getUTCDay()
-        if (!allowedDays.includes(dow)) continue
-      }
-      applicableDates++
-
-      const { winStart } = computeRequirementWindow(date, req)
-      const stats = windowStats.get(`${req.id}:${winStart}`)
+    for (const rw of windows) {
+      const stats = windowStats.get(`${rw.reqId}:${rw.winStart}`)
       const minCoverage = stats?.minAllocated ?? 0
       const maxEligible = stats?.maxEligible ?? 0
-      const overstaffed = req.maxStaff !== null && maxEligible > req.maxStaff
+      const overstaffed = rw.maxStaff !== null && maxEligible > rw.maxStaff
 
-      if (minCoverage < req.minStaff || overstaffed) {
-        violations.push({ date, minCoverage, minStaff: req.minStaff, maxStaff: req.maxStaff, overstaffed })
+      if (minCoverage < rw.minStaff || overstaffed) {
+        violations.push({ date: rw.orgDate, minCoverage, minStaff: rw.minStaff, maxStaff: rw.maxStaff, overstaffed })
       }
     }
 
@@ -374,8 +420,8 @@ function ScheduleDetailPage() {
 
   const allDatesForEval = useMemo(() => getDatesInRange(schedule.startDate, schedule.endDate), [schedule.startDate, schedule.endDate])
   const requirementEvaluations = useMemo(
-    () => evaluateRequirements(requirements, assignments, allDatesForEval),
-    [requirements, assignments, allDatesForEval],
+    () => evaluateRequirements(requirements, assignments, allDatesForEval, org.scheduleDayStart),
+    [requirements, assignments, allDatesForEval, org.scheduleDayStart],
   )
   const dateViolationMap = useMemo(() => {
     const map = new Map<string, Array<{ name: string; minCoverage: number; minStaff: number; maxStaff: number | null; overstaffed: boolean; positionId: string | null; positionName: string | null }>>()

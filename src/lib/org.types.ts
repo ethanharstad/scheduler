@@ -27,8 +27,18 @@ export interface OrgView {
   slug: string
   name: string
   plan: string
+  scheduleDayStart: string  // HH:MM; e.g. "07:00"
   createdAt: string
 }
+
+export interface UpdateOrgSettingsInput {
+  orgSlug: string
+  scheduleDayStart: string  // HH:MM
+}
+
+export type UpdateOrgSettingsOutput =
+  | { success: true }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'VALIDATION_ERROR' }
 
 /** Shape returned to the client for a user's org membership list entry */
 export interface OrgMembershipView {

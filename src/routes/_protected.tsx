@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment } from 'react'
-import { Building2, Calendar, CalendarCheck, ClipboardList, GraduationCap, Home, LogOut, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
+import { Building2, Calendar, CalendarCheck, ClipboardList, GraduationCap, Home, LogOut, Settings, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -58,6 +58,7 @@ function useBreadcrumbs(): Crumb[] {
     if (pathname === `${base}/staff`) return [orgCrumb, orgNameCrumb, { label: 'Staff' }]
     if (pathname === `${base}/staff/audit`) return [orgCrumb, orgNameCrumb, { label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: 'Audit Log' }]
     if (pathname === `${base}/members`) return [orgCrumb, orgNameCrumb, { label: 'Members' }]
+    if (pathname === `${base}/settings`) return [orgCrumb, orgNameCrumb, { label: 'Settings' }]
     if (pathname === `${base}/platoons`) return [orgCrumb, orgNameCrumb, { label: 'Platoons' }]
     if (pathname.startsWith(`${base}/platoons/`)) {
       return [orgCrumb, orgNameCrumb, { label: 'Platoons', to: '/orgs/$orgSlug/platoons', params: { orgSlug: slug } }, { label: 'Platoon' }]
@@ -252,6 +253,14 @@ function ProtectedLayout() {
                   params={{ orgSlug: orgCtx.org.slug }}
                   icon={<Users className="w-5 h-5" />}
                   label="Members"
+                />
+              )}
+              {canDo(orgCtx.userRole, 'edit-org-settings') && (
+                <NavItem
+                  to="/orgs/$orgSlug/settings"
+                  params={{ orgSlug: orgCtx.org.slug }}
+                  icon={<Settings className="w-5 h-5" />}
+                  label="Settings"
                 />
               )}
             </>
