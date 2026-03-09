@@ -106,13 +106,15 @@ export const getSessionServerFn = createServerFn({ method: 'GET' }).handler(
     const now = new Date().toISOString()
 
     const row = await env.DB.prepare(
-      `SELECT s.id, s.user_id, s.expires_at, u.email, u.is_system_admin
+      `SELECT s.id, s.user_id, s.expires_at, u.email, u.is_system_admin,
+              COALESCE(p.display_name, u.email) AS display_name
        FROM session s
        JOIN user u ON s.user_id = u.id
+       LEFT JOIN user_profile p ON p.user_id = u.id
        WHERE s.session_token = ? AND s.expires_at > ?`,
     )
       .bind(sessionToken, now)
-      .first<{ id: string; user_id: string; expires_at: string; email: string; is_system_admin: number }>()
+      .first<{ id: string; user_id: string; expires_at: string; email: string; is_system_admin: number; display_name: string }>()
 
     if (!row) return null
 
@@ -133,6 +135,6 @@ export const getSessionServerFn = createServerFn({ method: 'GET' }).handler(
       maxAge: 86400,
     })
 
-    return { userId: row.user_id, email: row.email, isSystemAdmin: row.is_system_admin === 1 }
+    return { userId: row.user_id, email: row.email, displayName: row.display_name, isSystemAdmin: row.is_system_admin === 1 }
   },
 )

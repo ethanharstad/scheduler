@@ -44,5 +44,6 @@ export interface PasswordResetToken {
 export interface SessionContext {
   userId: string
   email: string
+  displayName: string
   isSystemAdmin: boolean
 }

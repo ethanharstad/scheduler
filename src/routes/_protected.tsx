@@ -269,7 +269,7 @@ function ProtectedLayout() {
 
         {/* Bottom actions */}
         <div className="border-t border-white/10 py-2 shrink-0">
-          <NavItem to="/profile" icon={<UserCircle className="w-5 h-5" />} label="Profile" />
+          <NavItem to="/profile" icon={<UserCircle className="w-5 h-5" />} label={session.displayName} />
           <button
             onClick={() => void handleLogout()}
             className="flex items-center gap-3 h-11 px-4 w-full text-sm font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
