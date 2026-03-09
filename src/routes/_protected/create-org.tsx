@@ -73,7 +73,7 @@ function CreateOrgPage() {
   }
 
   return (
-    <div className="max-w-md mx-auto">
+    <div>
       <div className="flex items-center gap-3 mb-8">
         <Building2 className="w-8 h-8 text-navy-500" />
         <h1 className="text-2xl font-bold text-navy-700">Create Organization</h1>

@@ -28,7 +28,7 @@ function AdminDashboard() {
   const stats = Route.useLoaderData()
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div>
       <div className="flex items-center gap-3 mb-6">
         <Shield className="w-6 h-6 text-red-700" />
         <h1 className="text-2xl font-bold text-navy-700" style={{ fontFamily: 'var(--font-condensed)' }}>

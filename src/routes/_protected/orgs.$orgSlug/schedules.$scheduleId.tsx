@@ -440,7 +440,7 @@ function ScheduleDetailPage() {
 
   if (!loaderData.schedule) {
     return (
-      <div className="max-w-5xl mx-auto">
+      <div>
         <p className="text-gray-500">Schedule not found.</p>
         <Link to="/orgs/$orgSlug/schedules" params={{ orgSlug: org.slug }} className="text-navy-700 hover:underline text-sm mt-2 inline-block">
           Back to schedules
@@ -811,7 +811,7 @@ function ScheduleDetailPage() {
   const sortedDates = allDates
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div>
       {/* Schedule Header */}
       {editing && canEdit ? (
         <form onSubmit={handleUpdateSchedule} className="mb-6 p-5 rounded-lg border border-gray-200 bg-white">

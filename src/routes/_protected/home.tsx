@@ -11,7 +11,7 @@ function HomePage() {
   const { session } = useRouteContext({ from: '/_protected' })
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div>
       <h1 className="text-2xl font-bold text-navy-700 mb-2">
         Welcome back, {session.email}
       </h1>

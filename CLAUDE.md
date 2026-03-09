@@ -101,6 +101,8 @@ Full schema in `src/db/schema.sql`. Feature specs and data models in `specs/`.
 
 **Branding guide:** `specs/branding.md` — reference this for all visual style decisions including colors, typography, spacing, component patterns, and tone. All UI work should align with the brand identity defined there.
 
+**Layout:** App pages (inside `_protected`) use full available width — do not add `max-w-*` or `mx-auto` to page-level containers. Auth pages and the landing page may use centered, narrow containers.
+
 ## Code Organization
 
 - `src/lib/` — Shared types and utilities: `auth.ts` (PBKDF2, session validation), `rbac.ts` (permission matrix), `*.types.ts` (per-feature type definitions)
