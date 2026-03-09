@@ -653,7 +653,7 @@ function ScheduleDetailPage() {
         if (result.success) {
           const scrollDate = result.assignments[0]?.startDatetime.slice(0, 10)
           setAssignments((prev) =>
-            [...prev, ...result.assignments].sort((a, b) => a.startDatetime.localeCompare(b.startDatetime)),
+            [...prev, ...result.assignments].sort((a, b) => a.startDatetime.localeCompare(b.startDatetime) || b.positionSortOrder - a.positionSortOrder || a.staffMemberName.localeCompare(b.staffMemberName)),
           )
           setSchedule((s) => ({ ...s, assignmentCount: s.assignmentCount + result.assignments.length }))
           resetAddForm()
@@ -685,7 +685,7 @@ function ScheduleDetailPage() {
         if (result.success) {
           const scrollDate = result.assignment.startDatetime.slice(0, 10)
           setAssignments((prev) =>
-            [...prev, result.assignment].sort((a, b) => a.startDatetime.localeCompare(b.startDatetime)),
+            [...prev, result.assignment].sort((a, b) => a.startDatetime.localeCompare(b.startDatetime) || b.positionSortOrder - a.positionSortOrder || a.staffMemberName.localeCompare(b.staffMemberName)),
           )
           setSchedule((s) => ({ ...s, assignmentCount: s.assignmentCount + 1 }))
           if (result.warnings.length > 0) {
@@ -750,7 +750,7 @@ function ScheduleDetailPage() {
                   }
                 : a,
             )
-            .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime)),
+            .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime) || b.positionSortOrder - a.positionSortOrder || a.staffMemberName.localeCompare(b.staffMemberName)),
         )
         if (result.warnings.length > 0) {
           setAssignmentWarnings((prev) => new Map(prev).set(assignmentId, result.warnings))

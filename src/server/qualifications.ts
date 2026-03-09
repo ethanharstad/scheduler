@@ -776,9 +776,10 @@ async function fetchPositionWithRequirements(
     description: string | null
     min_rank_id: string | null
     min_rank_name: string | null
+    sort_order: number
   }
   const pos = await env.DB.prepare(
-    `SELECT p.id, p.name, p.description, p.min_rank_id, r.name AS min_rank_name
+    `SELECT p.id, p.name, p.description, p.min_rank_id, p.sort_order, r.name AS min_rank_name
      FROM position p
      LEFT JOIN rank r ON r.id = p.min_rank_id
      WHERE p.id = ? AND p.org_id = ?`,
@@ -812,6 +813,7 @@ async function fetchPositionWithRequirements(
     description: pos.description,
     minRankId: pos.min_rank_id,
     minRankName: pos.min_rank_name,
+    sortOrder: pos.sort_order,
     requirements: (reqRows.results ?? []).map((r) => ({
       id: r.id,
       certTypeId: r.cert_type_id,
@@ -837,13 +839,14 @@ export const listPositionsServerFn = createServerFn({ method: 'GET' })
       description: string | null
       min_rank_id: string | null
       min_rank_name: string | null
+      sort_order: number
     }
     const posRows = await env.DB.prepare(
-      `SELECT p.id, p.name, p.description, p.min_rank_id, r.name AS min_rank_name
+      `SELECT p.id, p.name, p.description, p.min_rank_id, p.sort_order, r.name AS min_rank_name
        FROM position p
        LEFT JOIN rank r ON r.id = p.min_rank_id
        WHERE p.org_id = ?
-       ORDER BY p.name ASC`,
+       ORDER BY p.sort_order DESC, p.name ASC`,
     )
       .bind(membership.orgId)
       .all<PosRow>()
@@ -888,6 +891,7 @@ export const listPositionsServerFn = createServerFn({ method: 'GET' })
       description: p.description,
       minRankId: p.min_rank_id,
       minRankName: p.min_rank_name,
+      sortOrder: p.sort_order,
       requirements: reqsByPos.get(p.id) ?? [],
     }))
 
@@ -913,16 +917,19 @@ export const createPositionServerFn = createServerFn({ method: 'POST' })
     const now = new Date().toISOString()
 
     try {
+      const sortOrder = data.sortOrder ?? 0
+
       const stmts: D1PreparedStatement[] = [
         env.DB.prepare(
-          `INSERT INTO position (id, org_id, name, description, min_rank_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO position (id, org_id, name, description, min_rank_id, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         ).bind(
           id,
           membership.orgId,
           name,
           data.description?.trim() || null,
           data.minRankId ?? null,
+          sortOrder,
           now,
           now,
         ),
@@ -968,9 +975,9 @@ export const updatePositionServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
-    type PosRow = { id: string; name: string; description: string | null; min_rank_id: string | null }
+    type PosRow = { id: string; name: string; description: string | null; min_rank_id: string | null; sort_order: number }
     const existing = await env.DB.prepare(
-      `SELECT id, name, description, min_rank_id FROM position WHERE id = ? AND org_id = ?`,
+      `SELECT id, name, description, min_rank_id, sort_order FROM position WHERE id = ? AND org_id = ?`,
     )
       .bind(data.positionId, membership.orgId)
       .first<PosRow>()
@@ -980,13 +987,14 @@ export const updatePositionServerFn = createServerFn({ method: 'POST' })
     const name = data.name !== undefined ? data.name.trim() : existing.name
     const description = data.description !== undefined ? data.description : existing.description
     const minRankId = data.minRankId !== undefined ? data.minRankId : existing.min_rank_id
+    const sortOrder = data.sortOrder !== undefined ? data.sortOrder : existing.sort_order
     const now = new Date().toISOString()
 
     try {
       const stmts: D1PreparedStatement[] = [
         env.DB.prepare(
-          `UPDATE position SET name = ?, description = ?, min_rank_id = ?, updated_at = ? WHERE id = ?`,
-        ).bind(name, description, minRankId, now, data.positionId),
+          `UPDATE position SET name = ?, description = ?, min_rank_id = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
+        ).bind(name, description, minRankId, sortOrder, now, data.positionId),
       ]
 
       if (data.requirements !== undefined) {

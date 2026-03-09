@@ -42,6 +42,7 @@ export interface PositionView {
   description: string | null
   minRankId: string | null
   minRankName: string | null
+  sortOrder: number
   requirements: Array<{
     id: string
     certTypeId: string
@@ -185,6 +186,7 @@ export type CreatePositionInput = {
   name: string
   description?: string
   minRankId?: string | null
+  sortOrder?: number
   requirements?: Array<{ certTypeId: string; minCertLevelId?: string | null }>
 }
 export type CreatePositionOutput =
@@ -197,6 +199,7 @@ export type UpdatePositionInput = {
   name?: string
   description?: string | null
   minRankId?: string | null
+  sortOrder?: number
   requirements?: Array<{ certTypeId: string; minCertLevelId?: string | null }>
 }
 export type UpdatePositionOutput =

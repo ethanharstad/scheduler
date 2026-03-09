@@ -223,7 +223,7 @@ export const getPlatoonServerFn = createServerFn({ method: 'GET' })
        JOIN staff_member sm ON sm.id = pm.staff_member_id
        LEFT JOIN position pos ON pos.id = pm.position_id
        WHERE pm.platoon_id = ?
-       ORDER BY sm.name ASC`,
+       ORDER BY COALESCE(pos.sort_order, -1) DESC, sm.name ASC`,
     )
       .bind(data.platoonId)
       .all<MemberRow>()
@@ -242,7 +242,7 @@ export const getPlatoonServerFn = createServerFn({ method: 'GET' })
 
     type PositionRow = { id: string; name: string }
     const positionRows = await env.DB.prepare(
-      `SELECT id, name FROM position WHERE org_id = ? ORDER BY LOWER(name) ASC`,
+      `SELECT id, name FROM position WHERE org_id = ? ORDER BY sort_order DESC, LOWER(name) ASC`,
     )
       .bind(membership.orgId)
       .all<PositionRow>()

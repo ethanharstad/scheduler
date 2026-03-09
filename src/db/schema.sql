@@ -151,11 +151,13 @@ CREATE TABLE IF NOT EXISTS position (
   name        TEXT NOT NULL,
   description TEXT,
   min_rank_id TEXT REFERENCES rank(id) ON DELETE SET NULL,
+  sort_order  INTEGER NOT NULL DEFAULT 0,  -- higher = more important; matches rank convention
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_position_org_name ON position(org_id, LOWER(name));
-CREATE        INDEX IF NOT EXISTS idx_position_org      ON position(org_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_position_org_name  ON position(org_id, LOWER(name));
+CREATE        INDEX IF NOT EXISTS idx_position_org       ON position(org_id);
+CREATE        INDEX IF NOT EXISTS idx_position_org_order ON position(org_id, sort_order);
 
 -- Which cert types a position requires (AND logic: all must be met)
 CREATE TABLE IF NOT EXISTS position_cert_requirement (

@@ -182,16 +182,19 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
       end_datetime: string
       position: string | null
       position_id: string | null
+      position_sort_order: number | null
       notes: string | null
     }
 
     const assignmentRows = await env.DB.prepare(
       `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
-              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id, sa.notes
+              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id,
+              pos.sort_order AS position_sort_order, sa.notes
        FROM shift_assignment sa
        JOIN staff_member sm ON sm.id = sa.staff_member_id
+       LEFT JOIN position pos ON pos.id = sa.position_id
        WHERE sa.schedule_id = ?
-       ORDER BY sa.start_datetime ASC, sm.name ASC`,
+       ORDER BY sa.start_datetime ASC, COALESCE(pos.sort_order, -1) DESC, sm.name ASC`,
     )
       .bind(data.scheduleId)
       .all<AssignmentRow>()
@@ -218,6 +221,7 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
       endDatetime: r.end_datetime,
       position: r.position,
       positionId: r.position_id,
+      positionSortOrder: r.position_sort_order ?? 0,
       notes: r.notes,
     }))
 
@@ -491,6 +495,7 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
 
     // Advisory eligibility check
     let warnings: EligibilityWarning[] = []
+    let positionSortOrder = 0
     if (positionId) {
       const asOfDate = data.startDatetime.slice(0, 10)
       warnings = await checkSingleStaffEligibility(
@@ -500,6 +505,8 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
         positionId,
         asOfDate,
       )
+      const posRow = await env.DB.prepare(`SELECT sort_order FROM position WHERE id = ?`).bind(positionId).first<{ sort_order: number }>()
+      positionSortOrder = posRow?.sort_order ?? 0
     }
 
     const assignment: ShiftAssignmentView = {
@@ -510,6 +517,7 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
       endDatetime: data.endDatetime,
       position: data.position?.trim() || null,
       positionId,
+      positionSortOrder,
       notes: data.notes?.trim() || null,
     }
 
@@ -788,6 +796,8 @@ export const createRecurringAssignmentsServerFn = createServerFn({ method: 'POST
           startDatetime: iv.start,
           endDatetime: iv.end,
           position,
+          positionId: null,
+          positionSortOrder: 0,
           notes,
         })
       }
@@ -1058,13 +1068,16 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
       end_datetime: string
       position: string | null
       position_id: string | null
+      position_sort_order: number | null
       notes: string | null
     }
     const assignmentRows = await env.DB.prepare(
       `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
-              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id, sa.notes
+              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id,
+              pos.sort_order AS position_sort_order, sa.notes
        FROM shift_assignment sa
        JOIN staff_member sm ON sm.id = sa.staff_member_id
+       LEFT JOIN position pos ON pos.id = sa.position_id
        WHERE sa.schedule_id = ?`,
     )
       .bind(data.scheduleId)
@@ -1134,6 +1147,7 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
           endDatetime: a.end_datetime,
           position: a.position,
           positionId: a.position_id,
+          positionSortOrder: a.position_sort_order ?? 0,
           notes: a.notes,
         })
         continue
@@ -1158,6 +1172,7 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
           endDatetime: iv.end,
           position: a.position,
           positionId: a.position_id,
+          positionSortOrder: a.position_sort_order ?? 0,
           notes: a.notes,
         })
       }

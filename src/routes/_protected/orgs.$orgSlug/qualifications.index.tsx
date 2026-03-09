@@ -626,6 +626,7 @@ function PositionsTab({
   const [addName, setAddName] = useState('')
   const [addDescription, setAddDescription] = useState('')
   const [addMinRankId, setAddMinRankId] = useState('')
+  const [addSortOrder, setAddSortOrder] = useState(0)
   const [addRequirements, setAddRequirements] = useState<Array<{ certTypeId: string; minCertLevelId: string }>>([])
   const [addBusy, setAddBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
@@ -634,6 +635,7 @@ function PositionsTab({
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editMinRankId, setEditMinRankId] = useState('')
+  const [editSortOrder, setEditSortOrder] = useState(0)
   const [editRequirements, setEditRequirements] = useState<Array<{ certTypeId: string; minCertLevelId: string }>>([])
   const [editBusy, setEditBusy] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
@@ -647,6 +649,7 @@ function PositionsTab({
     setEditName(p.name)
     setEditDescription(p.description ?? '')
     setEditMinRankId(p.minRankId ?? '')
+    setEditSortOrder(p.sortOrder)
     setEditRequirements(p.requirements.map((r) => ({ certTypeId: r.certTypeId, minCertLevelId: r.minCertLevelId ?? '' })))
     setEditError(null)
   }
@@ -664,14 +667,15 @@ function PositionsTab({
           name,
           description: addDescription.trim() || undefined,
           minRankId: addMinRankId || null,
+          sortOrder: addSortOrder,
           requirements: addRequirements
             .filter((r) => r.certTypeId)
             .map((r) => ({ certTypeId: r.certTypeId, minCertLevelId: r.minCertLevelId || null })),
         },
       })
       if (result.success) {
-        setPositions((prev) => [...prev, result.position].sort((a, b) => a.name.localeCompare(b.name)))
-        setAddName(''); setAddDescription(''); setAddMinRankId(''); setAddRequirements([]); setShowAdd(false)
+        setPositions((prev) => [...prev, result.position].sort((a, b) => b.sortOrder - a.sortOrder || a.name.localeCompare(b.name)))
+        setAddName(''); setAddDescription(''); setAddMinRankId(''); setAddSortOrder(0); setAddRequirements([]); setShowAdd(false)
       } else {
         setAddError(result.error === 'DUPLICATE' ? 'A position with this name already exists.' : 'Failed to create.')
       }
@@ -691,6 +695,7 @@ function PositionsTab({
           name: editName.trim(),
           description: editDescription.trim() || null,
           minRankId: editMinRankId || null,
+          sortOrder: editSortOrder,
           requirements: editRequirements
             .filter((r) => r.certTypeId)
             .map((r) => ({ certTypeId: r.certTypeId, minCertLevelId: r.minCertLevelId || null })),
@@ -783,11 +788,13 @@ function PositionsTab({
 
   function PositionForm({
     name, setName, description, setDescription, minRankId, setMinRankId,
+    sortOrder, setSortOrder,
     reqs, setReqs, onSubmit, busy, error, onCancel, submitLabel,
   }: {
     name: string; setName: (v: string) => void
     description: string; setDescription: (v: string) => void
     minRankId: string; setMinRankId: (v: string) => void
+    sortOrder: number; setSortOrder: (v: number) => void
     reqs: Array<{ certTypeId: string; minCertLevelId: string }>
     setReqs: React.Dispatch<React.SetStateAction<Array<{ certTypeId: string; minCertLevelId: string }>>>
     onSubmit: (e: React.FormEvent) => void
@@ -795,7 +802,7 @@ function PositionsTab({
   }) {
     return (
       <form onSubmit={onSubmit} className="p-5 rounded-lg border border-gray-200 bg-white space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Name <span className="text-danger">*</span></label>
             <input autoFocus type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
@@ -803,6 +810,10 @@ function PositionsTab({
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Description</label>
             <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Priority</label>
+            <input type="number" value={sortOrder} onChange={(e) => setSortOrder(parseInt(e.target.value, 10) || 0)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500" />
           </div>
         </div>
         <div>
@@ -851,6 +862,7 @@ function PositionsTab({
             name={addName} setName={setAddName}
             description={addDescription} setDescription={setAddDescription}
             minRankId={addMinRankId} setMinRankId={setAddMinRankId}
+            sortOrder={addSortOrder} setSortOrder={setAddSortOrder}
             reqs={addRequirements} setReqs={setAddRequirements}
             onSubmit={handleAdd} busy={addBusy} error={addError}
             onCancel={() => { setShowAdd(false); setAddError(null) }}
@@ -870,6 +882,7 @@ function PositionsTab({
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide w-20" style={{ fontFamily: 'var(--font-condensed)' }}>Priority</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Min Rank</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Cert Requirements</th>
                 <th className="w-32" />
@@ -879,11 +892,12 @@ function PositionsTab({
               {positions.map((p) => (
                 <tr key={p.id} className="group border-b border-gray-200 last:border-0 hover:bg-gray-50 align-top">
                   {editingId === p.id ? (
-                    <td colSpan={4} className="px-4 py-3">
+                    <td colSpan={5} className="px-4 py-3">
                       <PositionForm
                         name={editName} setName={setEditName}
                         description={editDescription} setDescription={setEditDescription}
                         minRankId={editMinRankId} setMinRankId={setEditMinRankId}
+                        sortOrder={editSortOrder} setSortOrder={setEditSortOrder}
                         reqs={editRequirements} setReqs={setEditRequirements}
                         onSubmit={(e) => { e.preventDefault(); void handleEdit(p.id) }}
                         busy={editBusy} error={editError}
@@ -899,6 +913,7 @@ function PositionsTab({
                           {p.description && <p className="text-xs text-gray-500 mt-0.5">{p.description}</p>}
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-gray-600 tabular-nums">{p.sortOrder}</td>
                       <td className="px-4 py-3 text-gray-600">{p.minRankName ?? <span className="text-gray-400">—</span>}</td>
                       <td className="px-4 py-3">
                         {p.requirements.length === 0 ? (

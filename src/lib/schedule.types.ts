@@ -19,6 +19,7 @@ export interface ShiftAssignmentView {
   endDatetime: string
   position: string | null
   positionId: string | null
+  positionSortOrder: number
   notes: string | null
 }
 
