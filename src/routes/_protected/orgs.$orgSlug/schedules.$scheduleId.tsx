@@ -362,7 +362,7 @@ function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation
             <div className="px-4 py-2 bg-danger-bg/40 flex items-center gap-2">
               <AlertCircle className="w-3.5 h-3.5 text-danger shrink-0" />
               <span className="text-xs text-danger font-medium">
-                Earliest gap: {new Date(earliestViolation + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                Earliest gap: <a href={`#date-${earliestViolation}`} className="underline hover:opacity-75">{new Date(earliestViolation + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</a>
               </span>
             </div>
           )}
@@ -408,7 +408,9 @@ function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation
                           const v = ev.violations.find((vv) => vv.date === date)!
                           return (
                             <p key={date} className="text-xs text-danger">
-                              {new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                              <a href={`#date-${date}`} className="underline hover:opacity-75">
+                                {new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </a>
                               {': '}
                               {v.minCoverage < v.minStaff
                                 ? `${v.minCoverage} of ${v.minStaff} required`
@@ -681,11 +683,13 @@ function ScheduleDetailPage() {
           },
         })
         if (result.success) {
+          const scrollDate = result.assignments[0]?.startDatetime.slice(0, 10)
           setAssignments((prev) =>
             [...prev, ...result.assignments].sort((a, b) => a.startDatetime.localeCompare(b.startDatetime)),
           )
           setSchedule((s) => ({ ...s, assignmentCount: s.assignmentCount + result.assignments.length }))
           resetAddForm()
+          if (scrollDate) setTimeout(() => document.getElementById(`date-${scrollDate}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
         } else {
           const msgs: Record<string, string> = {
             FORBIDDEN: 'You do not have permission.',
@@ -711,6 +715,7 @@ function ScheduleDetailPage() {
           },
         })
         if (result.success) {
+          const scrollDate = result.assignment.startDatetime.slice(0, 10)
           setAssignments((prev) =>
             [...prev, result.assignment].sort((a, b) => a.startDatetime.localeCompare(b.startDatetime)),
           )
@@ -719,6 +724,7 @@ function ScheduleDetailPage() {
             setAssignmentWarnings((prev) => new Map(prev).set(result.assignment.id, result.warnings))
           }
           resetAddForm()
+          setTimeout(() => document.getElementById(`date-${scrollDate}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
         } else {
           const msgs: Record<string, string> = {
             FORBIDDEN: 'You do not have permission.',
@@ -1225,6 +1231,10 @@ function ScheduleDetailPage() {
               {sortedDates.map((date) => {
                 const dayViolations = dateViolationMap.get(date) ?? []
                 const staffCount = grouped[date].length
+                const totalHours = grouped[date].reduce((sum, a) => {
+                  return sum + (new Date(a.endDatetime).getTime() - new Date(a.startDatetime).getTime()) / 3600000
+                }, 0)
+                const manDays = (totalHours / 24).toFixed(1)
                 const hasViolations = dayViolations.length > 0
                 const hasRequirements = requirements.length > 0
                 const dayBorderClass = hasViolations
@@ -1234,7 +1244,7 @@ function ScheduleDetailPage() {
                     : ''
                 return (
                 <Fragment key={date}>
-                  <tr className={`border-b border-gray-200 bg-gray-50/50 ${dayBorderClass}`}>
+                  <tr id={`date-${date}`} className={`border-b border-gray-200 bg-gray-50/50 ${dayBorderClass}`}>
                     <td colSpan={canEdit ? 5 : 4} className="px-4 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 shrink-0">
@@ -1243,7 +1253,7 @@ function ScheduleDetailPage() {
                           </span>
                           {staffCount > 0 && (
                             <span className={`text-xs font-medium ${hasViolations ? 'text-danger' : hasRequirements ? 'text-success' : 'text-gray-400'}`}>
-                              {staffCount} staff
+                              {staffCount} staff · {manDays} man-days
                             </span>
                           )}
                         </div>
