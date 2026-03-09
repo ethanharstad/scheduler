@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState, useEffect } from 'react'
+import { useRef, useMemo, useState, useEffect, Fragment } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
 import { AlertTriangle, ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2 } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
@@ -1143,8 +1143,8 @@ function ScheduleDetailPage() {
             </thead>
             <tbody>
               {sortedDates.map((date) => (
-                <>
-                  <tr key={`date-${date}`} className="border-b border-gray-200 bg-gray-50/50">
+                <Fragment key={date}>
+                  <tr className="border-b border-gray-200 bg-gray-50/50">
                     <td colSpan={canEdit ? 5 : 4} className="px-4 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide shrink-0" style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -1179,7 +1179,7 @@ function ScheduleDetailPage() {
                     </td>
                   </tr>
                   {grouped[date].length === 0 && (
-                    <tr key={`empty-${date}`} className="border-b border-gray-200">
+                    <tr className="border-b border-gray-200">
                       <td colSpan={canEdit ? 5 : 4} className="px-4 py-2 text-gray-400 text-xs italic">
                         No assignments
                       </td>
@@ -1305,7 +1305,7 @@ function ScheduleDetailPage() {
                       </tr>
                     )
                   })}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
