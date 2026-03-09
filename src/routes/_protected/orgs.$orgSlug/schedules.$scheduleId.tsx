@@ -1,10 +1,10 @@
-import { useRef, useMemo, useState } from 'react'
+import { useRef, useMemo, useState, useEffect } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2 } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { ScheduleView, ScheduleStatus, ShiftAssignmentView, RecurrenceMode } from '@/lib/schedule.types'
 import type { StaffMemberView } from '@/lib/staff.types'
-import type { PositionView, EligibilityWarning } from '@/lib/qualifications.types'
+import type { PositionView, EligibilityWarning, EligibleStaffMember } from '@/lib/qualifications.types'
 import type { ScheduleRequirementView } from '@/lib/schedule-requirement.types'
 import {
   getScheduleServerFn,
@@ -17,7 +17,7 @@ import {
   applyConstraintsToScheduleServerFn,
 } from '@/server/schedule'
 import { listStaffServerFn } from '@/server/staff'
-import { listPositionsServerFn } from '@/server/qualifications'
+import { listPositionsServerFn, checkPositionEligibilityServerFn } from '@/server/qualifications'
 import { listScheduleRequirementsServerFn } from '@/server/schedule-requirements'
 
 export const Route = createFileRoute(
@@ -453,6 +453,7 @@ function ScheduleDetailPage() {
   const [addNotes, setAddNotes] = useState('')
   const [addBusy, setAddBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [showWizard, setShowWizard] = useState(false)
   const [addRecurring, setAddRecurring] = useState(false)
   const [addRecurrenceMode, setAddRecurrenceMode] = useState<RecurrenceMode>('days-of-week')
   const [addStartTime, setAddStartTime] = useState('')
@@ -918,6 +919,16 @@ function ScheduleDetailPage() {
                     </select>
                     <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
                   </div>
+                  {!addRecurring && (
+                    <button
+                      type="button"
+                      onClick={() => setShowWizard(true)}
+                      className="mt-1.5 flex items-center gap-1 text-xs text-navy-700 hover:text-navy-900 font-medium transition-colors"
+                    >
+                      <Wand2 className="w-3.5 h-3.5" />
+                      Find Available Staff
+                    </button>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Position</label>
@@ -1299,6 +1310,179 @@ function ScheduleDetailPage() {
             </tbody>
           </table>
         </div>
+
+      {showWizard && (
+        <StaffingWizardModal
+          orgSlug={org.slug}
+          positionId={addPositionId || null}
+          positionName={addPositionId ? (positions.find((p) => p.id === addPositionId)?.name ?? null) : null}
+          targetDate={addStartDatetime ? addStartDatetime.slice(0, 10) : ''}
+          allStaff={staffMembers}
+          assignments={assignments}
+          onSelect={(id) => { setAddStaffId(id); setShowWizard(false) }}
+          onClose={() => setShowWizard(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+interface StaffingWizardModalProps {
+  orgSlug: string
+  positionId: string | null
+  positionName: string | null
+  targetDate: string
+  allStaff: StaffMemberView[]
+  assignments: ShiftAssignmentView[]
+  onSelect: (staffMemberId: string) => void
+  onClose: () => void
+}
+
+function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: initialTargetDate, allStaff, assignments, onSelect, onClose }: StaffingWizardModalProps) {
+  const [localDate, setLocalDate] = useState(initialTargetDate)
+  const [loading, setLoading] = useState(false)
+  const [eligible, setEligible] = useState<EligibleStaffMember[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const scheduledIds = useMemo(() => {
+    if (!localDate) return new Set<string>()
+    return new Set(
+      assignments
+        .filter((a) => a.startDatetime.slice(0, 10) === localDate)
+        .map((a) => a.staffMemberId),
+    )
+  }, [assignments, localDate])
+
+  useEffect(() => {
+    if (!localDate) {
+      setEligible(null)
+      return
+    }
+
+    if (positionId) {
+      setLoading(true)
+      setError(null)
+      checkPositionEligibilityServerFn({ data: { orgSlug, positionId, asOfDate: localDate } })
+        .then((result) => {
+          if (result.success) {
+            setEligible(result.eligible)
+          } else {
+            setError('Failed to load eligible staff.')
+          }
+        })
+        .catch(() => setError('Failed to load eligible staff.'))
+        .finally(() => setLoading(false))
+    } else {
+      setEligible(
+        allStaff.map((s) => ({
+          staffMemberId: s.id,
+          name: s.name,
+          rankName: null,
+          certsSummary: '',
+          hasExpiringCerts: false,
+        })),
+      )
+    }
+  }, [localDate, positionId, orgSlug, allStaff])
+
+  const available = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId)) ?? []
+  const alreadyScheduled = eligible?.filter((s) => scheduledIds.has(s.staffMemberId)) ?? []
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-navy-700">Find Available Staff</h2>
+            {positionName && <p className="text-xs text-gray-500 mt-0.5">Position: {positionName}</p>}
+          </div>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-gray-100 shrink-0">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Target Date</label>
+          <input
+            type="date"
+            value={localDate}
+            onChange={(e) => { setLocalDate(e.target.value); setEligible(null) }}
+            className="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+          />
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-4">
+          {!localDate ? (
+            <p className="text-sm text-gray-400 text-center py-6">Select a date to see available staff.</p>
+          ) : loading ? (
+            <p className="text-sm text-gray-400 text-center py-6">Loading…</p>
+          ) : error ? (
+            <p className="text-sm text-danger text-center py-6">{error}</p>
+          ) : eligible !== null && available.length === 0 && alreadyScheduled.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">No staff found.</p>
+          ) : eligible !== null ? (
+            <>
+              {available.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
+                    Available ({available.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {available.map((s) => (
+                      <button
+                        key={s.staffMemberId}
+                        type="button"
+                        onClick={() => onSelect(s.staffMemberId)}
+                        className="w-full text-left px-3 py-2.5 rounded-lg border border-gray-200 hover:border-navy-400 hover:bg-navy-50 transition-colors group"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 group-hover:text-navy-700">{s.name}</p>
+                            {(s.rankName || s.certsSummary) && (
+                              <p className="text-xs text-gray-500 truncate mt-0.5">
+                                {[s.rankName, s.certsSummary].filter(Boolean).join(' · ')}
+                              </p>
+                            )}
+                          </div>
+                          {s.hasExpiringCerts && (
+                            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-warning-bg text-warning text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+                              <AlertTriangle className="w-3 h-3" />
+                              Expiring
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {alreadyScheduled.length > 0 && (
+                <div className={available.length > 0 ? 'mt-4' : ''}>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2" style={{ fontFamily: 'var(--font-condensed)' }}>
+                    Already scheduled ({alreadyScheduled.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {alreadyScheduled.map((s) => (
+                      <div
+                        key={s.staffMemberId}
+                        className="px-3 py-2.5 rounded-lg border border-gray-100 bg-gray-50 opacity-60"
+                      >
+                        <p className="text-sm font-medium text-gray-500">{s.name}</p>
+                        {(s.rankName || s.certsSummary) && (
+                          <p className="text-xs text-gray-400 truncate mt-0.5">
+                            {[s.rankName, s.certsSummary].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }
