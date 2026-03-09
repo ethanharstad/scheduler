@@ -26,6 +26,7 @@ type ReqRow = {
   window_start_time: string | null
   window_end_time: string | null
   window_end_day_offset: number | null
+  sort_order: number
   created_at: string
   updated_at: string
 }
@@ -44,6 +45,7 @@ function rowToView(r: ReqRow): ScheduleRequirementView {
     windowStartTime: r.window_start_time,
     windowEndTime: r.window_end_time,
     windowEndDayOffset: r.window_end_day_offset,
+    sortOrder: r.sort_order,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -94,11 +96,11 @@ export const listScheduleRequirementsServerFn = createServerFn({ method: 'GET' }
       `SELECT sr.id, sr.name, sr.position_id, p.name AS position_name,
               sr.min_staff, sr.max_staff, sr.effective_start, sr.effective_end,
               sr.rrule, sr.window_start_time, sr.window_end_time, sr.window_end_day_offset,
-              sr.created_at, sr.updated_at
+              sr.sort_order, sr.created_at, sr.updated_at
        FROM schedule_requirement sr
        LEFT JOIN position p ON p.id = sr.position_id
        WHERE sr.org_id = ?
-       ORDER BY sr.effective_start ASC, sr.name ASC`,
+       ORDER BY sr.sort_order DESC, sr.name ASC`,
     )
       .bind(membership.orgId)
       .all<ReqRow>()
@@ -134,8 +136,8 @@ export const createScheduleRequirementServerFn = createServerFn({ method: 'POST'
     const hasWindow = !!(data.windowStartTime && data.windowEndTime && data.windowEndDayOffset != null)
 
     await env.DB.prepare(
-      `INSERT INTO schedule_requirement (id, org_id, name, position_id, min_staff, max_staff, effective_start, effective_end, rrule, window_start_time, window_end_time, window_end_day_offset, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO schedule_requirement (id, org_id, name, position_id, min_staff, max_staff, effective_start, effective_end, rrule, window_start_time, window_end_time, window_end_day_offset, sort_order, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
@@ -150,6 +152,7 @@ export const createScheduleRequirementServerFn = createServerFn({ method: 'POST'
         hasWindow ? data.windowStartTime! : null,
         hasWindow ? data.windowEndTime! : null,
         hasWindow ? data.windowEndDayOffset! : null,
+        data.sortOrder ?? 0,
         membership.userId,
         now,
         now,
@@ -195,7 +198,7 @@ export const updateScheduleRequirementServerFn = createServerFn({ method: 'POST'
        SET name = ?, position_id = ?, min_staff = ?, max_staff = ?,
            effective_start = ?, effective_end = ?, rrule = ?,
            window_start_time = ?, window_end_time = ?, window_end_day_offset = ?,
-           updated_at = ?
+           sort_order = ?, updated_at = ?
        WHERE id = ?`,
     )
       .bind(
@@ -209,6 +212,7 @@ export const updateScheduleRequirementServerFn = createServerFn({ method: 'POST'
         hasWindow ? data.windowStartTime! : null,
         hasWindow ? data.windowEndTime! : null,
         hasWindow ? data.windowEndDayOffset! : null,
+        data.sortOrder ?? 0,
         new Date().toISOString(),
         data.requirementId,
       )

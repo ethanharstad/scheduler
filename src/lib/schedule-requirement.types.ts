@@ -11,6 +11,7 @@ export interface ScheduleRequirementView {
   windowStartTime: string | null      // HH:MM; null = no time constraint
   windowEndTime: string | null        // HH:MM; null = no time constraint
   windowEndDayOffset: number | null   // days after RRULE anchor; 0 = same day; null = no time window
+  sortOrder: number
   createdAt: string
   updatedAt: string
 }
@@ -18,10 +19,10 @@ export interface ScheduleRequirementView {
 export type ListScheduleRequirementsInput   = { orgSlug: string }
 export type ListScheduleRequirementsOutput  = { success: true; requirements: ScheduleRequirementView[] } | { success: false; error: 'UNAUTHORIZED' }
 
-export type CreateScheduleRequirementInput  = { orgSlug: string; name: string; positionId?: string | null; minStaff: number; maxStaff?: number | null; effectiveStart: string; effectiveEnd?: string | null; rrule: string; windowStartTime?: string | null; windowEndTime?: string | null; windowEndDayOffset?: number | null }
+export type CreateScheduleRequirementInput  = { orgSlug: string; name: string; positionId?: string | null; minStaff: number; maxStaff?: number | null; effectiveStart: string; effectiveEnd?: string | null; rrule: string; windowStartTime?: string | null; windowEndTime?: string | null; windowEndDayOffset?: number | null; sortOrder?: number }
 export type CreateScheduleRequirementOutput = { success: true; requirementId: string } | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'VALIDATION_ERROR' }
 
-export type UpdateScheduleRequirementInput  = { orgSlug: string; requirementId: string; name: string; positionId?: string | null; minStaff: number; maxStaff?: number | null; effectiveStart: string; effectiveEnd?: string | null; rrule: string; windowStartTime?: string | null; windowEndTime?: string | null; windowEndDayOffset?: number | null }
+export type UpdateScheduleRequirementInput  = { orgSlug: string; requirementId: string; name: string; positionId?: string | null; minStaff: number; maxStaff?: number | null; effectiveStart: string; effectiveEnd?: string | null; rrule: string; windowStartTime?: string | null; windowEndTime?: string | null; windowEndDayOffset?: number | null; sortOrder?: number }
 export type UpdateScheduleRequirementOutput = { success: true } | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION_ERROR' }
 
 export type DeleteScheduleRequirementInput  = { orgSlug: string; requirementId: string }

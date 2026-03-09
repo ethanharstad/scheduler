@@ -6,6 +6,9 @@ import { listPositionsServerFn } from '@/server/qualifications'
 import type { ScheduleRequirementView } from '@/lib/schedule-requirement.types'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/schedules/requirements')({
+  head: () => ({
+    meta: [{ title: 'Schedule Requirements | Scene Ready' }],
+  }),
   loader: async ({ params }) => {
     const [reqResult, posResult] = await Promise.all([
       listScheduleRequirementsServerFn({ data: { orgSlug: params.orgSlug } }),
@@ -128,6 +131,7 @@ type FormState = {
   windowStartTime: string
   windowEndTime: string
   windowEndDayOffset: string
+  sortOrder: string
 }
 
 function emptyForm(): FormState {
@@ -145,6 +149,7 @@ function emptyForm(): FormState {
     windowStartTime: '',
     windowEndTime: '',
     windowEndDayOffset: '0',
+    sortOrder: '0',
   }
 }
 
@@ -165,6 +170,7 @@ function formFromRequirement(r: ScheduleRequirementView): FormState {
     windowStartTime: r.windowStartTime ?? '',
     windowEndTime: r.windowEndTime ?? '',
     windowEndDayOffset: r.windowEndDayOffset != null ? String(r.windowEndDayOffset) : '0',
+    sortOrder: String(r.sortOrder),
   }
 }
 
@@ -264,6 +270,7 @@ function ScheduleRequirementsPage() {
       windowStartTime,
       windowEndTime,
       windowEndDayOffset,
+      sortOrder: parseInt(form.sortOrder, 10) || 0,
     }
 
     try {
@@ -475,8 +482,8 @@ function ScheduleRequirementsPage() {
               </div>
             </div>
 
-            {/* Min / Max staff */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Min / Max staff / Sort Order */}
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className={labelCls} style={{ fontFamily: 'var(--font-condensed)' }}>
                   Min Staff <span className="text-red-600">*</span>
@@ -490,6 +497,13 @@ function ScheduleRequirementsPage() {
                 </label>
                 <input type="number" min={0} value={form.maxStaff}
                   onChange={(e) => setField('maxStaff', e.target.value)} placeholder="No cap" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls} style={{ fontFamily: 'var(--font-condensed)' }}>
+                  Sort Order
+                </label>
+                <input type="number" value={form.sortOrder}
+                  onChange={(e) => setField('sortOrder', e.target.value)} placeholder="0" className={inputCls} />
               </div>
             </div>
 
@@ -527,7 +541,7 @@ function ScheduleRequirementsPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Name', 'Position', 'Recurrence', 'Time Window', 'Effective Dates', 'Min / Max', ''].map((h) => (
+                {['Name', 'Position', 'Recurrence', 'Time Window', 'Effective Dates', 'Min / Max', 'Order', ''].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide"
                     style={{ fontFamily: 'var(--font-condensed)' }}>
                     {h}
@@ -557,6 +571,7 @@ function ScheduleRequirementsPage() {
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                       {req.minStaff}{req.maxStaff != null ? ` / ${req.maxStaff}` : ' / —'}
                     </td>
+                    <td className="px-4 py-3 text-gray-600 text-center">{req.sortOrder}</td>
                     <td className="px-4 py-3">
                       {canEdit && (
                         <div className="flex items-center gap-3 justify-end">

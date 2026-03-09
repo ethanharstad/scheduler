@@ -367,6 +367,7 @@ CREATE TABLE IF NOT EXISTS schedule_requirement (
   window_start_time     TEXT,                            -- HH:MM; start of staffing window; NULL = no time constraint
   window_end_time       TEXT,                            -- HH:MM; end of staffing window; NULL = no time constraint
   window_end_day_offset INTEGER,                         -- days after RRULE anchor that window ends (0=same day); NULL = no time window
+  sort_order       INTEGER NOT NULL DEFAULT 0,            -- explicit display ordering; lower = first
   created_by       TEXT REFERENCES user(id) ON DELETE SET NULL,
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL,
@@ -378,3 +379,4 @@ CREATE TABLE IF NOT EXISTS schedule_requirement (
 
 CREATE INDEX IF NOT EXISTS idx_schedule_req_org       ON schedule_requirement(org_id);
 CREATE INDEX IF NOT EXISTS idx_schedule_req_org_dates ON schedule_requirement(org_id, effective_start, effective_end);
+CREATE INDEX IF NOT EXISTS idx_schedule_req_org_order ON schedule_requirement(org_id, sort_order);

@@ -350,11 +350,11 @@ function RequirementsPanel({ evaluations }: { evaluations: RequirementEvaluation
                   ) : (
                     <AlertCircle className="w-4 h-4 text-danger shrink-0" />
                   )}
-                  <span className="text-sm font-medium text-navy-700">{ev.requirement.name}</span>
+                  <span className={`text-sm font-medium ${na ? 'text-gray-400' : ok ? 'text-success' : 'text-danger'}`}>{ev.requirement.name}</span>
                   {ev.requirement.positionName && (
-                    <span className="text-xs text-gray-500">({ev.requirement.positionName})</span>
+                    <span className={`text-xs ${na ? 'text-gray-400' : ok ? 'text-success' : 'text-danger'}`}>({ev.requirement.positionName})</span>
                   )}
-                  <span className="text-xs text-gray-400 ml-auto">
+                  <span className={`text-xs ml-auto ${na ? 'text-gray-400' : ok ? 'text-success' : 'text-danger'}`}>
                     min {ev.requirement.minStaff}{ev.requirement.maxStaff != null ? ` / max ${ev.requirement.maxStaff}` : ''}
                   </span>
                   {na && <span className="text-xs text-gray-400 italic">No applicable dates in range</span>}
