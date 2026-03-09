@@ -13,9 +13,6 @@ import {
 } from '@/server/qualifications'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/staff/$staffMemberId')({
-  head: () => ({
-    meta: [{ title: 'Staff Detail | Scene Ready' }],
-  }),
   loader: async ({ params }) => {
     const [detailResult, ranksResult, certTypesResult] = await Promise.all([
       getStaffMemberDetailsServerFn({
@@ -31,6 +28,9 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/staff/$staffMemb
       certTypes: certTypesResult.success ? certTypesResult.certTypes : [],
     }
   },
+  head: ({ loaderData }) => ({
+    meta: [{ title: `${loaderData?.staffMember?.name ?? 'Staff Detail'} | Scene Ready` }],
+  }),
   component: StaffDetailPage,
 })
 

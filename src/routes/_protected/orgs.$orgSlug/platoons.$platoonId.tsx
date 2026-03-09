@@ -12,9 +12,6 @@ import {
 } from '@/server/platoons'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/platoons/$platoonId')({
-  head: () => ({
-    meta: [{ title: 'Platoon | Scene Ready' }],
-  }),
   loader: async ({ params }) => {
     const result = await getPlatoonServerFn({
       data: { orgSlug: params.orgSlug, platoonId: params.platoonId },
@@ -24,6 +21,9 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/platoons/$platoo
     }
     return { platoon: result.platoon, allStaff: result.allStaff, positions: result.positions }
   },
+  head: ({ loaderData }) => ({
+    meta: [{ title: `${loaderData?.platoon?.name ?? 'Platoon'} | Scene Ready` }],
+  }),
   component: PlatoonDetailPage,
 })
 

@@ -7,9 +7,6 @@ import type { EligibleStaffMember } from '@/lib/qualifications.types'
 export const Route = createFileRoute(
   '/_protected/orgs/$orgSlug/qualifications/positions/$positionId',
 )({
-  head: () => ({
-    meta: [{ title: 'Position Eligibility | Scene Ready' }],
-  }),
   loader: async ({ params }) => {
     const today = new Date().toISOString().slice(0, 10)
     const result = await checkPositionEligibilityServerFn({
@@ -22,6 +19,9 @@ export const Route = createFileRoute(
       error: result.success ? null : result.error,
     }
   },
+  head: ({ loaderData }) => ({
+    meta: [{ title: `${loaderData?.positionName ?? 'Position Eligibility'} | Scene Ready` }],
+  }),
   component: EligibilityPage,
 })
 

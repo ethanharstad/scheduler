@@ -25,9 +25,6 @@ import { listScheduleRequirementsServerFn } from '@/server/schedule-requirements
 export const Route = createFileRoute(
   '/_protected/orgs/$orgSlug/schedules/$scheduleId',
 )({
-  head: () => ({
-    meta: [{ title: 'Schedule Detail | Scene Ready' }],
-  }),
   loader: async ({ params }) => {
     const [scheduleResult, staffResult, positionsResult, requirementsResult] = await Promise.all([
       getScheduleServerFn({ data: { orgSlug: params.orgSlug, scheduleId: params.scheduleId } }),
@@ -48,6 +45,9 @@ export const Route = createFileRoute(
       requirements: requirementsResult.success ? requirementsResult.requirements : [],
     }
   },
+  head: ({ loaderData }) => ({
+    meta: [{ title: `${loaderData?.schedule?.name ?? 'Schedule Detail'} | Scene Ready` }],
+  }),
   component: ScheduleDetailPage,
 })
 
