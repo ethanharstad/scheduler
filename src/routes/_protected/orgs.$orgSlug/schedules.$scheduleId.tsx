@@ -729,7 +729,7 @@ function ScheduleDetailPage() {
           )
           setSchedule((s) => ({ ...s, assignmentCount: s.assignmentCount + result.assignments.length }))
           resetAddForm()
-          if (scrollDate) setTimeout(() => document.getElementById(`date-${scrollDate}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+          if (scrollDate) requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(`date-${scrollDate}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })))
         } else {
           const msgs: Record<string, string> = {
             FORBIDDEN: 'You do not have permission.',
@@ -764,7 +764,7 @@ function ScheduleDetailPage() {
             setAssignmentWarnings((prev) => new Map(prev).set(result.assignment.id, result.warnings))
           }
           resetAddForm()
-          setTimeout(() => document.getElementById(`date-${scrollDate}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+          requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(`date-${scrollDate}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })))
         } else {
           const msgs: Record<string, string> = {
             FORBIDDEN: 'You do not have permission.',
@@ -1315,7 +1315,7 @@ function ScheduleDetailPage() {
                     : ''
                 return (
                 <Fragment key={date}>
-                  <tr id={`date-${date}`} className={`border-b border-gray-200 bg-gray-50/50 ${dayBorderClass}`}>
+                  <tr id={`date-${date}`} className={`border-b border-gray-200 bg-gray-50/50 scroll-mt-4 ${dayBorderClass}`}>
                     <td colSpan={canEdit ? 5 : 4} className="px-4 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 shrink-0">
