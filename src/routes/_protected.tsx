@@ -34,7 +34,6 @@ type Crumb = { label: string; to?: string; params?: Record<string, string> }
 function useBreadcrumbs(): Crumb[] {
   const { pathname } = useLocation()
   const matches = useMatches()
-  const { orgs } = Route.useLoaderData()
 
   // Simple routes
   if (pathname === '/profile') return [{ label: 'Profile' }]
@@ -44,47 +43,43 @@ function useBreadcrumbs(): Crumb[] {
   if (pathname === '/admin/users') return [{ label: 'Admin Dashboard', to: '/admin' }, { label: 'Users' }]
   if (pathname === '/admin/orgs') return [{ label: 'Admin Dashboard', to: '/admin' }, { label: 'Organizations' }]
 
-  // Org routes — extract slug from pathname, look up name from loader data
+  // Org routes
   const orgMatch = pathname.match(/^\/orgs\/([^/]+)/)
   if (orgMatch) {
     const slug = orgMatch[1]
-    const org = orgs.find((o) => o.orgSlug === slug)
-    const orgName = org?.orgName ?? slug
-    const orgCrumb: Crumb = { label: 'Organizations', to: '/orgs' }
-    const orgNameCrumb: Crumb = { label: orgName, to: '/orgs/$orgSlug', params: { orgSlug: slug } }
     const base = `/orgs/${slug}`
 
-    if (pathname === base) return [orgCrumb, orgNameCrumb]
-    if (pathname === `${base}/staff`) return [orgCrumb, orgNameCrumb, { label: 'Staff' }]
-    if (pathname === `${base}/staff/audit`) return [orgCrumb, orgNameCrumb, { label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: 'Audit Log' }]
-    if (pathname === `${base}/members`) return [orgCrumb, orgNameCrumb, { label: 'Members' }]
-    if (pathname === `${base}/settings`) return [orgCrumb, orgNameCrumb, { label: 'Settings' }]
-    if (pathname === `${base}/availability`) return [orgCrumb, orgNameCrumb, { label: 'Availability' }]
-    if (pathname === `${base}/schedules`) return [orgCrumb, orgNameCrumb, { label: 'Schedules' }]
+    if (pathname === base) return [{ label: 'Dashboard' }]
+    if (pathname === `${base}/staff`) return [{ label: 'Staff' }]
+    if (pathname === `${base}/staff/audit`) return [{ label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: 'Audit Log' }]
+    if (pathname === `${base}/members`) return [{ label: 'Members' }]
+    if (pathname === `${base}/settings`) return [{ label: 'Settings' }]
+    if (pathname === `${base}/availability`) return [{ label: 'Availability' }]
+    if (pathname === `${base}/schedules`) return [{ label: 'Schedules' }]
     if (pathname === `${base}/schedules/requirements`) {
-      return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Requirements' }]
+      return [{ label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Requirements' }]
     }
     if (pathname === `${base}/schedules/platoons`) {
-      return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Platoons' }]
+      return [{ label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Platoons' }]
     }
     if (pathname.startsWith(`${base}/schedules/platoons/`)) {
-      return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Platoons', to: '/orgs/$orgSlug/schedules/platoons', params: { orgSlug: slug } }, { label: 'Platoon' }]
+      return [{ label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Platoons', to: '/orgs/$orgSlug/schedules/platoons', params: { orgSlug: slug } }, { label: 'Platoon' }]
     }
     if (pathname.startsWith(`${base}/schedules/`)) {
       const scheduleMatch = matches.find((m) => (m.pathname as string | undefined)?.startsWith(`${base}/schedules/`))
       const loaderData = scheduleMatch?.loaderData as { schedule: { name: string } | null } | undefined
       const scheduleName = loaderData?.schedule?.name ?? 'Schedule'
-      return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: scheduleName }]
+      return [{ label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: scheduleName }]
     }
-    if (pathname === `${base}/qualifications`) return [orgCrumb, orgNameCrumb, { label: 'Qualifications' }]
+    if (pathname === `${base}/qualifications`) return [{ label: 'Qualifications' }]
     if (pathname.startsWith(`${base}/qualifications/positions/`)) {
-      return [orgCrumb, orgNameCrumb, { label: 'Qualifications', to: '/orgs/$orgSlug/qualifications', params: { orgSlug: slug } }, { label: 'Eligibility' }]
+      return [{ label: 'Qualifications', to: '/orgs/$orgSlug/qualifications', params: { orgSlug: slug } }, { label: 'Eligibility' }]
     }
     if (pathname.startsWith(`${base}/staff/`)) {
       const staffMatch = matches.find((m) => (m.pathname as string | undefined)?.startsWith(`${base}/staff/`))
       const staffData = staffMatch?.loaderData as { staffMember: { name: string } | null } | undefined
       const staffName = staffData?.staffMember?.name ?? 'Staff Member'
-      return [orgCrumb, orgNameCrumb, { label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: staffName }]
+      return [{ label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: staffName }]
     }
   }
 
@@ -108,7 +103,7 @@ function Breadcrumbs() {
             {!isLast && crumb.to ? (
               <Link
                 to={crumb.to as never}
-                params={crumb.params}
+                params={crumb.params as never}
                 className="text-gray-500 hover:text-navy-700 transition-colors"
               >
                 {crumb.label}
