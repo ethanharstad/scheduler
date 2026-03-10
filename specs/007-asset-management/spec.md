@@ -280,7 +280,7 @@ All assets — apparatus and gear — are stored in a single `asset` table with 
 
 ### Extensibility
 
-**FR-036:** The `asset` table MUST include an optional `custom_fields` TEXT column (JSON object, default NULL) to support ad-hoc metadata that does not warrant a schema column. Known fields MUST use dedicated columns, not `custom_fields`.
+**FR-036:** The `asset` table MUST include an optional `custom_fields` TEXT column (JSON object, default NULL) to support ad-hoc metadata that does not warrant a schema column. Known fields MUST use dedicated columns, not `custom_fields`. The value MUST be a flat JSON object (no nested objects or arrays); keys MUST be strings and values MUST be strings, numbers, or booleans. The server MUST reject `custom_fields` payloads exceeding 10 KB.
 
 ### Permissions
 
@@ -446,6 +446,7 @@ An immutable, append-only log of all state-changing operations on assets. Uses a
 - Q: Can assets be deleted, or is decommissioning the only way to remove them from active use? → A: No deletion — decommissioning is the only removal; preserves full audit trail.
 - Q: Are there restricted status transitions beyond "no exit from decommissioned"? → A: Free-form — any status to any status, except no exit from decommissioned. Audit log captures all transitions.
 - Q: Should `manager` role also receive `manage-assets` by default? → A: Yes — `owner`, `admin`, and `manager` all get `manage-assets` by default. Managers (captains, lieutenants) handle day-to-day equipment management in fire/EMS orgs.
+- Q: Should `custom_fields` have validation or size constraints? → A: Yes — must be a flat JSON object (no nested objects/arrays), values limited to strings/numbers/booleans, max 10 KB payload size.
 
 ---
 
