@@ -14,6 +14,7 @@ export type Permission =
   | 'submit-time-off'
   | 'view-reports'
   | 'access-payroll-hr'
+  | 'manage-assets'
 
 export interface OrgMemberView {
   memberId: string

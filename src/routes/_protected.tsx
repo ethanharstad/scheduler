@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment } from 'react'
-import { Building2, Calendar, Home, LogOut, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
+import { Building2, Calendar, Home, LogOut, Package, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -58,6 +58,10 @@ function useBreadcrumbs(): Crumb[] {
     if (pathname === `${base}/staff`) return [orgCrumb, orgNameCrumb, { label: 'Staff' }]
     if (pathname === `${base}/staff/audit`) return [orgCrumb, orgNameCrumb, { label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: 'Audit Log' }]
     if (pathname === `${base}/members`) return [orgCrumb, orgNameCrumb, { label: 'Members' }]
+    if (pathname === `${base}/assets`) return [orgCrumb, orgNameCrumb, { label: 'Assets' }]
+    if (pathname === `${base}/assets/new`) return [orgCrumb, orgNameCrumb, { label: 'Assets' }, { label: 'New Asset' }]
+    if (pathname === `${base}/assets/my-gear`) return [orgCrumb, orgNameCrumb, { label: 'Assets' }, { label: 'My Gear' }]
+    if (pathname.startsWith(`${base}/assets/`)) return [orgCrumb, orgNameCrumb, { label: 'Assets' }, { label: 'Asset' }]
     if (pathname === `${base}/platoons`) return [orgCrumb, orgNameCrumb, { label: 'Platoons' }]
     if (pathname.startsWith(`${base}/platoons/`)) {
       return [orgCrumb, orgNameCrumb, { label: 'Platoons', to: '/orgs/$orgSlug/platoons', params: { orgSlug: slug } }, { label: 'Platoon' }]
@@ -91,7 +95,7 @@ function Breadcrumbs() {
             {!isLast && crumb.to ? (
               <Link
                 to={crumb.to as never}
-                params={crumb.params}
+                params={crumb.params as never}
                 className="text-gray-500 hover:text-navy-700 transition-colors"
               >
                 {crumb.label}
@@ -207,6 +211,12 @@ function ProtectedLayout() {
                 params={{ orgSlug: orgCtx.org.slug }}
                 icon={<Layers className="w-5 h-5" />}
                 label="Platoons"
+              />
+              <NavItem
+                to="/orgs/$orgSlug/assets"
+                params={{ orgSlug: orgCtx.org.slug }}
+                icon={<Package className="w-5 h-5" />}
+                label="Assets"
               />
               {canDo(orgCtx.userRole, 'assign-roles') && (
                 <NavItem

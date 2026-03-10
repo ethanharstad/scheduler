@@ -201,3 +201,102 @@ CREATE TABLE IF NOT EXISTS platoon_membership (
 -- Enforces one-platoon-per-member at the DB level (last-write-wins via INSERT OR REPLACE)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_platoon_membership_staff   ON platoon_membership(staff_member_id);
 CREATE        INDEX IF NOT EXISTS idx_platoon_membership_platoon ON platoon_membership(platoon_id);
+
+-- Asset Management (007-asset-management)
+
+CREATE TABLE IF NOT EXISTS asset (
+  id                        TEXT NOT NULL PRIMARY KEY,
+  org_id                    TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  asset_type                TEXT NOT NULL,
+  name                      TEXT NOT NULL,
+  category                  TEXT NOT NULL,
+  status                    TEXT NOT NULL,
+  serial_number             TEXT,
+  make                      TEXT,
+  model                     TEXT,
+  notes                     TEXT,
+  manufacture_date          TEXT,
+  purchased_date            TEXT,
+  in_service_date           TEXT,
+  expiration_date           TEXT,
+  warranty_expiration_date  TEXT,
+  inspection_interval_days  INTEGER,
+  next_inspection_due       TEXT,
+  custom_fields             TEXT,
+  unit_number               TEXT,
+  assigned_to_staff_id      TEXT REFERENCES staff_member(id) ON DELETE SET NULL,
+  assigned_to_apparatus_id  TEXT REFERENCES asset(id) ON DELETE SET NULL,
+  created_at                TEXT NOT NULL,
+  updated_at                TEXT NOT NULL,
+
+  CHECK (asset_type IN ('apparatus', 'gear')),
+  CHECK (asset_type != 'apparatus' OR unit_number IS NOT NULL),
+  CHECK (asset_type != 'apparatus' OR (assigned_to_staff_id IS NULL AND assigned_to_apparatus_id IS NULL)),
+  CHECK (NOT (assigned_to_staff_id IS NOT NULL AND assigned_to_apparatus_id IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_org_unit
+  ON asset(org_id, unit_number) WHERE unit_number IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_org_serial
+  ON asset(org_id, serial_number) WHERE serial_number IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_asset_org_type
+  ON asset(org_id, asset_type, status);
+
+CREATE INDEX IF NOT EXISTS idx_asset_staff_assignment
+  ON asset(assigned_to_staff_id) WHERE assigned_to_staff_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_asset_apparatus_assignment
+  ON asset(assigned_to_apparatus_id) WHERE assigned_to_apparatus_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_asset_expiration
+  ON asset(org_id, expiration_date) WHERE expiration_date IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_asset_inspection_due
+  ON asset(org_id, next_inspection_due) WHERE next_inspection_due IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS asset_inspection (
+  id                  TEXT NOT NULL PRIMARY KEY,
+  org_id              TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  asset_id            TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+  inspector_staff_id  TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  result              TEXT NOT NULL,
+  notes               TEXT,
+  inspection_date     TEXT NOT NULL,
+  checklist_json      TEXT,
+  created_at          TEXT NOT NULL,
+
+  CHECK (result IN ('pass', 'fail'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_inspection_asset
+  ON asset_inspection(org_id, asset_id, inspection_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_inspection_inspector
+  ON asset_inspection(inspector_staff_id);
+
+CREATE TABLE IF NOT EXISTS asset_audit_log (
+  id               TEXT NOT NULL PRIMARY KEY,
+  org_id           TEXT NOT NULL,
+  actor_staff_id   TEXT NOT NULL,
+  action           TEXT NOT NULL,
+  asset_id         TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+  detail_json      TEXT,
+  created_at       TEXT NOT NULL,
+
+  CHECK (action IN (
+    'asset.created',
+    'asset.updated',
+    'asset.status_changed',
+    'asset.inspected',
+    'asset.assigned',
+    'asset.unassigned'
+  ))
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_asset
+  ON asset_audit_log(org_id, asset_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_audit_actor
+  ON asset_audit_log(actor_staff_id);
