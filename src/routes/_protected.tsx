@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment, useState, useEffect, useRef } from 'react'
-import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
+import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -327,12 +327,6 @@ function ProtectedLayout() {
                 params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<Calendar className="w-5 h-5" />}
                 label="Schedules"
-              />
-              <NavItem
-                to="/orgs/$orgSlug/schedules/requirements"
-                params={{ orgSlug: effectiveOrgCtx.org.slug }}
-                icon={<ClipboardList className="w-5 h-5" />}
-                label="Requirements"
               />
               <NavItem
                 to="/orgs/$orgSlug/availability"

@@ -306,12 +306,7 @@ function ScheduleRequirementsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-navy-700" style={{ fontFamily: 'var(--font-sans)' }}>
-            Schedule Requirements
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">Define minimum staffing needs for recurring windows.</p>
-        </div>
+        <p className="text-sm text-gray-500">Define minimum staffing needs for recurring windows.</p>
         {canEdit && !showForm && (
           <button onClick={openCreate} className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-lg transition-colors">
             + Add Requirement
