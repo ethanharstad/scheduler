@@ -286,7 +286,7 @@ All assets — apparatus and gear — are stored in a single `asset` table with 
 
 **FR-037:** The system MUST add a `manage-assets` permission to the RBAC permission matrix in `src/lib/rbac.ts`.
 
-**FR-038:** By default, `owner` and `admin` roles MUST have `manage-assets` permission. Other roles MUST NOT have it by default.
+**FR-038:** By default, `owner`, `admin`, and `manager` roles MUST have `manage-assets` permission. Other roles (`employee`, `payroll_hr`) MUST NOT have it by default.
 
 **FR-039:** All authenticated org members (any role) MUST have read access to the asset inventory (asset list, asset detail, inspection history).
 
@@ -429,7 +429,7 @@ An immutable, append-only log of all state-changing operations on assets. Uses a
 
 6. **Inspections use simple pass/fail + notes now.** The `checklist_json` column is included as a TEXT field defaulting to NULL, providing a forward-compatible extension point for structured checklist inspections in a future iteration without requiring a schema migration.
 
-7. **New `manage-assets` permission.** This is added to the RBAC permission matrix rather than being role-gated. By default, `owner` and `admin` have this permission. The permission can be extended to other roles as needed (e.g., a `manager` who is also an apparatus officer).
+7. **New `manage-assets` permission.** This is added to the RBAC permission matrix rather than being role-gated. By default, `owner`, `admin`, and `manager` roles have this permission. Managers (captains, lieutenants, apparatus officers) are responsible for day-to-day equipment management in fire/EMS orgs, so granting this by default avoids unnecessary friction.
 
 8. **Staff members can inspect their own assigned gear.** This permission is scoped to gear assets where `assigned_to_staff_id` matches the current user's staff member ID. Staff members cannot inspect apparatus or gear assigned to others without `manage-assets` permission.
 
@@ -445,6 +445,7 @@ An immutable, append-only log of all state-changing operations on assets. Uses a
 
 - Q: Can assets be deleted, or is decommissioning the only way to remove them from active use? → A: No deletion — decommissioning is the only removal; preserves full audit trail.
 - Q: Are there restricted status transitions beyond "no exit from decommissioned"? → A: Free-form — any status to any status, except no exit from decommissioned. Audit log captures all transitions.
+- Q: Should `manager` role also receive `manage-assets` by default? → A: Yes — `owner`, `admin`, and `manager` all get `manage-assets` by default. Managers (captains, lieutenants) handle day-to-day equipment management in fire/EMS orgs.
 
 ---
 
