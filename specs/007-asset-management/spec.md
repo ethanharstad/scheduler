@@ -192,162 +192,163 @@ An org member (any role) views the full detail of an apparatus or gear item incl
 
 ## Functional Requirements
 
-### Apparatus Management
+### Asset Management (Unified Model)
 
-**FR-001:** The system MUST allow users with `manage-assets` permission to create an apparatus record with the following fields: name (required), unit_number (required, unique per org), apparatus_type (required, from predefined list), status (required, default "in_service"), VIN (optional), make (optional), model (optional), year (optional, integer), and notes (optional).
+All assets — apparatus and gear — are stored in a single `asset` table with a `asset_type` discriminator column. This eliminates duplicate CRUD logic, enables real foreign keys on inspections and audit logs, and makes unified inventory views trivial. Type-specific fields (e.g., VIN for apparatus, expiration_date for gear) are NULLable columns with type-scoped CHECK constraints.
 
-**FR-002:** The system MUST enforce that `unit_number` is unique within an organization.
+**FR-001:** The system MUST allow users with `manage-assets` permission to create an asset. Common required fields: name, asset_type, status. Type-specific fields vary by `asset_type` (see Key Entities).
 
-**FR-003:** The system MUST support the following apparatus types: `engine`, `ladder_truck`, `ambulance_medic`, `battalion_chief`, `rescue`, `brush_wildland`, `tanker_tender`, `boat`, `atv_utv`, `command_vehicle`, `utility`, `other`.
+**FR-002:** For apparatus assets (`asset_type = 'apparatus'`): `unit_number` (required, unique per org), `apparatus_subtype` (required, from predefined list), VIN (optional), year (optional, integer) are applicable. Status defaults to `in_service`.
 
-**FR-004:** The system MUST support the following apparatus statuses: `in_service`, `out_of_service`, `reserve`, `decommissioned`.
+**FR-003:** For gear assets (`asset_type = 'gear'`): `serial_number` (optional, unique per org if provided), `gear_category` (required, from predefined list), `expiration_date` (optional, ISO 8601 TEXT) are applicable. Status defaults to `available`.
 
-**FR-005:** The system MUST NOT allow status transitions from `decommissioned` to any other status. Decommissioning is a terminal state.
+**FR-004:** The system MUST enforce that `unit_number` is unique within an organization (for apparatus assets).
 
-**FR-006:** When an apparatus is decommissioned, the system MUST automatically unassign all gear currently assigned to that apparatus.
+**FR-005:** The system MUST enforce that non-NULL `serial_number` values are unique within an organization (for gear assets).
 
-**FR-007:** The system MUST allow users with `manage-assets` permission to update any mutable apparatus field (name, unit_number, apparatus_type, status, VIN, make, model, year, notes, inspection_interval_days).
+**FR-006:** The system MUST support the following apparatus subtypes: `engine`, `ladder_truck`, `ambulance_medic`, `battalion_chief`, `rescue`, `brush_wildland`, `tanker_tender`, `boat`, `atv_utv`, `command_vehicle`, `utility`, `other`.
 
-### Gear Management
+**FR-007:** The system MUST support the following gear categories: `scba`, `ppe`, `radio`, `medical_equipment`, `tools`, `hose`, `nozzle`, `thermal_camera`, `gas_detector`, `lighting`, `extrication`, `rope_rescue`, `water_rescue`, `hazmat`, `other`.
 
-**FR-008:** The system MUST allow users with `manage-assets` permission to create a gear item with the following fields: name (required), serial_number (optional, unique per org if provided), category (required, from predefined list), status (required, default "available"), expiration_date (optional, ISO 8601 TEXT), make (optional), model (optional), and notes (optional).
+**FR-008:** The system MUST support the following statuses for apparatus: `in_service`, `out_of_service`, `reserve`, `decommissioned`. For gear: `available`, `assigned`, `out_of_service`, `decommissioned`, `expired`.
 
-**FR-009:** The system MUST enforce that non-NULL `serial_number` values are unique within an organization.
+**FR-009:** The system MUST NOT allow status transitions from `decommissioned` to any other status. Decommissioning is a terminal state for both apparatus and gear.
 
-**FR-010:** The system MUST support the following gear categories: `scba`, `ppe`, `radio`, `medical_equipment`, `tools`, `hose`, `nozzle`, `thermal_camera`, `gas_detector`, `lighting`, `extrication`, `rope_rescue`, `water_rescue`, `hazmat`, `other`.
+**FR-010:** When an apparatus is decommissioned, the system MUST automatically unassign all gear currently assigned to that apparatus.
 
-**FR-011:** The system MUST support the following gear statuses: `available`, `assigned`, `out_of_service`, `decommissioned`, `expired`.
+**FR-011:** When gear is decommissioned, the system MUST automatically clear any existing assignment.
 
-**FR-012:** The system MUST allow users with `manage-assets` permission to assign gear to exactly one target: either a `staff_member` or an `apparatus`, but not both simultaneously. Assignment MUST clear any previous assignment.
+**FR-012:** The system MUST allow users with `manage-assets` permission to update any mutable asset field appropriate for that asset's type.
 
-**FR-013:** The system MUST set gear status to `assigned` when gear is assigned and to `available` when gear is unassigned (unless the gear is `out_of_service` or `decommissioned`).
+**FR-013:** The `asset_type` column MUST be immutable after creation. An asset's type cannot be changed.
 
-**FR-014:** The system MUST NOT allow assignment of gear with status `decommissioned` or `expired`.
+### Gear Assignment
 
-**FR-015:** When gear is decommissioned, the system MUST automatically clear any existing assignment.
+**FR-014:** The system MUST allow users with `manage-assets` permission to assign a gear asset to exactly one target: either a `staff_member` or an `apparatus` asset, but not both simultaneously. Assignment MUST clear any previous assignment.
 
-**FR-016:** The system MUST allow users with `manage-assets` permission to update any mutable gear field.
+**FR-015:** The system MUST set gear status to `assigned` when gear is assigned and to `available` when gear is unassigned (unless the gear is `out_of_service` or `decommissioned`).
+
+**FR-016:** The system MUST NOT allow assignment of gear with status `decommissioned` or `expired`.
+
+**FR-017:** Only assets with `asset_type = 'gear'` may have assignment fields set. Apparatus assets MUST have NULL `assigned_to_staff_id` and `assigned_to_apparatus_id`.
 
 ### Inspections
 
-**FR-017:** The system MUST allow users with `manage-assets` permission to log an inspection on any apparatus or gear item.
+**FR-018:** The system MUST allow users with `manage-assets` permission to log an inspection on any asset (apparatus or gear).
 
-**FR-018:** The system MUST allow a staff member to log an inspection on gear that is assigned to them, even without `manage-assets` permission.
+**FR-019:** The system MUST allow a staff member to log an inspection on a gear asset that is assigned to them, even without `manage-assets` permission.
 
-**FR-019:** An inspection record MUST contain: the target asset (apparatus or gear, via polymorphic reference), result (`pass` or `fail`), inspector (`staff_member_id`), inspection_date (ISO 8601 TEXT), and notes (optional text).
+**FR-020:** An inspection record MUST contain: the target asset (`asset_id` as a real FK), result (`pass` or `fail`), inspector (`staff_member_id`), inspection_date (ISO 8601 TEXT), and notes (optional text).
 
-**FR-020:** Inspection records MUST be immutable once created. They cannot be updated or deleted.
+**FR-021:** Inspection records MUST be immutable once created. They cannot be updated or deleted.
 
-**FR-021:** The system MUST support an optional `checklist_json` TEXT column on inspection records, defaulting to NULL, to enable future checklist-based inspections without schema migration.
+**FR-022:** The system MUST support an optional `checklist_json` TEXT column on inspection records, defaulting to NULL, to enable future checklist-based inspections without schema migration.
 
-**FR-022:** When an inspection is logged on an asset that has an `inspection_interval_days` set, the system MUST recalculate `next_inspection_due` as `inspection_date + inspection_interval_days`.
+**FR-023:** When an inspection is logged on an asset that has an `inspection_interval_days` set, the system MUST recalculate `next_inspection_due` as `inspection_date + inspection_interval_days`.
 
 ### Inspection Scheduling
 
-**FR-023:** The system MUST allow users with `manage-assets` permission to set an `inspection_interval_days` value on any apparatus or gear item. Supported named intervals: daily (1), weekly (7), monthly (30), quarterly (90), semi-annual (182), annual (365).
+**FR-024:** The system MUST allow users with `manage-assets` permission to set an `inspection_interval_days` value on any asset. Supported named intervals: daily (1), weekly (7), monthly (30), quarterly (90), semi-annual (182), annual (365).
 
-**FR-024:** The system MUST store a `next_inspection_due` date (ISO 8601 TEXT) on apparatus and gear records, computed from the last inspection date plus the interval, or from the date the interval was set if no inspection exists.
+**FR-025:** The system MUST store a `next_inspection_due` date (ISO 8601 TEXT) on asset records, computed from the last inspection date plus the interval, or from the date the interval was set if no inspection exists.
 
-**FR-025:** The system MUST provide a query that returns all assets (apparatus and gear) where `next_inspection_due` is in the past (overdue) or within a configurable lookahead window (default 7 days).
+**FR-026:** The system MUST provide a query that returns all assets where `next_inspection_due` is in the past (overdue) or within a configurable lookahead window (default 7 days).
 
 ### Expiration Tracking
 
-**FR-026:** The system MUST provide a query that returns all gear items where `expiration_date` is within a configurable lookahead window (default 90 days) or already past.
+**FR-027:** The system MUST provide a query that returns all gear assets where `expiration_date` is within a configurable lookahead window (default 90 days) or already past.
 
-**FR-027:** The system SHOULD automatically set gear status to `expired` when `expiration_date` is in the past. This MAY be enforced at query time rather than via a scheduled job (given Cloudflare Workers constraints).
+**FR-028:** The system SHOULD automatically set gear status to `expired` when `expiration_date` is in the past. This MAY be enforced at query time rather than via a scheduled job (given Cloudflare Workers constraints).
 
 ### Audit Logging
 
-**FR-028:** The system MUST record an immutable audit log entry for every state-changing operation on an asset. The audit log MUST include: `id` (UUID), `org_id`, `actor_staff_id`, `action` (enumerated string), `target_type` (`apparatus` or `gear`), `target_id`, `detail_json` (JSON text containing old/new values or contextual data), and `created_at` (ISO 8601).
+**FR-029:** The system MUST record an immutable audit log entry for every state-changing operation on an asset. The audit log MUST include: `id` (UUID), `org_id`, `actor_staff_id`, `action` (enumerated string), `asset_id` (real FK → asset.id), `detail_json` (JSON text containing old/new values or contextual data), and `created_at` (ISO 8601).
 
-**FR-029:** The following actions MUST be audited: `apparatus.created`, `apparatus.updated`, `apparatus.status_changed`, `apparatus.inspected`, `gear.created`, `gear.updated`, `gear.status_changed`, `gear.assigned`, `gear.unassigned`, `gear.inspected`.
+**FR-030:** The following actions MUST be audited: `asset.created`, `asset.updated`, `asset.status_changed`, `asset.inspected`, `asset.assigned`, `asset.unassigned`.
 
-**FR-030:** Audit log records MUST be immutable. They cannot be updated or deleted.
+**FR-031:** Audit log records MUST be immutable. They cannot be updated or deleted.
+
+### Extensibility
+
+**FR-032:** The `asset` table MUST include an optional `custom_fields` TEXT column (JSON object, default NULL) to support ad-hoc metadata that does not warrant a schema column. Known fields MUST use dedicated columns, not `custom_fields`.
 
 ### Permissions
 
-**FR-031:** The system MUST add a `manage-assets` permission to the RBAC permission matrix in `src/lib/rbac.ts`.
+**FR-033:** The system MUST add a `manage-assets` permission to the RBAC permission matrix in `src/lib/rbac.ts`.
 
-**FR-032:** By default, `owner` and `admin` roles MUST have `manage-assets` permission. Other roles MUST NOT have it by default.
+**FR-034:** By default, `owner` and `admin` roles MUST have `manage-assets` permission. Other roles MUST NOT have it by default.
 
-**FR-033:** All authenticated org members (any role) MUST have read access to the asset inventory (apparatus list, gear list, asset detail, inspection history).
+**FR-035:** All authenticated org members (any role) MUST have read access to the asset inventory (asset list, asset detail, inspection history).
 
-**FR-034:** Staff members MUST be able to log inspections on gear assigned to them without `manage-assets` permission.
+**FR-036:** Staff members MUST be able to log inspections on gear assets assigned to them without `manage-assets` permission.
 
 ### Viewing and Filtering
 
-**FR-035:** The system MUST provide a paginated apparatus list endpoint, filterable by `apparatus_type` and `status`.
+**FR-037:** The system MUST provide a paginated asset list endpoint, filterable by `asset_type`, `status`, `apparatus_subtype` (when type is apparatus), `gear_category` (when type is gear), `assigned_to_staff_id`, and `assigned_to_apparatus_id`.
 
-**FR-036:** The system MUST provide a paginated gear list endpoint, filterable by `category`, `status`, `assigned_to_staff_id`, and `assigned_to_apparatus_id`.
+**FR-038:** The system MUST provide an endpoint to retrieve all gear assets assigned to the currently authenticated staff member.
 
-**FR-037:** The system MUST provide an endpoint to retrieve all gear assigned to the currently authenticated staff member.
-
-**FR-038:** The system MUST provide an endpoint to retrieve all gear assigned to a specific apparatus.
+**FR-039:** The system MUST provide an endpoint to retrieve all gear assets assigned to a specific apparatus asset.
 
 ---
 
 ## Key Entities
 
-### Apparatus
+### Asset (Unified Table)
 
-A vehicle or unit belonging to an organization. Represents engines, ladders, ambulances, command vehicles, and other operational apparatus.
+A single table storing all organizational assets — both apparatus (vehicles/units) and gear (equipment/PPE). A `asset_type` discriminator column distinguishes the two. Type-specific columns are NULLable and enforced via CHECK constraints. This design eliminates duplicate CRUD logic, enables real foreign keys on inspections and audit logs, and makes unified inventory views trivial.
+
+**Design rationale:** Apparatus and gear share ~70% of their columns (id, org_id, name, make, model, status, notes, inspection_interval_days, next_inspection_due, timestamps). The type-specific differences amount to ~4-5 NULLable columns per type. A single table with type-scoped constraints is simpler than two tables with duplicated server functions, and avoids the unenforceable polymorphic FK pattern that separate tables would require on inspections and audit logs. An EAV pattern was rejected — it destroys query ergonomics, loses type safety, and provides flexibility this domain doesn't need. A `custom_fields` JSON column provides a controlled escape hatch for truly ad-hoc metadata.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | TEXT | PK, UUID | Unique identifier |
 | `org_id` | TEXT | FK → organization.id, NOT NULL | Owning organization |
-| `name` | TEXT | NOT NULL | Display name (e.g., "Engine 1") |
-| `unit_number` | TEXT | NOT NULL, UNIQUE per org | Operational unit number (e.g., "E-1") |
-| `apparatus_type` | TEXT | NOT NULL | One of: engine, ladder_truck, ambulance_medic, battalion_chief, rescue, brush_wildland, tanker_tender, boat, atv_utv, command_vehicle, utility, other |
-| `status` | TEXT | NOT NULL, DEFAULT 'in_service' | One of: in_service, out_of_service, reserve, decommissioned |
+| `asset_type` | TEXT | NOT NULL, immutable | `apparatus` or `gear` |
+| `name` | TEXT | NOT NULL | Display name (e.g., "Engine 1", "SCBA Pack #12") |
+| `status` | TEXT | NOT NULL | Apparatus: `in_service`, `out_of_service`, `reserve`, `decommissioned`. Gear: `available`, `assigned`, `out_of_service`, `decommissioned`, `expired`. |
+| `make` | TEXT | | Manufacturer |
+| `model` | TEXT | | Model name |
+| `notes` | TEXT | | Free-text notes |
+| `inspection_interval_days` | INTEGER | | Inspection cadence in days (NULL = no schedule) |
+| `next_inspection_due` | TEXT | | ISO 8601 date of next required inspection |
+| `custom_fields` | TEXT | | JSON object for ad-hoc metadata. NULL by default. Known fields MUST use dedicated columns. |
+| — | — | — | **Apparatus-specific columns** (NULL for gear) |
+| `unit_number` | TEXT | UNIQUE per org (when apparatus) | Operational unit number (e.g., "E-1") |
+| `apparatus_subtype` | TEXT | | One of: engine, ladder_truck, ambulance_medic, battalion_chief, rescue, brush_wildland, tanker_tender, boat, atv_utv, command_vehicle, utility, other |
 | `vin` | TEXT | | Vehicle Identification Number |
-| `make` | TEXT | | Manufacturer |
-| `model` | TEXT | | Model name |
 | `year` | INTEGER | | Model year |
-| `notes` | TEXT | | Free-text notes |
-| `inspection_interval_days` | INTEGER | | Inspection cadence in days (NULL = no schedule) |
-| `next_inspection_due` | TEXT | | ISO 8601 date of next required inspection |
-| `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 creation timestamp |
-| `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 last-update timestamp |
-
-**Unique constraint:** `(org_id, unit_number)`
-
-### Gear
-
-An individual piece of equipment or PPE that can be assigned to a staff member or an apparatus. Tracks serial numbers, categories, expiration dates, and assignment.
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | TEXT | PK, UUID | Unique identifier |
-| `org_id` | TEXT | FK → organization.id, NOT NULL | Owning organization |
-| `name` | TEXT | NOT NULL | Display name (e.g., "SCBA Pack #12") |
+| — | — | — | **Gear-specific columns** (NULL for apparatus) |
 | `serial_number` | TEXT | UNIQUE per org (when not NULL) | Manufacturer serial number |
-| `category` | TEXT | NOT NULL | One of: scba, ppe, radio, medical_equipment, tools, hose, nozzle, thermal_camera, gas_detector, lighting, extrication, rope_rescue, water_rescue, hazmat, other |
-| `status` | TEXT | NOT NULL, DEFAULT 'available' | One of: available, assigned, out_of_service, decommissioned, expired |
-| `assigned_to_staff_id` | TEXT | FK → staff_member.id, nullable | Staff member currently holding this gear (mutually exclusive with apparatus assignment) |
-| `assigned_to_apparatus_id` | TEXT | FK → apparatus.id, nullable | Apparatus this gear is mounted on (mutually exclusive with staff assignment) |
+| `gear_category` | TEXT | | One of: scba, ppe, radio, medical_equipment, tools, hose, nozzle, thermal_camera, gas_detector, lighting, extrication, rope_rescue, water_rescue, hazmat, other |
 | `expiration_date` | TEXT | | ISO 8601 date when this gear expires |
-| `make` | TEXT | | Manufacturer |
-| `model` | TEXT | | Model name |
-| `notes` | TEXT | | Free-text notes |
-| `inspection_interval_days` | INTEGER | | Inspection cadence in days (NULL = no schedule) |
-| `next_inspection_due` | TEXT | | ISO 8601 date of next required inspection |
+| `assigned_to_staff_id` | TEXT | FK → staff_member.id, nullable | Staff member currently holding this gear |
+| `assigned_to_apparatus_id` | TEXT | FK → asset.id, nullable | Apparatus asset this gear is mounted on (self-referential FK) |
+| — | — | — | **Timestamps** |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 creation timestamp |
 | `updated_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 last-update timestamp |
 
-**Unique constraint:** `(org_id, serial_number)` WHERE `serial_number IS NOT NULL`
-**Check constraint:** `NOT (assigned_to_staff_id IS NOT NULL AND assigned_to_apparatus_id IS NOT NULL)` — cannot be assigned to both simultaneously
+**Indexes:**
+- `UNIQUE (org_id, unit_number)` WHERE `unit_number IS NOT NULL` — scoped apparatus unit number uniqueness
+- `UNIQUE (org_id, serial_number)` WHERE `serial_number IS NOT NULL` — scoped gear serial number uniqueness
+- `(org_id, asset_type, status)` — filtered inventory queries
+
+**CHECK constraints:**
+- Apparatus fields required: `asset_type != 'apparatus' OR (unit_number IS NOT NULL AND apparatus_subtype IS NOT NULL)`
+- Apparatus cannot have gear fields: `asset_type != 'apparatus' OR (assigned_to_staff_id IS NULL AND assigned_to_apparatus_id IS NULL AND serial_number IS NULL AND gear_category IS NULL AND expiration_date IS NULL)`
+- Gear fields required: `asset_type != 'gear' OR gear_category IS NOT NULL`
+- Gear cannot have apparatus fields: `asset_type != 'gear' OR (unit_number IS NULL AND apparatus_subtype IS NULL AND vin IS NULL AND year IS NULL)`
+- Mutual exclusion on assignment: `NOT (assigned_to_staff_id IS NOT NULL AND assigned_to_apparatus_id IS NOT NULL)`
 
 ### Asset Inspection
 
-An immutable record of an inspection performed on an apparatus or gear item. Supports pass/fail with notes now, designed for future checklist expansion.
+An immutable record of an inspection performed on an asset. Uses a real FK to the unified `asset` table. Supports pass/fail with notes now, designed for future checklist expansion.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | TEXT | PK, UUID | Unique identifier |
 | `org_id` | TEXT | FK → organization.id, NOT NULL | Owning organization |
-| `target_type` | TEXT | NOT NULL | Either 'apparatus' or 'gear' |
-| `target_id` | TEXT | NOT NULL | FK to apparatus.id or gear.id depending on target_type |
+| `asset_id` | TEXT | FK → asset.id, NOT NULL | The inspected asset (real FK, not polymorphic) |
 | `inspector_staff_id` | TEXT | FK → staff_member.id, NOT NULL | Staff member who performed the inspection |
 | `result` | TEXT | NOT NULL | One of: pass, fail |
 | `notes` | TEXT | | Free-text inspection notes |
@@ -355,62 +356,65 @@ An immutable record of an inspection performed on an apparatus or gear item. Sup
 | `checklist_json` | TEXT | | Reserved for future checklist data (JSON). NULL for now. |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 creation timestamp |
 
-**Index:** `(org_id, target_type, target_id, inspection_date)` for efficient history queries.
+**Index:** `(org_id, asset_id, inspection_date)` for efficient history queries.
 
 ### Asset Audit Log
 
-An immutable, append-only log of all state-changing operations on assets. Follows the existing `staff_audit_log` pattern.
+An immutable, append-only log of all state-changing operations on assets. Uses a real FK to the unified `asset` table. Follows the existing `staff_audit_log` pattern.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | TEXT | PK, UUID | Unique identifier |
 | `org_id` | TEXT | FK → organization.id, NOT NULL | Owning organization |
 | `actor_staff_id` | TEXT | FK → staff_member.id, NOT NULL | Staff member who performed the action |
-| `action` | TEXT | NOT NULL | Enumerated action string (see FR-029) |
-| `target_type` | TEXT | NOT NULL | Either 'apparatus' or 'gear' |
-| `target_id` | TEXT | NOT NULL | ID of the affected apparatus or gear |
+| `action` | TEXT | NOT NULL | Enumerated action string (see FR-030) |
+| `asset_id` | TEXT | FK → asset.id, NOT NULL | The affected asset (real FK, not polymorphic) |
 | `detail_json` | TEXT | | JSON containing contextual data (old/new values, assignment target, etc.) |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 creation timestamp |
 
-**Index:** `(org_id, target_type, target_id, created_at)` for efficient audit trail queries.
+**Index:** `(org_id, asset_id, created_at)` for efficient audit trail queries.
 
 ---
 
 ## Success Criteria
 
-**SC-001:** An org member with `manage-assets` permission can create, update, and change the status of apparatus and gear items. All mutations are reflected in the inventory views and audit log.
+**SC-001:** An org member with `manage-assets` permission can create, update, and change the status of assets (both apparatus and gear types). All mutations are reflected in the unified inventory view and audit log.
 
-**SC-002:** Gear can be assigned to exactly one target (staff member or apparatus) at a time. Reassignment automatically clears the previous assignment. Decommissioning automatically unassigns gear.
+**SC-002:** Gear assets can be assigned to exactly one target (staff member or apparatus asset) at a time. Reassignment automatically clears the previous assignment. Decommissioning automatically unassigns gear.
 
-**SC-003:** Inspections can be logged on any apparatus or gear item by users with `manage-assets` permission, and on personally assigned gear by the assigned staff member. Inspection records are immutable.
+**SC-003:** Inspections can be logged on any asset by users with `manage-assets` permission, and on personally assigned gear by the assigned staff member. Inspection records are immutable and reference assets via real FK.
 
 **SC-004:** Inspection intervals can be configured per asset. Logging an inspection recalculates the next due date. Overdue inspections are surfaceable via query.
 
-**SC-005:** Gear with expiration dates approaching within 90 days (configurable) or already expired is surfaceable via query.
+**SC-005:** Gear assets with expiration dates approaching within 90 days (configurable) or already expired are surfaceable via query.
 
-**SC-006:** Every state-changing operation produces an immutable audit log entry containing the actor, action, target, and detail JSON.
+**SC-006:** Every state-changing operation produces an immutable audit log entry containing the actor, action, asset_id (real FK), and detail JSON.
 
 **SC-007:** All authenticated org members (any role) can read the asset inventory, asset details, and inspection history. Write operations are restricted to users with `manage-assets` permission (or assigned staff for inspections).
 
-**SC-008:** Unit numbers are unique per organization for apparatus. Serial numbers are unique per organization for gear (when provided).
+**SC-008:** Unit numbers are unique per organization for apparatus assets. Serial numbers are unique per organization for gear assets (when provided). Both enforced via partial unique indexes on the unified `asset` table.
 
 ---
 
 ## Clarifications
 
-1. **Scope is organization-level only.** Department and station assignment fields are not included in this iteration. When the department/station hierarchy is implemented, optional `department_id` and `station_id` foreign keys can be added to both `apparatus` and `gear` tables.
+1. **Scope is organization-level only.** Department and station assignment fields are not included in this iteration. When the department/station hierarchy is implemented, optional `department_id` and `station_id` foreign keys can be added to the `asset` table.
 
-2. **Separate tables for apparatus and gear.** These are fundamentally different asset types with different fields (VIN/year vs. serial_number/expiration_date) and different lifecycle semantics. A single polymorphic "asset" table would require excessive NULLable columns and complicate queries.
+2. **Unified `asset` table, not separate tables.** Apparatus and gear share ~70% of their columns and have nearly identical lifecycles (create → in-service → inspect → decommission). Separate tables would mean duplicated CRUD server functions, duplicated TypeScript types, and — critically — unenforceable polymorphic FK references from inspections and audit logs. A single table with a `asset_type` discriminator, type-scoped NULLable columns, and CHECK constraints keeps the schema honest while halving the server/UI surface area. The ~5 NULLable columns per type is a small cost given SQLite stores NULLs efficiently and the domain has exactly 2 types.
 
-3. **Inspections use simple pass/fail + notes now.** The `checklist_json` column is included as a TEXT field defaulting to NULL, providing a forward-compatible extension point for structured checklist inspections in a future iteration without requiring a schema migration.
+3. **EAV was explicitly rejected.** Entity-Attribute-Value trades away typed columns, CHECK constraints, unique indexes, and simple queries in exchange for flexibility this domain doesn't need. Asset fields are well-known and dictated by industry standards (NFPA, OSHA, FCC). A `custom_fields` JSON column on the `asset` table provides a controlled escape hatch for truly ad-hoc metadata without destroying query ergonomics.
 
-4. **New `manage-assets` permission.** This is added to the RBAC permission matrix rather than being role-gated. By default, `owner` and `admin` have this permission. The permission can be extended to other roles as needed (e.g., a `manager` who is also an apparatus officer).
+4. **Inspections use simple pass/fail + notes now.** The `checklist_json` column is included as a TEXT field defaulting to NULL, providing a forward-compatible extension point for structured checklist inspections in a future iteration without requiring a schema migration.
 
-5. **Staff members can inspect their own assigned gear.** This permission is scoped to gear items where `assigned_to_staff_id` matches the current user's staff member ID. Staff members cannot inspect apparatus or gear assigned to others without `manage-assets` permission.
+5. **New `manage-assets` permission.** This is added to the RBAC permission matrix rather than being role-gated. By default, `owner` and `admin` have this permission. The permission can be extended to other roles as needed (e.g., a `manager` who is also an apparatus officer).
 
-6. **Expiration enforcement is query-time.** Rather than relying on a cron job or scheduled worker (which adds operational complexity), expired status is resolved at read time: queries that return gear should treat any item with `expiration_date < current_date` as effectively expired, and the UI should mark them accordingly. An optional background process can periodically update the `status` column for data consistency.
+6. **Staff members can inspect their own assigned gear.** This permission is scoped to gear assets where `assigned_to_staff_id` matches the current user's staff member ID. Staff members cannot inspect apparatus or gear assigned to others without `manage-assets` permission.
 
-7. **Decommissioned is a terminal status** for both apparatus and gear. Once decommissioned, an asset cannot be returned to service. This is intentional to preserve audit trail integrity.
+7. **Expiration enforcement is query-time.** Rather than relying on a cron job or scheduled worker (which adds operational complexity), expired status is resolved at read time: queries that return gear should treat any item with `expiration_date < current_date` as effectively expired, and the UI should mark them accordingly. An optional background process can periodically update the `status` column for data consistency.
+
+8. **Decommissioned is a terminal status** for both apparatus and gear. Once decommissioned, an asset cannot be returned to service. This is intentional to preserve audit trail integrity.
+
+9. **Real FKs on inspections and audit logs.** Because all assets live in one table, `asset_inspection.asset_id` and `asset_audit_log.asset_id` are real foreign keys to `asset.id`. No polymorphic `target_type` + `target_id` pattern is needed, and referential integrity is enforced by the database.
 
 ---
 
@@ -437,7 +441,7 @@ An immutable, append-only log of all state-changing operations on assets. Follow
 3. **004-org-rbac** — RBAC permission system and `canDo()` function (required for `manage-assets` permission).
 4. **005-staff-management** — `staff_member` table (required for gear assignment and inspection inspector references).
 5. **src/lib/rbac.ts** — Must be extended with the `manage-assets` permission.
-6. **src/db/schema.sql** — Must be extended with `apparatus`, `gear`, `asset_inspection`, and `asset_audit_log` tables.
+6. **src/db/schema.sql** — Must be extended with `asset`, `asset_inspection`, and `asset_audit_log` tables.
 
 ---
 
@@ -448,22 +452,67 @@ An immutable, append-only log of all state-changing operations on assets. Follow
 - `specs/007-asset-management/spec.md` — This specification
 - `specs/007-asset-management/data-model.md` — Detailed DDL and migration SQL
 - `specs/007-asset-management/tasks.md` — Implementation task checklist
-- `src/lib/asset.types.ts` — TypeScript type definitions for apparatus, gear, inspection, audit log
-- `src/server/assets.ts` — Server functions for all asset CRUD, assignment, and inspection operations
+- `src/lib/asset.types.ts` — TypeScript type definitions for asset, inspection, audit log (unified types with discriminated unions)
+- `src/server/assets.ts` — Server functions for all asset CRUD, assignment, and inspection operations (single set of functions, type-aware)
 - `src/routes/_protected/orgs.$orgSlug/assets.tsx` — Asset management layout route
-- `src/routes/_protected/orgs.$orgSlug/assets/` — Child routes (apparatus list, gear list, detail views, etc.)
+- `src/routes/_protected/orgs.$orgSlug/assets/` — Child routes (unified asset list with type filter, detail views, etc.)
 
 ### SQL DDL Preview
 
-The `apparatus` and `gear` tables should use a composite unique index rather than a column-level UNIQUE constraint to scope uniqueness to the organization:
+Unified asset table with type-scoped partial unique indexes:
 
 ```sql
-CREATE UNIQUE INDEX idx_apparatus_org_unit ON apparatus(org_id, unit_number);
-CREATE UNIQUE INDEX idx_gear_org_serial ON gear(org_id, serial_number) WHERE serial_number IS NOT NULL;
+CREATE TABLE IF NOT EXISTS asset (
+  id                       TEXT NOT NULL PRIMARY KEY,
+  org_id                   TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  asset_type               TEXT NOT NULL,  -- 'apparatus' | 'gear'
+  name                     TEXT NOT NULL,
+  status                   TEXT NOT NULL,
+  make                     TEXT,
+  model                    TEXT,
+  notes                    TEXT,
+  inspection_interval_days INTEGER,
+  next_inspection_due      TEXT,
+  custom_fields            TEXT,  -- JSON object, NULL by default
+  -- Apparatus-specific (NULL for gear)
+  unit_number              TEXT,
+  apparatus_subtype        TEXT,
+  vin                      TEXT,
+  year                     INTEGER,
+  -- Gear-specific (NULL for apparatus)
+  serial_number            TEXT,
+  gear_category            TEXT,
+  expiration_date          TEXT,
+  assigned_to_staff_id     TEXT REFERENCES staff_member(id) ON DELETE SET NULL,
+  assigned_to_apparatus_id TEXT REFERENCES asset(id) ON DELETE SET NULL,
+  -- Timestamps
+  created_at               TEXT NOT NULL,
+  updated_at               TEXT NOT NULL,
+
+  -- Type-scoped integrity
+  CHECK (asset_type IN ('apparatus', 'gear')),
+  CHECK (asset_type != 'apparatus' OR (unit_number IS NOT NULL AND apparatus_subtype IS NOT NULL)),
+  CHECK (asset_type != 'apparatus' OR (assigned_to_staff_id IS NULL AND assigned_to_apparatus_id IS NULL AND serial_number IS NULL AND gear_category IS NULL AND expiration_date IS NULL)),
+  CHECK (asset_type != 'gear' OR gear_category IS NOT NULL),
+  CHECK (asset_type != 'gear' OR (unit_number IS NULL AND apparatus_subtype IS NULL AND vin IS NULL AND year IS NULL)),
+  CHECK (NOT (assigned_to_staff_id IS NOT NULL AND assigned_to_apparatus_id IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_org_unit   ON asset(org_id, unit_number) WHERE unit_number IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_org_serial ON asset(org_id, serial_number) WHERE serial_number IS NOT NULL;
+CREATE        INDEX IF NOT EXISTS idx_asset_org_type   ON asset(org_id, asset_type, status);
 ```
 
-The mutual exclusion constraint on gear assignment:
+Inspection and audit log tables with real FKs:
 
 ```sql
-CHECK (NOT (assigned_to_staff_id IS NOT NULL AND assigned_to_apparatus_id IS NOT NULL))
+CREATE TABLE IF NOT EXISTS asset_inspection (
+  asset_id           TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+  -- ... (real FK, not polymorphic target_type/target_id)
+);
+
+CREATE TABLE IF NOT EXISTS asset_audit_log (
+  asset_id           TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+  -- ... (real FK, not polymorphic target_type/target_id)
+);
 ```
