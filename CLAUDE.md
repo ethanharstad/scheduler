@@ -117,6 +117,7 @@ Full schema in `src/db/schema.sql`. Feature specs and data models in `specs/`.
 - TypeScript 5.7 (strict mode) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React, Cloudflare D1 (existing `org_membership` + `session` tables) (004-org-rbac)
 - Cloudflare D1 — no schema changes required; `org_membership.role` column is the source of truth (004-org-rbac)
 - TypeScript 5.7 (strict mode, `verbatimModuleSyntax: true`) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React, Cloudflare D1 (006-platoon-management)
+- Cloudflare D1 (SQLite, binding `DB`) — 3 new tables: `asset`, `asset_inspection`, `asset_audit_log` (007-asset-management)
 
 ## Recent Changes
 - 001-user-auth: Added TypeScript 5.7 (strict mode — Principle II) + TanStack Start v1, TanStack Router, React 19, Tailwind CSS v4, Lucide React
