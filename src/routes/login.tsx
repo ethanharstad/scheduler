@@ -8,13 +8,13 @@ export const Route = createFileRoute('/login')({
     meta: [{ title: 'Sign In | Scene Ready' }],
   }),
   validateSearch: (search: Record<string, unknown>) => ({
-    from: typeof search.from === 'string' ? search.from : '/home',
+    from: typeof search.from === 'string' ? search.from : '/orgs',
     verified: search.verified === '1' || search.verified === true,
     reset: search.reset === '1' || search.reset === true,
   }),
   beforeLoad: async () => {
     const session = await getSessionServerFn()
-    if (session) throw redirect({ to: '/home' })
+    if (session) throw redirect({ to: '/orgs' })
   },
   component: LoginPage,
 })

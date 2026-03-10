@@ -13,7 +13,7 @@ export const Route = createFileRoute('/_protected/create-org')({
       throw redirect({ to: '/login', search: { from: '/create-org', verified: false, reset: false } })
     }
     if (result.atLimit) {
-      throw redirect({ to: '/home' })
+      throw redirect({ to: '/orgs' })
     }
     return {}
   },

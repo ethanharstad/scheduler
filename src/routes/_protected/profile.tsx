@@ -47,7 +47,7 @@ function ProfilePage() {
         profile={currentProfile}
         onUpdate={(updated) => setCurrentProfile(updated)}
       />
-      <ChangePasswordSection onSuccess={() => void router.navigate({ to: '/login', search: { from: '/home', verified: false, reset: true } })} />
+      <ChangePasswordSection onSuccess={() => void router.navigate({ to: '/login', search: { from: '/orgs', verified: false, reset: true } })} />
     </div>
   )
 }

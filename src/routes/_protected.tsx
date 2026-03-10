@@ -1,10 +1,11 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
-import { Fragment } from 'react'
-import { Building2, Calendar, CalendarCheck, ClipboardList, GraduationCap, Home, LogOut, Settings, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
+import { Fragment, useState, useEffect, useRef } from 'react'
+import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
 import { canDo } from '@/lib/rbac'
+import { SelectedOrgProvider, useSelectedOrg } from '@/lib/org-context'
 import type { OrgView, OrgRole } from '@/lib/org.types'
 
 export const Route = createFileRoute('/_protected')({
@@ -25,7 +26,7 @@ export const Route = createFileRoute('/_protected')({
       atLimit: result.success ? result.atLimit : false,
     }
   },
-  component: ProtectedLayout,
+  component: ProtectedLayoutRoot,
 })
 
 type Crumb = { label: string; to?: string; params?: Record<string, string> }
@@ -36,7 +37,6 @@ function useBreadcrumbs(): Crumb[] {
   const { orgs } = Route.useLoaderData()
 
   // Simple routes
-  if (pathname === '/home') return [{ label: 'Home' }]
   if (pathname === '/profile') return [{ label: 'Profile' }]
   if (pathname === '/create-org') return [{ label: 'Create Organization' }]
   if (pathname === '/orgs') return [{ label: 'Organizations' }]
@@ -146,20 +146,125 @@ function NavItem({
   )
 }
 
+const roleLabels: Record<OrgRole, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  manager: 'Manager',
+  employee: 'Employee',
+  payroll_hr: 'Payroll/HR',
+}
+
+function OrgSwitcher({ orgCtx }: { orgCtx: { org: OrgView; userRole: OrgRole } | null }) {
+  const [open, setOpen] = useState(false)
+  const { orgs, atLimit } = Route.useLoaderData()
+  const navigate = useNavigate()
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  const currentSlug = orgCtx?.org.slug ?? null
+
+  return (
+    <div ref={ref} className="relative px-2 py-1">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-3 h-11 px-3 w-full rounded-lg text-sm font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+      >
+        <span className="w-5 h-5 flex items-center justify-center shrink-0">
+          <Building2 className="w-5 h-5" />
+        </span>
+        <span className="flex-1 text-left truncate">
+          {orgCtx ? orgCtx.org.name : 'Organizations'}
+        </span>
+        <ChevronsUpDown className="w-4 h-4 text-white/50 shrink-0" />
+      </button>
+
+      {open && (
+        <div className="absolute left-2 right-2 top-full mt-1 bg-[#0f1e35] border border-white/10 rounded-lg shadow-xl z-50 py-1">
+          {orgs.map((o) => {
+            const isCurrent = o.orgSlug === currentSlug
+            return (
+              <button
+                key={o.orgSlug}
+                onClick={() => {
+                  setOpen(false)
+                  void navigate({ to: '/orgs/$orgSlug', params: { orgSlug: o.orgSlug } })
+                }}
+                className="flex items-center gap-3 w-full px-3 h-10 text-sm text-left hover:bg-white/10 transition-colors"
+              >
+                <span className="w-4 h-4 flex items-center justify-center shrink-0">
+                  {isCurrent && <Check className="w-4 h-4 text-red-400" />}
+                </span>
+                <span className="flex-1 truncate text-white">{o.orgName}</span>
+                <span className="text-white/40 text-xs shrink-0">{roleLabels[o.role]}</span>
+              </button>
+            )
+          })}
+          <div className="border-t border-white/10 my-1" />
+          {!atLimit && (
+            <button
+              onClick={() => {
+                setOpen(false)
+                void navigate({ to: '/create-org' })
+              }}
+              className="flex items-center gap-3 w-full px-4 h-9 text-xs text-white/50 hover:text-white transition-colors"
+            >
+              + Create Organization
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setOpen(false)
+              void navigate({ to: '/orgs' })
+            }}
+            className="flex items-center gap-3 w-full px-4 h-9 text-xs text-white/50 hover:text-white transition-colors"
+          >
+            All Organizations →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProtectedLayoutRoot() {
+  return (
+    <SelectedOrgProvider>
+      <ProtectedLayout />
+    </SelectedOrgProvider>
+  )
+}
+
 function ProtectedLayout() {
   const navigate = useNavigate()
   const { session } = Route.useRouteContext()
+  const { selectedOrg, setSelectedOrg } = useSelectedOrg()
   const matches = useMatches()
   const orgMatch = matches.find((m) => m.routeId === '/_protected/orgs/$orgSlug')
   const orgCtx = orgMatch
     ? (orgMatch.context as unknown as { org: OrgView; userRole: OrgRole })
     : null
 
+  useEffect(() => {
+    if (orgCtx) setSelectedOrg(orgCtx)
+  }, [orgCtx, setSelectedOrg])
+
+  const effectiveOrgCtx = orgCtx ?? selectedOrg
+
   async function handleLogout() {
     await logoutServerFn()
     await navigate({
       to: '/login',
-      search: { from: '/home', verified: false, reset: false },
+      search: { from: '/orgs', verified: false, reset: false },
     })
   }
 
@@ -184,8 +289,7 @@ function ProtectedLayout() {
         {/* Navigation */}
         <nav className="flex-1 py-2 overflow-y-auto">
           {/* Global nav */}
-          <NavItem to="/home" icon={<Home className="w-5 h-5" />} label="Home" />
-          <NavItem to="/orgs" icon={<Building2 className="w-5 h-5" />} label="Organizations" />
+          <OrgSwitcher orgCtx={effectiveOrgCtx} />
 
           {/* System admin nav */}
           {session.isSystemAdmin && (
@@ -202,8 +306,16 @@ function ProtectedLayout() {
           )}
 
           {/* Org-specific nav */}
-          {orgCtx && (
+          {effectiveOrgCtx && (
             <>
+              <div className="border-t border-white/10 my-1" />
+              <NavItem
+                to="/orgs/$orgSlug"
+                params={{ orgSlug: effectiveOrgCtx.org.slug }}
+                icon={<LayoutDashboard className="w-5 h-5" />}
+                label="Dashboard"
+              />
+
               {/* Scheduling */}
               <div className="mt-4 mb-1 px-4">
                 <span className="text-white/40 text-xs font-semibold uppercase tracking-widest" style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -212,19 +324,19 @@ function ProtectedLayout() {
               </div>
               <NavItem
                 to="/orgs/$orgSlug/schedules"
-                params={{ orgSlug: orgCtx.org.slug }}
+                params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<Calendar className="w-5 h-5" />}
                 label="Schedules"
               />
               <NavItem
                 to="/orgs/$orgSlug/schedules/requirements"
-                params={{ orgSlug: orgCtx.org.slug }}
+                params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<ClipboardList className="w-5 h-5" />}
                 label="Requirements"
               />
               <NavItem
                 to="/orgs/$orgSlug/availability"
-                params={{ orgSlug: orgCtx.org.slug }}
+                params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<CalendarCheck className="w-5 h-5" />}
                 label="Availability"
               />
@@ -237,45 +349,45 @@ function ProtectedLayout() {
               </div>
               <NavItem
                 to="/orgs/$orgSlug/staff"
-                params={{ orgSlug: orgCtx.org.slug }}
+                params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<UserCog className="w-5 h-5" />}
                 label="Staff"
               />
               <NavItem
                 to="/orgs/$orgSlug/platoons"
-                params={{ orgSlug: orgCtx.org.slug }}
+                params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<Layers className="w-5 h-5" />}
                 label="Platoons"
               />
-              {canDo(orgCtx.userRole, 'view-certifications') && (
+              {canDo(effectiveOrgCtx.userRole, 'view-certifications') && (
                 <NavItem
                   to="/orgs/$orgSlug/qualifications"
-                  params={{ orgSlug: orgCtx.org.slug }}
+                  params={{ orgSlug: effectiveOrgCtx.org.slug }}
                   icon={<GraduationCap className="w-5 h-5" />}
                   label="Qualifications"
                 />
               )}
 
               {/* Administration */}
-              {(canDo(orgCtx.userRole, 'assign-roles') || canDo(orgCtx.userRole, 'edit-org-settings')) && (
+              {(canDo(effectiveOrgCtx.userRole, 'assign-roles') || canDo(effectiveOrgCtx.userRole, 'edit-org-settings')) && (
                 <>
                   <div className="mt-4 mb-1 px-4">
                     <span className="text-white/40 text-xs font-semibold uppercase tracking-widest" style={{ fontFamily: 'var(--font-condensed)' }}>
                       Administration
                     </span>
                   </div>
-                  {canDo(orgCtx.userRole, 'assign-roles') && (
+                  {canDo(effectiveOrgCtx.userRole, 'assign-roles') && (
                     <NavItem
                       to="/orgs/$orgSlug/members"
-                      params={{ orgSlug: orgCtx.org.slug }}
+                      params={{ orgSlug: effectiveOrgCtx.org.slug }}
                       icon={<Users className="w-5 h-5" />}
                       label="Members"
                     />
                   )}
-                  {canDo(orgCtx.userRole, 'edit-org-settings') && (
+                  {canDo(effectiveOrgCtx.userRole, 'edit-org-settings') && (
                     <NavItem
                       to="/orgs/$orgSlug/settings"
-                      params={{ orgSlug: orgCtx.org.slug }}
+                      params={{ orgSlug: effectiveOrgCtx.org.slug }}
                       icon={<Settings className="w-5 h-5" />}
                       label="Settings"
                     />

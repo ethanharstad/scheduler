@@ -136,7 +136,7 @@ export const loginServerFn = createServerFn({ method: 'POST' })
     })
 
     logSecurityEvent({ type: 'session_created', email, userId: user.id })
-    return { success: true, redirectTo: data.from ?? '/home' }
+    return { success: true, redirectTo: data.from ?? '/orgs' }
   })
 
 // ---------------------------------------------------------------------------

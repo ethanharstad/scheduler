@@ -18,7 +18,6 @@ import { Route as VerifyEmailTokenRouteImport } from './routes/verify-email.$tok
 import { Route as ResetPasswordTokenRouteImport } from './routes/reset-password.$token'
 import { Route as JoinTokenRouteImport } from './routes/join.$token'
 import { Route as ProtectedProfileRouteImport } from './routes/_protected/profile'
-import { Route as ProtectedHomeRouteImport } from './routes/_protected/home'
 import { Route as ProtectedCreateOrgRouteImport } from './routes/_protected/create-org'
 import { Route as ProtectedAdminRouteImport } from './routes/_protected/_admin'
 import { Route as ProtectedOrgsIndexRouteImport } from './routes/_protected/orgs.index'
@@ -87,11 +86,6 @@ const JoinTokenRoute = JoinTokenRouteImport.update({
 const ProtectedProfileRoute = ProtectedProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
-  getParentRoute: () => ProtectedRoute,
-} as any)
-const ProtectedHomeRoute = ProtectedHomeRouteImport.update({
-  id: '/home',
-  path: '/home',
   getParentRoute: () => ProtectedRoute,
 } as any)
 const ProtectedCreateOrgRoute = ProtectedCreateOrgRouteImport.update({
@@ -244,7 +238,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/create-org': typeof ProtectedCreateOrgRoute
-  '/home': typeof ProtectedHomeRoute
   '/profile': typeof ProtectedProfileRoute
   '/join/$token': typeof JoinTokenRoute
   '/reset-password/$token': typeof ResetPasswordTokenRoute
@@ -279,7 +272,6 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/create-org': typeof ProtectedCreateOrgRoute
-  '/home': typeof ProtectedHomeRoute
   '/profile': typeof ProtectedProfileRoute
   '/join/$token': typeof JoinTokenRoute
   '/reset-password/$token': typeof ResetPasswordTokenRoute
@@ -312,7 +304,6 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_protected/_admin': typeof ProtectedAdminRouteWithChildren
   '/_protected/create-org': typeof ProtectedCreateOrgRoute
-  '/_protected/home': typeof ProtectedHomeRoute
   '/_protected/profile': typeof ProtectedProfileRoute
   '/join/$token': typeof JoinTokenRoute
   '/reset-password/$token': typeof ResetPasswordTokenRoute
@@ -349,7 +340,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/create-org'
-    | '/home'
     | '/profile'
     | '/join/$token'
     | '/reset-password/$token'
@@ -384,7 +374,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/create-org'
-    | '/home'
     | '/profile'
     | '/join/$token'
     | '/reset-password/$token'
@@ -416,7 +405,6 @@ export interface FileRouteTypes {
     | '/register'
     | '/_protected/_admin'
     | '/_protected/create-org'
-    | '/_protected/home'
     | '/_protected/profile'
     | '/join/$token'
     | '/reset-password/$token'
@@ -520,13 +508,6 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProtectedProfileRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/home': {
-      id: '/_protected/home'
-      path: '/home'
-      fullPath: '/home'
-      preLoaderRoute: typeof ProtectedHomeRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/create-org': {
@@ -830,7 +811,6 @@ const ProtectedOrgsOrgSlugRouteWithChildren =
 interface ProtectedRouteChildren {
   ProtectedAdminRoute: typeof ProtectedAdminRouteWithChildren
   ProtectedCreateOrgRoute: typeof ProtectedCreateOrgRoute
-  ProtectedHomeRoute: typeof ProtectedHomeRoute
   ProtectedProfileRoute: typeof ProtectedProfileRoute
   ProtectedOrgsOrgSlugRoute: typeof ProtectedOrgsOrgSlugRouteWithChildren
   ProtectedOrgsIndexRoute: typeof ProtectedOrgsIndexRoute
@@ -839,7 +819,6 @@ interface ProtectedRouteChildren {
 const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedAdminRoute: ProtectedAdminRouteWithChildren,
   ProtectedCreateOrgRoute: ProtectedCreateOrgRoute,
-  ProtectedHomeRoute: ProtectedHomeRoute,
   ProtectedProfileRoute: ProtectedProfileRoute,
   ProtectedOrgsOrgSlugRoute: ProtectedOrgsOrgSlugRouteWithChildren,
   ProtectedOrgsIndexRoute: ProtectedOrgsIndexRoute,

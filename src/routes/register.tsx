@@ -9,7 +9,7 @@ export const Route = createFileRoute('/register')({
   }),
   beforeLoad: async () => {
     const session = await getSessionServerFn()
-    if (session) throw redirect({ to: '/home' })
+    if (session) throw redirect({ to: '/orgs' })
   },
   component: RegisterPage,
 })

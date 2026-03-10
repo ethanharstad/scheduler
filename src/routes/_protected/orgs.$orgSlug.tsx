@@ -11,7 +11,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug')({
   beforeLoad: async ({ params }) => {
     const result = await getOrgServerFn({ data: { slug: params.orgSlug } })
     if (!result.success) {
-      throw redirect({ to: '/home' })
+      throw redirect({ to: '/orgs' })
     }
     return { org: result.org, userRole: result.userRole }
   },

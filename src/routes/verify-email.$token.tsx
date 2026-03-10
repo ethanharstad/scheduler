@@ -25,7 +25,7 @@ function VerifyEmailPage() {
   if (result.success) {
     void navigate({
       to: '/login',
-      search: { from: '/home', verified: true, reset: false },
+      search: { from: '/orgs', verified: true, reset: false },
     })
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">

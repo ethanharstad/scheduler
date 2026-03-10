@@ -43,7 +43,7 @@ function ResetPasswordPage() {
       if (result.success) {
         await navigate({
           to: '/login',
-          search: { from: '/home', verified: false, reset: true },
+          search: { from: '/orgs', verified: false, reset: true },
         })
       } else {
         setError(result.error)
