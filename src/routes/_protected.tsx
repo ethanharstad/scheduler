@@ -130,16 +130,19 @@ function NavItem({
   params,
   icon,
   label,
+  exact,
 }: {
   to: string
   params?: Record<string, string>
   icon: React.ReactNode
   label: string
+  exact?: boolean
 }) {
   return (
     <Link
       to={to}
       params={params}
+      activeOptions={exact ? { exact: true } : undefined}
       className="flex items-center gap-3 h-11 px-4 rounded-none text-sm font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors [&.active]:border-l-[3px] [&.active]:border-red-700 [&.active]:bg-white/10 [&.active]:text-white [&.active]:pl-[13px]"
     >
       <span className="w-5 h-5 flex items-center justify-center shrink-0">{icon}</span>
@@ -316,6 +319,7 @@ function ProtectedLayout() {
                 params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<LayoutDashboard className="w-5 h-5" />}
                 label="Dashboard"
+                exact
               />
 
               {/* Scheduling */}
