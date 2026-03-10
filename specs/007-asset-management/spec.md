@@ -222,81 +222,83 @@ All assets — apparatus and gear — are stored in a single `asset` table with 
 
 **FR-013:** The `asset_type` column MUST be immutable after creation. An asset's type cannot be changed.
 
+**FR-014:** Assets MUST NOT be deletable. Decommissioning is the only mechanism for removing an asset from active use. This preserves audit trail integrity and NFPA record-keeping compliance. Mistaken entries should be decommissioned immediately with an explanatory note.
+
 ### Gear Assignment
 
-**FR-014:** The system MUST allow users with `manage-assets` permission to assign a gear asset to exactly one target: either a `staff_member` or an `apparatus` asset, but not both simultaneously. Assignment MUST clear any previous assignment.
+**FR-015:** The system MUST allow users with `manage-assets` permission to assign a gear asset to exactly one target: either a `staff_member` or an `apparatus` asset, but not both simultaneously. Assignment MUST clear any previous assignment.
 
-**FR-015:** The system MUST set gear status to `assigned` when gear is assigned and to `available` when gear is unassigned (unless the gear is `out_of_service` or `decommissioned`).
+**FR-016:** The system MUST set gear status to `assigned` when gear is assigned and to `available` when gear is unassigned (unless the gear is `out_of_service` or `decommissioned`).
 
-**FR-016:** The system MUST NOT allow assignment of gear with status `decommissioned` or `expired`.
+**FR-017:** The system MUST NOT allow assignment of gear with status `decommissioned` or `expired`.
 
-**FR-017:** Only assets with `asset_type = 'gear'` may have assignment fields set. Apparatus assets MUST have NULL `assigned_to_staff_id` and `assigned_to_apparatus_id`.
+**FR-018:** Only assets with `asset_type = 'gear'` may have assignment fields set. Apparatus assets MUST have NULL `assigned_to_staff_id` and `assigned_to_apparatus_id`.
 
 ### Inspections
 
-**FR-018:** The system MUST allow users with `manage-assets` permission to log an inspection on any asset (apparatus or gear).
+**FR-019:** The system MUST allow users with `manage-assets` permission to log an inspection on any asset (apparatus or gear).
 
-**FR-019:** The system MUST allow a staff member to log an inspection on a gear asset that is assigned to them, even without `manage-assets` permission.
+**FR-020:** The system MUST allow a staff member to log an inspection on a gear asset that is assigned to them, even without `manage-assets` permission.
 
-**FR-020:** An inspection record MUST contain: the target asset (`asset_id` as a real FK), result (`pass` or `fail`), inspector (`staff_member_id`), inspection_date (ISO 8601 TEXT), and notes (optional text).
+**FR-021:** An inspection record MUST contain: the target asset (`asset_id` as a real FK), result (`pass` or `fail`), inspector (`staff_member_id`), inspection_date (ISO 8601 TEXT), and notes (optional text).
 
-**FR-021:** Inspection records MUST be immutable once created. They cannot be updated or deleted.
+**FR-022:** Inspection records MUST be immutable once created. They cannot be updated or deleted.
 
-**FR-022:** The system MUST support an optional `checklist_json` TEXT column on inspection records, defaulting to NULL, to enable future checklist-based inspections without schema migration.
+**FR-023:** The system MUST support an optional `checklist_json` TEXT column on inspection records, defaulting to NULL, to enable future checklist-based inspections without schema migration.
 
-**FR-023:** When an inspection is logged on an asset that has an `inspection_interval_days` set, the system MUST recalculate `next_inspection_due` as `inspection_date + inspection_interval_days`.
+**FR-024:** When an inspection is logged on an asset that has an `inspection_interval_days` set, the system MUST recalculate `next_inspection_due` as `inspection_date + inspection_interval_days`.
 
 ### Inspection Scheduling
 
-**FR-024:** The system MUST allow users with `manage-assets` permission to set an `inspection_interval_days` value on any asset. Supported named intervals: daily (1), weekly (7), monthly (30), quarterly (90), semi-annual (182), annual (365).
+**FR-025:** The system MUST allow users with `manage-assets` permission to set an `inspection_interval_days` value on any asset. Supported named intervals: daily (1), weekly (7), monthly (30), quarterly (90), semi-annual (182), annual (365).
 
-**FR-025:** The system MUST store a `next_inspection_due` date (ISO 8601 TEXT) on asset records, computed from the last inspection date plus the interval, or from the date the interval was set if no inspection exists.
+**FR-026:** The system MUST store a `next_inspection_due` date (ISO 8601 TEXT) on asset records, computed from the last inspection date plus the interval, or from the date the interval was set if no inspection exists.
 
-**FR-026:** The system MUST provide a query that returns all assets where `next_inspection_due` is in the past (overdue) or within a configurable lookahead window (default 7 days).
+**FR-027:** The system MUST provide a query that returns all assets where `next_inspection_due` is in the past (overdue) or within a configurable lookahead window (default 7 days).
 
 ### Expiration Tracking
 
-**FR-027:** The system MUST provide a query that returns all assets where `expiration_date` is within a configurable lookahead window (default 90 days) or already past. This applies to both apparatus (e.g., certification expiry) and gear (e.g., SCBA cylinder hydrostatic test expiry, PPE 10-year retirement).
+**FR-028:** The system MUST provide a query that returns all assets where `expiration_date` is within a configurable lookahead window (default 90 days) or already past. This applies to both apparatus (e.g., certification expiry) and gear (e.g., SCBA cylinder hydrostatic test expiry, PPE 10-year retirement).
 
-**FR-028:** The system SHOULD automatically set gear status to `expired` when `expiration_date` is in the past. This MAY be enforced at query time rather than via a scheduled job (given Cloudflare Workers constraints).
+**FR-029:** The system SHOULD automatically set gear status to `expired` when `expiration_date` is in the past. This MAY be enforced at query time rather than via a scheduled job (given Cloudflare Workers constraints).
 
 ### NFPA Lifecycle Compliance
 
-**FR-029:** The system MUST store `manufacture_date` (ISO 8601 TEXT, optional) to support NFPA 1851 10-year service life calculations for PPE and NFPA 1911 apparatus lifecycle tracking. The UI SHOULD display a computed "service life remaining" when `manufacture_date` is set and the asset category has a known maximum service life (e.g., 10 years for structural PPE per NFPA 1851).
+**FR-030:** The system MUST store `manufacture_date` (ISO 8601 TEXT, optional) to support NFPA 1851 10-year service life calculations for PPE and NFPA 1911 apparatus lifecycle tracking. The UI SHOULD display a computed "service life remaining" when `manufacture_date` is set and the asset category has a known maximum service life (e.g., 10 years for structural PPE per NFPA 1851).
 
-**FR-030:** The system MUST store `in_service_date` (ISO 8601 TEXT, optional) to track when an asset was placed into active service. This is required by NFPA 1851 for PPE record-keeping and useful for apparatus maintenance scheduling per NFPA 1911.
+**FR-031:** The system MUST store `in_service_date` (ISO 8601 TEXT, optional) to track when an asset was placed into active service. This is required by NFPA 1851 for PPE record-keeping and useful for apparatus maintenance scheduling per NFPA 1911.
 
-**FR-031:** The system MUST store `purchased_date` (ISO 8601 TEXT, optional) to track procurement date for both apparatus and gear. This supports warranty tracking and budget/lifecycle planning.
+**FR-032:** The system MUST store `purchased_date` (ISO 8601 TEXT, optional) to track procurement date for both apparatus and gear. This supports warranty tracking and budget/lifecycle planning.
 
 ### Audit Logging
 
-**FR-032:** The system MUST record an immutable audit log entry for every state-changing operation on an asset. The audit log MUST include: `id` (UUID), `org_id`, `actor_staff_id`, `action` (enumerated string), `asset_id` (real FK → asset.id), `detail_json` (JSON text containing old/new values or contextual data), and `created_at` (ISO 8601).
+**FR-033:** The system MUST record an immutable audit log entry for every state-changing operation on an asset. The audit log MUST include: `id` (UUID), `org_id`, `actor_staff_id`, `action` (enumerated string), `asset_id` (real FK → asset.id), `detail_json` (JSON text containing old/new values or contextual data), and `created_at` (ISO 8601).
 
-**FR-033:** The following actions MUST be audited: `asset.created`, `asset.updated`, `asset.status_changed`, `asset.inspected`, `asset.assigned`, `asset.unassigned`.
+**FR-034:** The following actions MUST be audited: `asset.created`, `asset.updated`, `asset.status_changed`, `asset.inspected`, `asset.assigned`, `asset.unassigned`.
 
-**FR-034:** Audit log records MUST be immutable. They cannot be updated or deleted.
+**FR-035:** Audit log records MUST be immutable. They cannot be updated or deleted.
 
 ### Extensibility
 
-**FR-035:** The `asset` table MUST include an optional `custom_fields` TEXT column (JSON object, default NULL) to support ad-hoc metadata that does not warrant a schema column. Known fields MUST use dedicated columns, not `custom_fields`.
+**FR-036:** The `asset` table MUST include an optional `custom_fields` TEXT column (JSON object, default NULL) to support ad-hoc metadata that does not warrant a schema column. Known fields MUST use dedicated columns, not `custom_fields`.
 
 ### Permissions
 
-**FR-036:** The system MUST add a `manage-assets` permission to the RBAC permission matrix in `src/lib/rbac.ts`.
+**FR-037:** The system MUST add a `manage-assets` permission to the RBAC permission matrix in `src/lib/rbac.ts`.
 
-**FR-037:** By default, `owner` and `admin` roles MUST have `manage-assets` permission. Other roles MUST NOT have it by default.
+**FR-038:** By default, `owner` and `admin` roles MUST have `manage-assets` permission. Other roles MUST NOT have it by default.
 
-**FR-038:** All authenticated org members (any role) MUST have read access to the asset inventory (asset list, asset detail, inspection history).
+**FR-039:** All authenticated org members (any role) MUST have read access to the asset inventory (asset list, asset detail, inspection history).
 
-**FR-039:** Staff members MUST be able to log inspections on gear assets assigned to them without `manage-assets` permission.
+**FR-040:** Staff members MUST be able to log inspections on gear assets assigned to them without `manage-assets` permission.
 
 ### Viewing and Filtering
 
-**FR-040:** The system MUST provide a paginated asset list endpoint, filterable by `asset_type`, `status`, `category`, `assigned_to_staff_id`, and `assigned_to_apparatus_id`.
+**FR-041:** The system MUST provide a paginated asset list endpoint, filterable by `asset_type`, `status`, `category`, `assigned_to_staff_id`, and `assigned_to_apparatus_id`.
 
-**FR-041:** The system MUST provide an endpoint to retrieve all gear assets assigned to the currently authenticated staff member.
+**FR-042:** The system MUST provide an endpoint to retrieve all gear assets assigned to the currently authenticated staff member.
 
-**FR-042:** The system MUST provide an endpoint to retrieve all gear assets assigned to a specific apparatus asset.
+**FR-043:** The system MUST provide an endpoint to retrieve all gear assets assigned to a specific apparatus asset.
 
 ---
 
@@ -378,7 +380,7 @@ An immutable, append-only log of all state-changing operations on assets. Uses a
 | `id` | TEXT | PK, UUID | Unique identifier |
 | `org_id` | TEXT | FK → organization.id, NOT NULL | Owning organization |
 | `actor_staff_id` | TEXT | FK → staff_member.id, NOT NULL | Staff member who performed the action |
-| `action` | TEXT | NOT NULL | Enumerated action string (see FR-030) |
+| `action` | TEXT | NOT NULL | Enumerated action string (see FR-034) |
 | `asset_id` | TEXT | FK → asset.id, NOT NULL | The affected asset (real FK, not polymorphic) |
 | `detail_json` | TEXT | | JSON containing contextual data (old/new values, assignment target, etc.) |
 | `created_at` | TEXT | NOT NULL, DEFAULT CURRENT_TIMESTAMP | ISO 8601 creation timestamp |
@@ -403,7 +405,7 @@ An immutable, append-only log of all state-changing operations on assets. Uses a
 
 **SC-007:** All authenticated org members (any role) can read the asset inventory, asset details, and inspection history. Write operations are restricted to users with `manage-assets` permission (or assigned staff for inspections).
 
-**SC-008:** Unit numbers are unique per organization for apparatus assets. Serial numbers are unique per organization for gear assets (when provided). Both enforced via partial unique indexes on the unified `asset` table.
+**SC-008:** Unit numbers are unique per organization for apparatus assets. Serial numbers are unique per organization across all asset types (when provided). Both enforced via partial unique indexes on the unified `asset` table.
 
 ---
 
@@ -436,6 +438,12 @@ An immutable, append-only log of all state-changing operations on assets. Uses a
 10. **Decommissioned is a terminal status** for both apparatus and gear. Once decommissioned, an asset cannot be returned to service. This is intentional to preserve audit trail integrity.
 
 11. **Real FKs on inspections and audit logs.** Because all assets live in one table, `asset_inspection.asset_id` and `asset_audit_log.asset_id` are real foreign keys to `asset.id`. No polymorphic `target_type` + `target_id` pattern is needed, and referential integrity is enforced by the database.
+
+12. **Assets cannot be deleted.** Decommissioning is the only mechanism for removing an asset from active use. This preserves audit trail integrity — every asset ever referenced in an inspection or audit log continues to exist — and aligns with NFPA record-keeping requirements that mandate retaining records even after retirement. Mistaken entries should be decommissioned immediately with an explanatory note.
+
+### Session 2026-03-10
+
+- Q: Can assets be deleted, or is decommissioning the only way to remove them from active use? → A: No deletion — decommissioning is the only removal; preserves full audit trail.
 
 ---
 
