@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Star, Award, ChevronDown, X } from 'lucide-react'
+import { AlertTriangle, Star, Award, ChevronDown, Layers, X } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { StaffCertView, StaffMemberDetailView } from '@/lib/qualifications.types'
 import {
@@ -11,21 +11,30 @@ import {
   upsertStaffCertServerFn,
   revokeStaffCertServerFn,
 } from '@/server/qualifications'
+import { listPlatoonsServerFn, getStaffPlatoonServerFn, assignMemberServerFn, removeMemberFromPlatoonServerFn } from '@/server/platoons'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/staff/$staffMemberId')({
   loader: async ({ params }) => {
-    const [detailResult, ranksResult, certTypesResult] = await Promise.all([
+    const [detailResult, ranksResult, certTypesResult, platoonsResult, staffPlatoonResult] = await Promise.all([
       getStaffMemberDetailsServerFn({
         data: { orgSlug: params.orgSlug, staffMemberId: params.staffMemberId },
       }),
       listRanksServerFn({ data: { orgSlug: params.orgSlug } }),
       listCertTypesServerFn({ data: { orgSlug: params.orgSlug } }),
+      listPlatoonsServerFn({ data: { orgSlug: params.orgSlug } }),
+      getStaffPlatoonServerFn({ data: { orgSlug: params.orgSlug, staffMemberId: params.staffMemberId } }),
     ])
     return {
       staffMember: detailResult.success ? detailResult.staffMember : null,
       certs: detailResult.success ? detailResult.certs : [],
       ranks: ranksResult.success ? ranksResult.ranks : [],
       certTypes: certTypesResult.success ? certTypesResult.certTypes : [],
+      platoons: platoonsResult.success ? platoonsResult.platoons : [],
+      currentPlatoonId: staffPlatoonResult.success ? staffPlatoonResult.platoonId : null,
+      currentPlatoonName: staffPlatoonResult.success ? staffPlatoonResult.platoonName : null,
+      currentPositionId: staffPlatoonResult.success ? staffPlatoonResult.positionId : null,
+      currentPositionName: staffPlatoonResult.success ? staffPlatoonResult.positionName : null,
+      positions: staffPlatoonResult.success ? staffPlatoonResult.positions : [],
     }
   },
   head: ({ loaderData }) => ({
@@ -82,7 +91,9 @@ function StaffDetailPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
   const loaderData = Route.useLoaderData()
   const params = Route.useParams()
+  const orgSlug = org.slug
   const canManage = canDo(userRole, 'manage-certifications')
+  const canManagePlatoon = canDo(userRole, 'create-edit-schedules')
 
   const [staffMember, setStaffMember] = useState<StaffMemberDetailView | null>(loaderData.staffMember)
   const [certs, setCerts] = useState<StaffCertView[]>(loaderData.certs)
@@ -92,6 +103,17 @@ function StaffDetailPage() {
   const [editingRank, setEditingRank] = useState(false)
   const [selectedRankId, setSelectedRankId] = useState(staffMember?.rankId ?? '')
   const [rankBusy, setRankBusy] = useState(false)
+
+  // Platoon
+  const [platoonId, setPlatoonId] = useState<string | null>(loaderData.currentPlatoonId)
+  const [platoonName, setPlatoonName] = useState<string | null>(loaderData.currentPlatoonName)
+  const [positionId, setPositionId] = useState<string | null>(loaderData.currentPositionId)
+  const [positionName, setPositionName] = useState<string | null>(loaderData.currentPositionName)
+  const [platoonSelectId, setPlatoonSelectId] = useState<string>(loaderData.currentPlatoonId ?? '')
+  const [positionSelectId, setPositionSelectId] = useState<string>(loaderData.currentPositionId ?? '')
+  const [editingPlatoon, setEditingPlatoon] = useState(false)
+  const [platoonMoveConfirm, setPlatoonMoveConfirm] = useState(false)
+  const [platoonBusy, setPlatoonBusy] = useState(false)
 
   // Cert form
   const [showCertForm, setShowCertForm] = useState(false)
@@ -140,6 +162,39 @@ function StaffDetailPage() {
       }
     } finally {
       setRankBusy(false)
+    }
+  }
+
+  async function handleSavePlatoon() {
+    setPlatoonBusy(true)
+    try {
+      if (!platoonSelectId) {
+        if (platoonId) {
+          const result = await removeMemberFromPlatoonServerFn({
+            data: { orgSlug, platoonId, staffMemberId: params.staffMemberId },
+          })
+          if (result.success) {
+            setPlatoonId(null); setPlatoonName(null)
+            setPositionId(null); setPositionName(null)
+          }
+        }
+      } else {
+        const result = await assignMemberServerFn({
+          data: { orgSlug, platoonId: platoonSelectId, staffMemberId: params.staffMemberId, positionId: positionSelectId || undefined },
+        })
+        if (result.success) {
+          const found = loaderData.platoons.find((p) => p.id === platoonSelectId)
+          setPlatoonId(platoonSelectId)
+          setPlatoonName(found?.name ?? null)
+          const foundPos = loaderData.positions.find((p) => p.id === positionSelectId)
+          setPositionId(positionSelectId || null)
+          setPositionName(foundPos?.name ?? null)
+        }
+      }
+      setEditingPlatoon(false)
+      setPlatoonMoveConfirm(false)
+    } finally {
+      setPlatoonBusy(false)
     }
   }
 
@@ -281,6 +336,90 @@ function StaffDetailPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Platoon */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-navy-700 flex items-center gap-2">
+            <Layers className="w-4 h-4" /> Platoon
+          </h2>
+          {canManagePlatoon && !editingPlatoon && (
+            <button
+              onClick={() => { setEditingPlatoon(true); setPlatoonSelectId(platoonId ?? ''); setPositionSelectId(positionId ?? '') }}
+              className="text-xs text-gray-500 hover:text-navy-700 font-medium"
+            >
+              Change
+            </button>
+          )}
+        </div>
+
+        {editingPlatoon ? (
+          <div className="space-y-3">
+            <div className="relative">
+              <select
+                value={platoonSelectId}
+                onChange={(e) => { setPlatoonSelectId(e.target.value); setPlatoonMoveConfirm(false) }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-700 appearance-none bg-white"
+              >
+                <option value="">Unassigned</option>
+                {loaderData.platoons.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+            {platoonSelectId && loaderData.positions.length > 0 && (
+              <div className="relative">
+                <select
+                  value={positionSelectId}
+                  onChange={(e) => setPositionSelectId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-700 appearance-none bg-white"
+                >
+                  <option value="">No position</option>
+                  {loaderData.positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+              </div>
+            )}
+            {platoonMoveConfirm && (
+              <div className="px-3 py-2 bg-warning-bg text-warning rounded-lg text-sm">
+                This will move <strong>{staffMember.name}</strong> from <strong>{platoonName}</strong> to the selected platoon.
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const isMove = platoonSelectId && platoonId && platoonSelectId !== platoonId
+                  if (isMove && !platoonMoveConfirm) { setPlatoonMoveConfirm(true); return }
+                  void handleSavePlatoon()
+                }}
+                disabled={platoonBusy}
+                className="px-4 py-2 bg-red-700 text-white text-sm font-medium rounded-lg hover:bg-red-800 disabled:opacity-50"
+              >
+                {platoonBusy ? 'Saving…' : platoonMoveConfirm ? 'Confirm Move' : 'Save'}
+              </button>
+              <button
+                onClick={() => { setEditingPlatoon(false); setPlatoonMoveConfirm(false) }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-700">
+              {platoonName ?? <span className="text-gray-400 italic">Unassigned</span>}
+            </span>
+            {positionName && (
+              <span
+                className="rounded-full text-xs font-semibold uppercase tracking-wide px-2 py-0.5 bg-gray-100 text-gray-600"
+                style={{ fontFamily: 'var(--font-condensed)' }}
+              >
+                {positionName}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Certifications */}

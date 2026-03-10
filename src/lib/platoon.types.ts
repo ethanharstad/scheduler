@@ -160,3 +160,9 @@ export type RemoveMemberFromPlatoonInput = {
 export type RemoveMemberFromPlatoonOutput =
   | { success: true }
   | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' }
+
+// --- Get staff platoon ---
+export type GetStaffPlatoonInput = { orgSlug: string; staffMemberId: string }
+export type GetStaffPlatoonOutput =
+  | { success: true; platoonId: string | null; platoonName: string | null; positionId: string | null; positionName: string | null; positions: PositionOption[] }
+  | { success: false; error: 'UNAUTHORIZED' }

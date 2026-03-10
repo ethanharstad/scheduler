@@ -11,13 +11,13 @@ import {
   removeMemberFromPlatoonServerFn,
 } from '@/server/platoons'
 
-export const Route = createFileRoute('/_protected/orgs/$orgSlug/platoons/$platoonId')({
+export const Route = createFileRoute('/_protected/orgs/$orgSlug/schedules/platoons/$platoonId')({
   loader: async ({ params }) => {
     const result = await getPlatoonServerFn({
       data: { orgSlug: params.orgSlug, platoonId: params.platoonId },
     })
     if (!result.success) {
-      throw redirect({ to: '/orgs/$orgSlug/platoons', params: { orgSlug: params.orgSlug } })
+      throw redirect({ to: '/orgs/$orgSlug/schedules/platoons', params: { orgSlug: params.orgSlug } })
     }
     return { platoon: result.platoon, allStaff: result.allStaff, positions: result.positions }
   },
@@ -496,7 +496,7 @@ function PlatoonDetailPage() {
         else setDeleteError('An error occurred. Please try again.')
         return
       }
-      await navigate({ to: '/orgs/$orgSlug/platoons', params: { orgSlug } })
+      await navigate({ to: '/orgs/$orgSlug/schedules/platoons', params: { orgSlug } })
     } finally {
       setDeleting(false)
     }

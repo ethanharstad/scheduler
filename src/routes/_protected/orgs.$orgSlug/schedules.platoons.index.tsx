@@ -5,7 +5,7 @@ import { canDo } from '@/lib/rbac'
 import type { PlatoonView, RRuleEntry } from '@/lib/platoon.types'
 import { listPlatoonsServerFn, createPlatoonServerFn } from '@/server/platoons'
 
-export const Route = createFileRoute('/_protected/orgs/$orgSlug/platoons/')({
+export const Route = createFileRoute('/_protected/orgs/$orgSlug/schedules/platoons/')({
   head: () => ({
     meta: [{ title: 'Platoons | Scene Ready' }],
   }),
@@ -361,7 +361,7 @@ function PlatoonsPage() {
                 <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-navy-700">
                     <Link
-                      to="/orgs/$orgSlug/platoons/$platoonId"
+                      to="/orgs/$orgSlug/schedules/platoons/$platoonId"
                       params={{ orgSlug, platoonId: p.id }}
                       className="hover:underline"
                     >

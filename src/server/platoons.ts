@@ -17,6 +17,8 @@ import type {
   AssignMemberOutput,
   RemoveMemberFromPlatoonInput,
   RemoveMemberFromPlatoonOutput,
+  GetStaffPlatoonInput,
+  GetStaffPlatoonOutput,
   PlatoonView,
   PlatoonMemberView,
   StaffOption,
@@ -522,4 +524,46 @@ export const removeMemberFromPlatoonServerFn = createServerFn({ method: 'POST' }
     if (result.meta.changes === 0) return { success: false, error: 'NOT_FOUND' }
 
     return { success: true }
+  })
+
+// ---------------------------------------------------------------------------
+// getStaffPlatoonServerFn — get current platoon for a staff member
+// ---------------------------------------------------------------------------
+
+export const getStaffPlatoonServerFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: GetStaffPlatoonInput) => d)
+  .handler(async (ctx): Promise<GetStaffPlatoonOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+
+    type Row = { platoon_id: string; platoon_name: string; position_id: string | null; position_name: string | null }
+    const [row, positionRows] = await Promise.all([
+      env.DB.prepare(
+        `SELECT pm.platoon_id, p.name AS platoon_name, pm.position_id, pos.name AS position_name
+         FROM platoon_membership pm
+         JOIN platoon p ON p.id = pm.platoon_id
+         LEFT JOIN position pos ON pos.id = pm.position_id
+         WHERE pm.staff_member_id = ?
+           AND p.org_id = ?`,
+      )
+        .bind(data.staffMemberId, membership.orgId)
+        .first<Row>(),
+      env.DB.prepare(
+        `SELECT id, name FROM position WHERE org_id = ? ORDER BY sort_order DESC, LOWER(name) ASC`,
+      )
+        .bind(membership.orgId)
+        .all<{ id: string; name: string }>(),
+    ])
+
+    const positions: PositionOption[] = (positionRows.results ?? []).map((r) => ({ id: r.id, name: r.name }))
+    return {
+      success: true,
+      platoonId: row?.platoon_id ?? null,
+      platoonName: row?.platoon_name ?? null,
+      positionId: row?.position_id ?? null,
+      positionName: row?.position_name ?? null,
+      positions,
+    }
   })

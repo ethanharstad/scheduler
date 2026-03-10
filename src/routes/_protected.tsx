@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment, useState, useEffect, useRef } from 'react'
-import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, UserCircle, UserCog, Users, Layers } from 'lucide-react'
+import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, UserCircle, UserCog, Users } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -59,14 +59,16 @@ function useBreadcrumbs(): Crumb[] {
     if (pathname === `${base}/staff/audit`) return [orgCrumb, orgNameCrumb, { label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: 'Audit Log' }]
     if (pathname === `${base}/members`) return [orgCrumb, orgNameCrumb, { label: 'Members' }]
     if (pathname === `${base}/settings`) return [orgCrumb, orgNameCrumb, { label: 'Settings' }]
-    if (pathname === `${base}/platoons`) return [orgCrumb, orgNameCrumb, { label: 'Platoons' }]
-    if (pathname.startsWith(`${base}/platoons/`)) {
-      return [orgCrumb, orgNameCrumb, { label: 'Platoons', to: '/orgs/$orgSlug/platoons', params: { orgSlug: slug } }, { label: 'Platoon' }]
-    }
     if (pathname === `${base}/availability`) return [orgCrumb, orgNameCrumb, { label: 'Availability' }]
     if (pathname === `${base}/schedules`) return [orgCrumb, orgNameCrumb, { label: 'Schedules' }]
     if (pathname === `${base}/schedules/requirements`) {
       return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Requirements' }]
+    }
+    if (pathname === `${base}/schedules/platoons`) {
+      return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Platoons' }]
+    }
+    if (pathname.startsWith(`${base}/schedules/platoons/`)) {
+      return [orgCrumb, orgNameCrumb, { label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Platoons', to: '/orgs/$orgSlug/schedules/platoons', params: { orgSlug: slug } }, { label: 'Platoon' }]
     }
     if (pathname.startsWith(`${base}/schedules/`)) {
       const scheduleMatch = matches.find((m) => (m.pathname as string | undefined)?.startsWith(`${base}/schedules/`))
@@ -346,12 +348,6 @@ function ProtectedLayout() {
                 params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<UserCog className="w-5 h-5" />}
                 label="Staff"
-              />
-              <NavItem
-                to="/orgs/$orgSlug/platoons"
-                params={{ orgSlug: effectiveOrgCtx.org.slug }}
-                icon={<Layers className="w-5 h-5" />}
-                label="Platoons"
               />
               {canDo(effectiveOrgCtx.userRole, 'view-certifications') && (
                 <NavItem
