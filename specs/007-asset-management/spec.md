@@ -212,7 +212,7 @@ All assets — apparatus and gear — are stored in a single `asset` table with 
 
 **FR-008:** The system MUST support the following statuses for apparatus: `in_service`, `out_of_service`, `reserve`, `decommissioned`. For gear: `available`, `assigned`, `out_of_service`, `decommissioned`, `expired`.
 
-**FR-009:** The system MUST NOT allow status transitions from `decommissioned` to any other status. Decommissioning is a terminal state for both apparatus and gear.
+**FR-009:** Status transitions are free-form — any status may transition to any other status — with one exception: `decommissioned` is a terminal state. The system MUST NOT allow status transitions from `decommissioned` to any other status. The audit log captures every transition for accountability.
 
 **FR-010:** When an apparatus is decommissioned, the system MUST automatically unassign all gear currently assigned to that apparatus.
 
@@ -444,6 +444,7 @@ An immutable, append-only log of all state-changing operations on assets. Uses a
 ### Session 2026-03-10
 
 - Q: Can assets be deleted, or is decommissioning the only way to remove them from active use? → A: No deletion — decommissioning is the only removal; preserves full audit trail.
+- Q: Are there restricted status transitions beyond "no exit from decommissioned"? → A: Free-form — any status to any status, except no exit from decommissioned. Audit log captures all transitions.
 
 ---
 
