@@ -581,7 +581,7 @@ function ScheduleDetailPage() {
     setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
 
-  async function handleUpdateSchedule(e: React.FormEvent) {
+  async function handleUpdateSchedule(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setEditError(null)
     if (!editName.trim()) { setEditError('Name is required.'); return }
@@ -691,7 +691,7 @@ function ScheduleDetailPage() {
     return `${hours}h · ${dayLabel}`
   }
 
-  async function handleAddAssignment(e: React.FormEvent) {
+  async function handleAddAssignment(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setAddError(null)
     if (!addStaffId) { setAddError('Select a staff member.'); return }

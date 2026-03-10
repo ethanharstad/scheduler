@@ -218,7 +218,7 @@ function StaffDetailPage() {
     setCertFormError(null)
   }
 
-  async function handleUpsertCert(e: React.FormEvent) {
+  async function handleUpsertCert(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setCertFormError(null)
     if (!certFormTypeId) { setCertFormError('Select a cert type.'); return }

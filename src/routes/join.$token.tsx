@@ -75,7 +75,7 @@ function JoinPage() {
 
   const { invitation, isLoggedIn, loggedInEmail } = loaderData
 
-  async function handleRegister(e: React.FormEvent) {
+  async function handleRegister(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setFormError(null)
 
@@ -104,7 +104,7 @@ function JoinPage() {
     }
   }
 
-  async function handleLinkAccount(e: React.FormEvent) {
+  async function handleLinkAccount(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setBusy(true)
     setFormError(null)

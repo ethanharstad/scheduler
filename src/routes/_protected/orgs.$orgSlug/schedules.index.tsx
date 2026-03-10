@@ -73,7 +73,7 @@ function SchedulesPage() {
 
   const canEdit = canDo(userRole, 'create-edit-schedules')
 
-  async function handleCreate(e: React.FormEvent) {
+  async function handleCreate(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setCreateError(null)
     if (!name.trim()) { setCreateError('Name is required.'); return }

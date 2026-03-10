@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type SubmitEvent } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { resetPasswordServerFn } from '@/server/auth'
 
@@ -30,7 +30,7 @@ function ResetPasswordPage() {
   const strength = passwordMeetsRequirements(password)
   const passwordValid = strength.length && strength.letter && strength.digit
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!passwordValid) {
       setError('INVALID_INPUT')

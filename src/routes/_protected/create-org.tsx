@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
-import { type FormEvent, useState } from 'react'
+import { type SubmitEvent, useState } from 'react'
 import { Building2 } from 'lucide-react'
 import { createOrgServerFn, listUserOrgsServerFn } from '@/server/org'
 
@@ -49,7 +49,7 @@ function CreateOrgPage() {
     setSlug(value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
   }
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setErrors({})
     setSubmitting(true)

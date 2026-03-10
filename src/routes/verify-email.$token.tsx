@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type SubmitEvent } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { verifyEmailServerFn, resendVerificationServerFn } from '@/server/auth'
 
@@ -36,7 +36,7 @@ function VerifyEmailPage() {
 
   const isAlreadyUsed = result.error === 'ALREADY_USED'
 
-  async function handleResend(e: FormEvent) {
+  async function handleResend(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setResendStatus('sending')
     try {

@@ -239,7 +239,7 @@ function ScheduleRequirementsPage() {
     setForm((f) => ({ ...f, recurrenceMode: 'weekly', selectedDays: days }))
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setSaving(true)
     setError(null)

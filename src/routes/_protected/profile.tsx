@@ -340,7 +340,7 @@ function ChangePasswordSection({ onSuccess }: { onSuccess: () => void }) {
   }>({})
   const [success, setSuccess] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setErrors({})
     setSuccess(false)

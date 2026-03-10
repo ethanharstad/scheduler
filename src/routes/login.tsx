@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type SubmitEvent } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { getSessionServerFn } from '@/lib/auth'
 import { loginServerFn, resendVerificationServerFn } from '@/server/auth'
@@ -33,7 +33,7 @@ function LoginPage() {
   const [resendSent, setResendSent] = useState(false)
   const [isResending, setIsResending] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
     setLockedUntil(null)

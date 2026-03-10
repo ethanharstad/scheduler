@@ -82,7 +82,7 @@ function StaffPage() {
   const canRemove = canDo(userRole, 'remove-members')
   const canViewAudit = canDo(userRole, 'assign-roles')
 
-  async function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setAddError(null)
     if (!addName.trim()) { setAddError('Name is required.'); return }

@@ -69,7 +69,7 @@ function RanksTab({
   const [deleteBusy, setDeleteBusy] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  async function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setAddError(null)
     const name = addName.trim()
@@ -315,7 +315,7 @@ function CertTypesTab({
     setAddLevels((prev) => [...prev, { name: '', levelOrder: prev.length + 1 }])
   }
 
-  async function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setAddError(null)
     const name = addName.trim()
@@ -677,7 +677,7 @@ function PositionForm({
   sortOrder: number; setSortOrder: (v: number) => void
   reqs: Array<{ certTypeId: string; minCertLevelId: string }>
   setReqs: React.Dispatch<React.SetStateAction<Array<{ certTypeId: string; minCertLevelId: string }>>>
-  onSubmit: (e: React.FormEvent) => void
+  onSubmit: (e: React.SubmitEvent<HTMLFormElement>) => void
   busy: boolean; error: string | null; onCancel: () => void; submitLabel: string
   ranks: RankView[]; certTypes: CertTypeView[]
 }) {
@@ -768,7 +768,7 @@ function PositionsTab({
     setEditError(null)
   }
 
-  async function handleAdd(e: React.FormEvent) {
+  async function handleAdd(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setAddError(null)
     const name = addName.trim()

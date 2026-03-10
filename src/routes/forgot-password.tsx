@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type SubmitEvent } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { getSessionServerFn } from '@/lib/auth'
 import { forgotPasswordServerFn } from '@/server/auth'
@@ -20,7 +20,7 @@ function ForgotPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showCooldownNote, setShowCooldownNote] = useState(false)
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!email) return
 

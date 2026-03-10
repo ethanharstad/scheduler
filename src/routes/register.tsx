@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type SubmitEvent } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { getSessionServerFn } from '@/lib/auth'
 import { registerServerFn, resendVerificationServerFn } from '@/server/auth'
@@ -40,7 +40,7 @@ function RegisterPage() {
   const strength = passwordMeetsRequirements(password)
   const passwordValid = strength.length && strength.letter && strength.digit
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setFieldErrors({})
     setServerError(null)
