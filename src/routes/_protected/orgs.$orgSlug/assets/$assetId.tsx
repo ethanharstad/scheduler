@@ -1,5 +1,5 @@
 import { useState, Fragment } from 'react'
-import { createFileRoute, useRouteContext } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
 import { canDo } from '@/lib/rbac'
 import type {
   AssetDetailView,
@@ -710,6 +710,18 @@ function AssetDetailPage() {
                   {inspBusy ? 'Logging…' : 'Log Inspection'}
                 </button>
               </form>
+              {canDo(userRole, 'submit-forms') && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <Link
+                    to="/orgs/$orgSlug/forms"
+                    params={{ orgSlug: org.slug }}
+                    search={{ entityType: 'asset', entityId: asset.id } as never}
+                    className="text-sm font-medium text-navy-700 hover:underline"
+                  >
+                    Use a form template for detailed inspection →
+                  </Link>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -17,6 +17,8 @@ export type Permission =
   | 'manage-certifications'
   | 'view-certifications'
   | 'manage-assets'
+  | 'manage-forms'
+  | 'submit-forms'
 
 export interface OrgMemberView {
   memberId: string

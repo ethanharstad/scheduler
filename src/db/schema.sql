@@ -481,3 +481,74 @@ CREATE INDEX IF NOT EXISTS idx_audit_asset
 
 CREATE INDEX IF NOT EXISTS idx_audit_actor
   ON asset_audit_log(actor_staff_id);
+
+-- ============================================================
+-- Generic Forms (010-generic-forms)
+-- ============================================================
+
+-- Form template: defines a reusable form structure
+CREATE TABLE IF NOT EXISTS form_template (
+  id              TEXT NOT NULL PRIMARY KEY,
+  org_id          TEXT REFERENCES organization(id) ON DELETE CASCADE,  -- NULL for system templates
+  name            TEXT NOT NULL,
+  description     TEXT,
+  category        TEXT NOT NULL,                                       -- 'equipment_inspection' | 'property_inspection' | 'medication' | 'custom'
+  is_system       INTEGER NOT NULL DEFAULT 0,                          -- 1 = built-in starter template
+  status          TEXT NOT NULL DEFAULT 'draft',                       -- 'draft' | 'published' | 'archived'
+  created_by      TEXT REFERENCES staff_member(id) ON DELETE SET NULL, -- NULL for system templates
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  CHECK (category IN ('equipment_inspection', 'property_inspection', 'medication', 'custom')),
+  CHECK (status IN ('draft', 'published', 'archived'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_form_template_org ON form_template(org_id, status);
+
+-- Immutable version snapshot; submissions reference a specific version
+CREATE TABLE IF NOT EXISTS form_template_version (
+  id              TEXT NOT NULL PRIMARY KEY,
+  template_id     TEXT NOT NULL REFERENCES form_template(id) ON DELETE CASCADE,
+  version_number  INTEGER NOT NULL,
+  fields_json     TEXT NOT NULL,             -- JSON: FormFieldDefinition[]
+  published_at    TEXT,                      -- NULL = draft; set when published
+  created_at      TEXT NOT NULL,
+  UNIQUE(template_id, version_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ftv_template ON form_template_version(template_id, version_number);
+
+-- A completed (or in-progress) form instance
+CREATE TABLE IF NOT EXISTS form_submission (
+  id                  TEXT NOT NULL PRIMARY KEY,
+  org_id              TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  template_id         TEXT NOT NULL REFERENCES form_template(id) ON DELETE CASCADE,
+  template_version_id TEXT NOT NULL REFERENCES form_template_version(id),
+  submitted_by        TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  status              TEXT NOT NULL DEFAULT 'complete',   -- 'in_progress' | 'complete'
+  linked_entity_type  TEXT,                               -- 'asset' | 'staff_member' | NULL
+  linked_entity_id    TEXT,                               -- FK to the linked entity
+  submitted_at        TEXT NOT NULL,
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL,
+  CHECK (status IN ('in_progress', 'complete'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_submission_org    ON form_submission(org_id, template_id, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_submission_entity ON form_submission(org_id, linked_entity_type, linked_entity_id);
+CREATE INDEX IF NOT EXISTS idx_submission_staff  ON form_submission(org_id, submitted_by);
+
+-- One row per field per submission; typed columns enable SQL reporting
+CREATE TABLE IF NOT EXISTS form_response_value (
+  id              TEXT NOT NULL PRIMARY KEY,
+  submission_id   TEXT NOT NULL REFERENCES form_submission(id) ON DELETE CASCADE,
+  field_key       TEXT NOT NULL,       -- stable field identifier; repeating groups use 'group[0].child'
+  field_type      TEXT NOT NULL,       -- mirrors FormFieldType
+  value_text      TEXT,                -- text, select, multi_select (JSON array), date, time, signature, photo
+  value_number    REAL,                -- number fields
+  value_boolean   INTEGER,             -- boolean/checkbox (0 | 1)
+  UNIQUE(submission_id, field_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_frv_submission   ON form_response_value(submission_id);
+CREATE INDEX IF NOT EXISTS idx_frv_field_text   ON form_response_value(field_key, value_text);
+CREATE INDEX IF NOT EXISTS idx_frv_field_number ON form_response_value(field_key, value_number);

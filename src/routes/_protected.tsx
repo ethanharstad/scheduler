@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment, useState, useEffect, useRef } from 'react'
-import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, Truck, UserCircle, UserCog, Users } from 'lucide-react'
+import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, Truck, UserCircle, UserCog, Users } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -79,6 +79,12 @@ function useBreadcrumbs(): Crumb[] {
     if (pathname === `${base}/assets/new`) return [{ label: 'Assets', to: '/orgs/$orgSlug/assets', params: { orgSlug: slug } }, { label: 'New Asset' }]
     if (pathname === `${base}/assets/my-gear`) return [{ label: 'Assets', to: '/orgs/$orgSlug/assets', params: { orgSlug: slug } }, { label: 'My Gear' }]
     if (pathname.startsWith(`${base}/assets/`)) return [{ label: 'Assets', to: '/orgs/$orgSlug/assets', params: { orgSlug: slug } }, { label: 'Asset Detail' }]
+    if (pathname === `${base}/forms`) return [{ label: 'Forms' }]
+    if (pathname === `${base}/forms/templates/new`) return [{ label: 'Forms', to: '/orgs/$orgSlug/forms', params: { orgSlug: slug } }, { label: 'New Template' }]
+    if (pathname.startsWith(`${base}/forms/templates/`)) return [{ label: 'Forms', to: '/orgs/$orgSlug/forms', params: { orgSlug: slug } }, { label: 'Template' }]
+    if (pathname.startsWith(`${base}/forms/fill/`)) return [{ label: 'Forms', to: '/orgs/$orgSlug/forms', params: { orgSlug: slug } }, { label: 'Fill Form' }]
+    if (pathname === `${base}/forms/submissions`) return [{ label: 'Forms', to: '/orgs/$orgSlug/forms', params: { orgSlug: slug } }, { label: 'Submissions' }]
+    if (pathname.startsWith(`${base}/forms/submissions/`)) return [{ label: 'Forms', to: '/orgs/$orgSlug/forms', params: { orgSlug: slug } }, { label: 'Submission' }]
     if (pathname.startsWith(`${base}/staff/`)) {
       const staffMatch = matches.find((m) => (m.pathname as string | undefined)?.startsWith(`${base}/staff/`))
       const staffData = staffMatch?.loaderData as { staffMember: { name: string } | null } | undefined
@@ -373,6 +379,14 @@ function ProtectedLayout() {
                 icon={<Truck className="w-5 h-5" />}
                 label="Assets"
               />
+              {(canDo(effectiveOrgCtx.userRole, 'manage-forms') || canDo(effectiveOrgCtx.userRole, 'submit-forms')) && (
+                <NavItem
+                  to="/orgs/$orgSlug/forms"
+                  params={{ orgSlug: effectiveOrgCtx.org.slug }}
+                  icon={<ClipboardList className="w-5 h-5" />}
+                  label="Forms"
+                />
+              )}
 
               {/* Administration */}
               {(canDo(effectiveOrgCtx.userRole, 'assign-roles') || canDo(effectiveOrgCtx.userRole, 'edit-org-settings')) && (
