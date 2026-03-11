@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment, useState, useEffect, useRef } from 'react'
-import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, UserCircle, UserCog, Users } from 'lucide-react'
+import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, Truck, UserCircle, UserCog, Users } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -75,6 +75,10 @@ function useBreadcrumbs(): Crumb[] {
     if (pathname.startsWith(`${base}/qualifications/positions/`)) {
       return [{ label: 'Qualifications', to: '/orgs/$orgSlug/qualifications', params: { orgSlug: slug } }, { label: 'Eligibility' }]
     }
+    if (pathname === `${base}/assets`) return [{ label: 'Assets' }]
+    if (pathname === `${base}/assets/new`) return [{ label: 'Assets', to: '/orgs/$orgSlug/assets', params: { orgSlug: slug } }, { label: 'New Asset' }]
+    if (pathname === `${base}/assets/my-gear`) return [{ label: 'Assets', to: '/orgs/$orgSlug/assets', params: { orgSlug: slug } }, { label: 'My Gear' }]
+    if (pathname.startsWith(`${base}/assets/`)) return [{ label: 'Assets', to: '/orgs/$orgSlug/assets', params: { orgSlug: slug } }, { label: 'Asset Detail' }]
     if (pathname.startsWith(`${base}/staff/`)) {
       const staffMatch = matches.find((m) => (m.pathname as string | undefined)?.startsWith(`${base}/staff/`))
       const staffData = staffMatch?.loaderData as { staffMember: { name: string } | null } | undefined
@@ -356,6 +360,19 @@ function ProtectedLayout() {
                   label="Qualifications"
                 />
               )}
+
+              {/* Assets */}
+              <div className="mt-4 mb-1 px-4">
+                <span className="text-white/40 text-xs font-semibold uppercase tracking-widest" style={{ fontFamily: 'var(--font-condensed)' }}>
+                  Assets
+                </span>
+              </div>
+              <NavItem
+                to="/orgs/$orgSlug/assets"
+                params={{ orgSlug: effectiveOrgCtx.org.slug }}
+                icon={<Truck className="w-5 h-5" />}
+                label="Assets"
+              />
 
               {/* Administration */}
               {(canDo(effectiveOrgCtx.userRole, 'assign-roles') || canDo(effectiveOrgCtx.userRole, 'edit-org-settings')) && (

@@ -16,6 +16,7 @@ export type Permission =
   | 'access-payroll-hr'
   | 'manage-certifications'
   | 'view-certifications'
+  | 'manage-assets'
 
 export interface OrgMemberView {
   memberId: string

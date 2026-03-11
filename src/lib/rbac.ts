@@ -18,6 +18,7 @@ const ROLE_PERMISSIONS: Record<OrgRole, ReadonlySet<Permission>> = {
     'access-payroll-hr',
     'manage-certifications',
     'view-certifications',
+    'manage-assets',
   ]),
   admin: new Set<Permission>([
     'view-org-settings',
@@ -32,6 +33,7 @@ const ROLE_PERMISSIONS: Record<OrgRole, ReadonlySet<Permission>> = {
     'view-reports',
     'manage-certifications',
     'view-certifications',
+    'manage-assets',
   ]),
   manager: new Set<Permission>([
     'create-edit-schedules',
@@ -40,6 +42,7 @@ const ROLE_PERMISSIONS: Record<OrgRole, ReadonlySet<Permission>> = {
     'submit-time-off',
     'view-reports',
     'view-certifications',
+    'manage-assets',
   ]),
   employee: new Set<Permission>(['view-schedules', 'submit-time-off']),
   payroll_hr: new Set<Permission>([

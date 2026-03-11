@@ -97,6 +97,34 @@ D1 SQLite — binding `DB`. Tables:
 
 Full schema in `src/db/schema.sql`. Feature specs and data models in `specs/`.
 
+## Configurable Start of Day
+
+`organization.schedule_day_start` (HH:MM, default `'00:00'`) defines when the org's calendar day rolls over — **not necessarily midnight**. Fire stations commonly set this to `'07:00'` so that a 24-hour shift starting at 7am belongs entirely to one "day".
+
+**This affects any feature that computes "today", "this week", date ranges, overdue checks, or expiration comparisons.** Never use `new Date()` or `new Date().toISOString().slice(0, 10)` as a stand-in for "today". Always derive the current date relative to the org's day start.
+
+`org.scheduleDayStart` is available on `OrgView` and in the org route context (`useRouteContext({ from: '/_protected/orgs/$orgSlug' })`). Server functions must fetch it from the DB (`SELECT schedule_day_start FROM organization WHERE id = ?`).
+
+**Reference implementation** (copy this pattern into any feature that needs "today"):
+
+```typescript
+// Works on both server and client. scheduleDayStart is HH:MM (e.g. "07:00").
+function orgToday(scheduleDayStart: string): string {
+  const now = new Date()
+  const [h, m] = scheduleDayStart.split(':').map(Number)
+  const dayStartMs = ((h ?? 0) * 60 + (m ?? 0)) * 60 * 1000
+  const utcMs = now.getUTCHours() * 3600000 + now.getUTCMinutes() * 60000
+  const effectiveDate = utcMs < dayStartMs ? new Date(now.getTime() - 86400000) : now
+  return effectiveDate.toISOString().slice(0, 10)
+}
+```
+
+**Date arithmetic:** When computing days between two ISO date strings, always append `T00:00:00Z` before constructing a `Date` to avoid DST/timezone ambiguity:
+```typescript
+const ms = new Date(dateStr + 'T00:00:00Z').getTime() - new Date(orgToday(dayStart) + 'T00:00:00Z').getTime()
+const days = Math.ceil(ms / 86400000)
+```
+
 ## Visual Style
 
 **Branding guide:** `specs/branding.md` — reference this for all visual style decisions including colors, typography, spacing, component patterns, and tone. All UI work should align with the brand identity defined there.
