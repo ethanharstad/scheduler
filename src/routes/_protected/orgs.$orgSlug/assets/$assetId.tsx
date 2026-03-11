@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { createFileRoute, useRouteContext } from '@tanstack/react-router'
 import { canDo } from '@/lib/rbac'
 import type {
@@ -6,6 +6,8 @@ import type {
   InspectionView,
   AssetAuditEntry,
   AssetView,
+  RecurrenceFreq,
+  RecurrenceRule,
 } from '@/lib/asset.types'
 import {
   APPARATUS_STATUSES,
@@ -21,6 +23,8 @@ import {
   changeAssetStatusServerFn,
   updateAssetServerFn,
   setInspectionIntervalServerFn,
+  editInspectionServerFn,
+  deleteInspectionServerFn,
 } from '@/server/assets'
 import { listStaffServerFn } from '@/server/staff'
 
@@ -65,14 +69,41 @@ function orgToday(scheduleDayStart: string): string {
   return effectiveDate.toISOString().slice(0, 10)
 }
 
-const INTERVAL_PRESETS = [
-  { label: 'Daily', days: 1 },
-  { label: 'Weekly', days: 7 },
-  { label: 'Monthly', days: 30 },
-  { label: 'Quarterly', days: 90 },
-  { label: 'Semi-Annual', days: 182 },
-  { label: 'Annual', days: 365 },
+const FREQ_OPTIONS: { label: string; value: RecurrenceFreq }[] = [
+  { label: 'Daily', value: 'daily' },
+  { label: 'Weekly', value: 'weekly' },
+  { label: 'Monthly', value: 'monthly' },
+  { label: 'Quarterly', value: 'quarterly' },
+  { label: 'Semi-Annual', value: 'semi_annual' },
+  { label: 'Annual', value: 'annual' },
 ]
+
+const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+const FREQ_TO_DAYS: Record<RecurrenceFreq, number> = {
+  daily: 1, weekly: 7, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365,
+}
+
+const LEGACY_DAYS_TO_FREQ: Record<number, RecurrenceFreq> = {
+  1: 'daily', 7: 'weekly', 30: 'monthly', 90: 'quarterly', 182: 'semi_annual', 365: 'annual',
+}
+
+function describeRule(rule: RecurrenceRule): string {
+  const dow = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  const ordinal = (n: number) => {
+    const s = ['th', 'st', 'nd', 'rd']
+    const v = n % 100
+    return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
+  }
+  switch (rule.freq) {
+    case 'daily': return 'Daily'
+    case 'weekly': return `Weekly on ${dow[rule.dayOfWeek ?? 5]}`
+    case 'monthly': return rule.dayOfMonth ? `Monthly on the ${ordinal(rule.dayOfMonth)}` : 'Monthly'
+    case 'quarterly': return rule.dayOfMonth ? `Quarterly on the ${ordinal(rule.dayOfMonth)}` : 'Quarterly'
+    case 'semi_annual': return rule.dayOfMonth ? `Semi-annually on the ${ordinal(rule.dayOfMonth)}` : 'Semi-annually'
+    case 'annual': return rule.dayOfMonth ? `Annually on the ${ordinal(rule.dayOfMonth)}` : 'Annually'
+  }
+}
 
 function statusBadge(status: string) {
   const label = STATUS_LABELS[status] ?? status
@@ -150,6 +181,19 @@ function AssetDetailPage() {
 
   // Interval state
   const [intervalBusy, setIntervalBusy] = useState(false)
+  const [pendingFreq, setPendingFreq] = useState<RecurrenceFreq | null>(null)
+  const [pendingDow, setPendingDow] = useState(5) // Friday
+  const [pendingDom, setPendingDom] = useState(1)
+
+  // Edit inspection state
+  const [editingInspId, setEditingInspId] = useState<string | null>(null)
+  const [editInspResult, setEditInspResult] = useState<'pass' | 'fail'>('pass')
+  const [editInspDate, setEditInspDate] = useState('')
+  const [editInspNotes, setEditInspNotes] = useState('')
+  const [editInspBusy, setEditInspBusy] = useState(false)
+  const [editInspError, setEditInspError] = useState<string | null>(null)
+  const [deletingInspId, setDeletingInspId] = useState<string | null>(null)
+  const [deleteInspBusy, setDeleteInspBusy] = useState(false)
 
   const canManage = canDo(userRole, 'manage-assets')
   const LIMIT = 50
@@ -264,6 +308,50 @@ function AssetDetailPage() {
     setConfirmDecomm(false)
   }
 
+  function openEditInsp(insp: InspectionView) {
+    setEditingInspId(insp.id)
+    setEditInspResult(insp.result)
+    setEditInspDate(insp.inspectionDate)
+    setEditInspNotes(insp.notes ?? '')
+    setEditInspError(null)
+    setDeletingInspId(null)
+  }
+
+  async function handleEditInsp(inspId: string) {
+    setEditInspBusy(true)
+    setEditInspError(null)
+    const result = await editInspectionServerFn({
+      data: {
+        orgSlug: org.slug,
+        assetId: asset!.id,
+        inspectionId: inspId,
+        result: editInspResult,
+        notes: editInspNotes.trim() || null,
+        inspectionDate: editInspDate,
+      },
+    })
+    setEditInspBusy(false)
+    if (!result.success) { setEditInspError(result.error); return }
+    setInspections((prev) => prev.map((i) => (i.id === inspId ? result.inspection : i)))
+    setEditingInspId(null)
+    const updated = await getAssetServerFn({ data: { orgSlug: org.slug, assetId: asset!.id } })
+    if (updated.success) setAsset(updated.asset)
+  }
+
+  async function handleDeleteInsp(inspId: string) {
+    setDeleteInspBusy(true)
+    const result = await deleteInspectionServerFn({
+      data: { orgSlug: org.slug, assetId: asset!.id, inspectionId: inspId },
+    })
+    setDeleteInspBusy(false)
+    if (!result.success) return
+    setInspections((prev) => prev.filter((i) => i.id !== inspId))
+    setInspTotal((t) => t - 1)
+    setDeletingInspId(null)
+    const updated = await getAssetServerFn({ data: { orgSlug: org.slug, assetId: asset!.id } })
+    if (updated.success) setAsset(updated.asset)
+  }
+
   function openEdit() {
     setEditName(asset.name)
     setEditNotes(asset.notes ?? '')
@@ -298,21 +386,47 @@ function AssetDetailPage() {
     setShowEdit(false)
   }
 
-  async function handleSetInterval(days: number | null) {
+  async function handleSetSchedule(rule: RecurrenceRule | null) {
+    const intervalDays = rule ? FREQ_TO_DAYS[rule.freq] : null
     setIntervalBusy(true)
-    const result = await setInspectionIntervalServerFn({ data: { orgSlug: org.slug, assetId: asset.id, intervalDays: days } })
+    const result = await setInspectionIntervalServerFn({
+      data: { orgSlug: org.slug, assetId: asset.id, intervalDays, recurrenceRule: rule },
+    })
     setIntervalBusy(false)
     if (result.success) {
-      setAsset((a) => a ? { ...a, inspectionIntervalDays: days, nextInspectionDue: result.asset.nextInspectionDue } : a)
+      setAsset((a) => a ? { ...a, inspectionIntervalDays: intervalDays, inspectionRecurrenceRule: rule, nextInspectionDue: result.asset.nextInspectionDue } : a)
     }
   }
 
-  const inputClass = 'w-full text-sm border border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-navy-700'
+  function onFreqClick(freq: RecurrenceFreq) {
+    if (freq === 'daily') {
+      handleSetSchedule({ freq: 'daily' })
+      setPendingFreq(null)
+    } else {
+      setPendingFreq(freq)
+      if (freq === 'weekly') setPendingDow(asset.inspectionRecurrenceRule?.dayOfWeek ?? 5)
+      else setPendingDom(asset.inspectionRecurrenceRule?.dayOfMonth ?? 1)
+    }
+  }
+
+  function onDowClick(dow: number) {
+    setPendingDow(dow)
+    handleSetSchedule({ freq: 'weekly', dayOfWeek: dow })
+    setPendingFreq(null)
+  }
+
+  function onApplyMonthly() {
+    if (!pendingFreq || pendingFreq === 'weekly') return
+    handleSetSchedule({ freq: pendingFreq, dayOfMonth: pendingDom })
+    setPendingFreq(null)
+  }
+
+  const inputClass = 'w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-navy-700'
 
   return (
     <div className="space-y-6 max-w-4xl">
       {/* Header */}
-      <div className="bg-white border border-gray-200 rounded-lg p-5">
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3">
@@ -354,7 +468,7 @@ function AssetDetailPage() {
       {activeTab === 'details' && (
         <div className="space-y-6">
           {/* Core fields */}
-          <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Asset Info</h3>
             <dl className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <Field label="Name" value={asset.name} />
@@ -374,7 +488,7 @@ function AssetDetailPage() {
           </div>
 
           {/* Lifecycle dates */}
-          <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Lifecycle</h3>
             <dl className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <Field label="Manufactured" value={asset.manufactureDate} />
@@ -387,7 +501,7 @@ function AssetDetailPage() {
 
           {/* Custom fields */}
           {asset.customFields && Object.keys(asset.customFields).length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Custom Fields</h3>
               <dl className="grid grid-cols-2 gap-3">
                 {Object.entries(asset.customFields).map(([k, v]) => (
@@ -398,49 +512,95 @@ function AssetDetailPage() {
           )}
 
           {/* Inspection Schedule */}
-          {canManage && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Inspection Schedule</h3>
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                {INTERVAL_PRESETS.map((preset) => (
-                  <button
-                    key={preset.days}
-                    disabled={intervalBusy}
-                    onClick={() => handleSetInterval(preset.days)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 ${asset.inspectionIntervalDays === preset.days ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    {preset.label}
+          {canManage && (() => {
+            const activeFreq = asset.inspectionRecurrenceRule?.freq
+              ?? (asset.inspectionIntervalDays ? LEGACY_DAYS_TO_FREQ[asset.inspectionIntervalDays] : null)
+            const displayFreq = pendingFreq ?? activeFreq
+            const btnBase = 'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50'
+            const btnActive = 'bg-navy-700 text-white border-navy-700'
+            const btnInactive = 'border-gray-300 text-gray-600 hover:bg-gray-50'
+            return (
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Inspection Schedule</h3>
+
+                {/* Frequency selector */}
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  {FREQ_OPTIONS.map((f) => (
+                    <button key={f.value} disabled={intervalBusy} onClick={() => onFreqClick(f.value)}
+                      className={`${btnBase} ${displayFreq === f.value ? btnActive : btnInactive}`}>
+                      {f.label}
+                    </button>
+                  ))}
+                  <button disabled={intervalBusy} onClick={() => { handleSetSchedule(null); setPendingFreq(null) }}
+                    className={`${btnBase} ${!displayFreq ? btnActive : btnInactive}`}>
+                    None
                   </button>
-                ))}
-                <button
-                  disabled={intervalBusy}
-                  onClick={() => handleSetInterval(null)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 ${!asset.inspectionIntervalDays ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
-                >
-                  None
-                </button>
-              </div>
-              {asset.nextInspectionDue && (() => {
-                const today = orgToday(org.scheduleDayStart)
-                const isOverdue = asset.nextInspectionDue < today
-                const isDueToday = asset.nextInspectionDue === today
-                return (
-                  <p className={`text-sm ${isOverdue ? 'text-danger font-semibold' : isDueToday ? 'text-warning font-semibold' : 'text-gray-600'}`}>
-                    Next inspection due: {asset.nextInspectionDue}
-                    {isOverdue && ' (OVERDUE)'}
-                    {isDueToday && ' (due today)'}
+                </div>
+
+                {/* Day-of-week sub-picker (weekly) */}
+                {pendingFreq === 'weekly' && (
+                  <div className="flex gap-1 mb-3 flex-wrap">
+                    {DAYS_OF_WEEK.map((day, i) => (
+                      <button key={i} disabled={intervalBusy} onClick={() => onDowClick(i)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 ${pendingDow === i ? btnActive : btnInactive}`}>
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Day-of-month sub-picker (monthly / quarterly / semi-annual / annual) */}
+                {pendingFreq && pendingFreq !== 'weekly' && (
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    <span className="text-sm text-gray-600">On the</span>
+                    <select value={pendingDom} onChange={(e) => setPendingDom(Number(e.target.value))}
+                      className="text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700">
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                    <span className="text-sm text-gray-600">of the {FREQ_OPTIONS.find(f => f.value === pendingFreq)?.label.toLowerCase()}</span>
+                    <button disabled={intervalBusy} onClick={onApplyMonthly}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-navy-700 text-white hover:bg-navy-800 disabled:opacity-50">
+                      Set
+                    </button>
+                    <button onClick={() => setPendingFreq(null)}
+                      className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                {/* Current schedule & next due */}
+                {!pendingFreq && asset.inspectionIntervalDays && (
+                  <p className="text-sm text-gray-500 mb-1">
+                    Schedule: {asset.inspectionRecurrenceRule
+                      ? describeRule(asset.inspectionRecurrenceRule)
+                      : FREQ_OPTIONS.find(f => FREQ_TO_DAYS[f.value] === asset.inspectionIntervalDays)?.label ?? `Every ${asset.inspectionIntervalDays} days`}
                   </p>
-                )
-              })()}
-            </div>
-          )}
+                )}
+                {asset.nextInspectionDue && !pendingFreq && (() => {
+                  const today = orgToday(org.scheduleDayStart)
+                  const isOverdue = asset.nextInspectionDue! < today
+                  const isDueToday = asset.nextInspectionDue === today
+                  return (
+                    <p className={`text-sm ${isOverdue ? 'text-danger font-semibold' : isDueToday ? 'text-warning font-semibold' : 'text-gray-600'}`}>
+                      Next inspection due: {asset.nextInspectionDue}
+                      {isOverdue && ' (OVERDUE)'}
+                      {isDueToday && ' (due today)'}
+                    </p>
+                  )
+                })()}
+              </div>
+            )
+          })()}
 
           {/* Status Change */}
           {canManage && !isDecommissioned && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Change Status</h3>
               <div className="flex gap-2 items-center">
-                <select value={newStatus} onChange={(e) => { setNewStatus(e.target.value); setConfirmDecomm(false) }} className="text-sm border border-gray-300 rounded-lg px-3 py-1.5">
+                <select value={newStatus} onChange={(e) => { setNewStatus(e.target.value); setConfirmDecomm(false) }} className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700">
                   <option value="">Select new status…</option>
                   {statuses.filter((s) => s !== asset.status).map((s) => (
                     <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
@@ -465,7 +625,7 @@ function AssetDetailPage() {
 
           {/* Gear Assignment */}
           {isGear && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Assignment</h3>
               {(asset.assignedToStaffName || asset.assignedToApparatusName) ? (
                 <div className="flex items-center justify-between">
@@ -500,7 +660,7 @@ function AssetDetailPage() {
                   </div>
                   {assignMode === 'staff' ? (
                     <div className="flex gap-2">
-                      <select value={assignStaffId} onChange={(e) => setAssignStaffId(e.target.value)} className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5">
+                      <select value={assignStaffId} onChange={(e) => setAssignStaffId(e.target.value)} className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700">
                         <option value="">Select staff member…</option>
                         {(staffList as StaffMember[]).filter((m) => m.role !== 'owner' || true).map((m) => (
                           <option key={m.memberId} value={m.userId}>{m.displayName}</option>
@@ -517,7 +677,7 @@ function AssetDetailPage() {
                         placeholder="Enter apparatus asset ID…"
                         value={assignApparatusId}
                         onChange={(e) => setAssignApparatusId(e.target.value)}
-                        className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5"
+                        className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
                       />
                       <button onClick={handleAssign} disabled={assignBusy || !assignApparatusId} className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
                         {assignBusy ? '…' : 'Assign'}
@@ -532,7 +692,7 @@ function AssetDetailPage() {
 
           {/* Log Inspection */}
           {(canManage || isGear) && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Log Inspection</h3>
               <form onSubmit={handleLogInspection} className="space-y-3">
                 <div className="flex gap-4">
@@ -543,7 +703,7 @@ function AssetDetailPage() {
                     </label>
                   ))}
                 </div>
-                <input type="date" value={inspDate} onChange={(e) => setInspDate(e.target.value)} className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 w-48" placeholder="Today" />
+                <input type="date" value={inspDate} onChange={(e) => setInspDate(e.target.value)} className="text-sm border border-gray-300 rounded-md px-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-navy-700" placeholder="Today" />
                 <textarea value={inspNotes} onChange={(e) => setInspNotes(e.target.value)} rows={2} className={`${inputClass} resize-none`} placeholder="Notes (optional)…" />
                 {inspError && <p className="text-xs text-danger">{inspError}</p>}
                 <button type="submit" disabled={inspBusy} className="px-4 py-2 bg-navy-700 text-white text-sm font-semibold rounded-lg hover:bg-navy-800 disabled:opacity-60">
@@ -560,7 +720,8 @@ function AssetDetailPage() {
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           {inspections.length === 0 && inspLoaded ? (
             <div className="py-16 text-center">
-              <p className="text-gray-500 text-sm">No inspections recorded yet.</p>
+              <p className="text-sm font-semibold text-gray-700">No inspections recorded</p>
+              <p className="text-xs text-gray-400 mt-1">Use the Log Inspection form on the Details tab.</p>
             </div>
           ) : (
             <>
@@ -571,20 +732,99 @@ function AssetDetailPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Inspector</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Result</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Notes</th>
+                    {(canManage || isGear) && (
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Actions</th>
+                    )}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-200">
                   {inspections.map((insp) => (
-                    <tr key={insp.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-900">{insp.inspectionDate}</td>
-                      <td className="px-4 py-3 text-gray-600">{insp.inspectorName}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase ${insp.result === 'pass' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'}`} style={{ fontFamily: 'var(--font-condensed)' }}>
-                          {insp.result}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{insp.notes ?? '—'}</td>
-                    </tr>
+                    <Fragment key={insp.id}>
+                      <tr className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-900">{insp.inspectionDate}</td>
+                        <td className="px-4 py-3 text-gray-600">{insp.inspectorName}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase ${insp.result === 'pass' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'}`} style={{ fontFamily: 'var(--font-condensed)' }}>
+                            {insp.result}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{insp.notes ?? '—'}</td>
+                        {(canManage || isGear) && (
+                          <td className="px-4 py-3 text-right">
+                            {deletingInspId === insp.id ? (
+                              <span className="flex items-center justify-end gap-2 text-xs">
+                                <span className="text-gray-600">Delete?</span>
+                                <button
+                                  onClick={() => handleDeleteInsp(insp.id)}
+                                  disabled={deleteInspBusy}
+                                  className="text-danger font-semibold hover:underline disabled:opacity-60"
+                                >
+                                  {deleteInspBusy ? '…' : 'Confirm'}
+                                </button>
+                                <button onClick={() => setDeletingInspId(null)} className="text-gray-500 hover:underline">Cancel</button>
+                              </span>
+                            ) : (
+                              <span className="flex items-center justify-end gap-3 text-xs">
+                                <button
+                                  onClick={() => editingInspId === insp.id ? setEditingInspId(null) : openEditInsp(insp)}
+                                  className="text-navy-700 hover:underline"
+                                >
+                                  {editingInspId === insp.id ? 'Cancel' : 'Edit'}
+                                </button>
+                                <button
+                                  onClick={() => { setDeletingInspId(insp.id); setEditingInspId(null) }}
+                                  className="text-danger hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </span>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                      {editingInspId === insp.id && (
+                        <tr className="bg-blue-50">
+                          <td colSpan={(canManage || isGear) ? 5 : 4} className="px-4 py-3">
+                            <div className="flex flex-wrap items-start gap-3">
+                              <div className="flex gap-4">
+                                {(['pass', 'fail'] as const).map((r) => (
+                                  <label key={r} className="flex items-center gap-1.5 cursor-pointer">
+                                    <input type="radio" name={`edit-result-${insp.id}`} value={r} checked={editInspResult === r} onChange={() => setEditInspResult(r)} className="accent-navy-700" />
+                                    <span className={`text-sm font-medium ${r === 'pass' ? 'text-success' : 'text-danger'}`}>{r === 'pass' ? 'Pass' : 'Fail'}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              <input
+                                type="date"
+                                value={editInspDate}
+                                onChange={(e) => setEditInspDate(e.target.value)}
+                                className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                              />
+                              <input
+                                type="text"
+                                value={editInspNotes}
+                                onChange={(e) => setEditInspNotes(e.target.value)}
+                                placeholder="Notes (optional)…"
+                                className="flex-1 min-w-48 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleEditInsp(insp.id)}
+                                  disabled={editInspBusy || !editInspDate}
+                                  className="px-3 py-1.5 bg-navy-700 text-white text-xs font-semibold rounded-lg hover:bg-navy-800 disabled:opacity-60"
+                                >
+                                  {editInspBusy ? 'Saving…' : 'Save'}
+                                </button>
+                                <button onClick={() => setEditingInspId(null)} className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                            {editInspError && <p className="text-xs text-danger mt-2">{editInspError}</p>}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -607,7 +847,8 @@ function AssetDetailPage() {
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           {auditEntries.length === 0 && auditLoaded ? (
             <div className="py-16 text-center">
-              <p className="text-gray-500 text-sm">No audit log entries yet.</p>
+              <p className="text-sm font-semibold text-gray-700">No audit log entries</p>
+              <p className="text-xs text-gray-400 mt-1">Actions taken on this asset will appear here.</p>
             </div>
           ) : (
             <>
@@ -620,7 +861,7 @@ function AssetDetailPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Details</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-200">
                   {auditEntries.map((entry) => (
                     <tr key={entry.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-xs text-gray-500">{entry.createdAt.slice(0, 19).replace('T', ' ')}</td>

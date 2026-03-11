@@ -402,6 +402,7 @@ CREATE TABLE IF NOT EXISTS asset (
   expiration_date           TEXT,
   warranty_expiration_date  TEXT,
   inspection_interval_days  INTEGER,
+  inspection_recurrence_rule TEXT,  -- JSON: {"freq":"weekly","dayOfWeek":5}
   next_inspection_due       TEXT,
   custom_fields             TEXT,
   unit_number               TEXT,
@@ -469,7 +470,9 @@ CREATE TABLE IF NOT EXISTS asset_audit_log (
     'asset.status_changed',
     'asset.inspected',
     'asset.assigned',
-    'asset.unassigned'
+    'asset.unassigned',
+    'asset.inspection_edited',
+    'asset.inspection_deleted'
   ))
 );
 

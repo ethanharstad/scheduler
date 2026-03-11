@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { AlertTriangle, Clock, ChevronDown, ChevronUp, Plus } from 'lucide-react'
+import { canDo } from '@/lib/rbac'
 import {
   listAssetsServerFn,
   getExpiringAssetsServerFn,
@@ -111,14 +112,14 @@ function orgToday(scheduleDayStart: string): string {
 
 function daysUntil(dateStr: string, scheduleDayStart: string): number {
   const today = orgToday(scheduleDayStart)
-  // Date-string diff: parse as UTC dates to avoid DST issues
   const todayMs = new Date(today + 'T00:00:00Z').getTime()
   const targetMs = new Date(dateStr + 'T00:00:00Z').getTime()
   return Math.ceil((targetMs - todayMs) / (1000 * 60 * 60 * 24))
 }
 
 function AssetsIndex() {
-  const { org } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
+  const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
+  const canManage = canDo(userRole, 'manage-assets')
   const { assets: initialAssets, total: initialTotal, expiringAssets, overdueAssets } = Route.useLoaderData()
 
   const [assets, setAssets] = useState<AssetView[]>(initialAssets)
@@ -130,6 +131,7 @@ function AssetsIndex() {
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(false)
   const [alertsExpanded, setAlertsExpanded] = useState(true)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const LIMIT = 50
 
@@ -169,16 +171,37 @@ function AssetsIndex() {
     await applyFilters({ type, status: '', category: '', offset: 0 })
   }
 
-  async function handleSearch(val: string) {
+  function handleSearchInput(val: string) {
     setSearch(val)
-    setOffset(0)
-    await applyFilters({ search: val, offset: 0 })
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setOffset(0)
+      void applyFilters({ search: val, offset: 0 })
+    }, 300)
   }
 
   const hasAlerts = expiringAssets.length > 0 || overdueAssets.length > 0
 
   return (
     <div className="space-y-6">
+      {/* Page header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-navy-700">Assets</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage apparatus and gear for {org.name}.</p>
+          <p className="text-sm text-gray-400">{total} asset{total !== 1 ? 's' : ''}</p>
+        </div>
+        {canManage && (
+          <Link
+            to="/orgs/$orgSlug/assets/new"
+            params={{ orgSlug: org.slug }}
+            className="flex items-center gap-1.5 px-4 py-2 bg-red-700 hover:bg-red-800 text-white rounded-md text-sm font-semibold transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Add Asset
+          </Link>
+        )}
+      </div>
+
       {/* Alerts section */}
       {hasAlerts && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -212,7 +235,7 @@ function AssetsIndex() {
                     {overdueAssets.slice(0, 5).map((a) => {
                       const days = a.nextInspectionDue ? daysUntil(a.nextInspectionDue, org.scheduleDayStart) : 0
                       return (
-                        <li key={a.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
+                        <li key={a.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-200 last:border-0">
                           <Link
                             to="/orgs/$orgSlug/assets/$assetId"
                             params={{ orgSlug: org.slug, assetId: a.id }}
@@ -241,7 +264,7 @@ function AssetsIndex() {
                     {expiringAssets.slice(0, 5).map((a) => {
                       const days = a.expirationDate ? daysUntil(a.expirationDate, org.scheduleDayStart) : 0
                       return (
-                        <li key={a.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
+                        <li key={a.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-200 last:border-0">
                           <Link
                             to="/orgs/$orgSlug/assets/$assetId"
                             params={{ orgSlug: org.slug, assetId: a.id }}
@@ -263,23 +286,27 @@ function AssetsIndex() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <div className="flex flex-wrap gap-3 items-center">
-          {/* Type filter tabs */}
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            {(['all', 'apparatus', 'gear'] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => handleTypeChange(t)}
-                className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${typeFilter === t ? 'bg-white text-navy-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-              >
-                {t === 'all' ? 'All' : TYPE_LABELS[t]}
-              </button>
-            ))}
-          </div>
+      {/* Filters + table in single card */}
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        {/* Type tabs */}
+        <div className="flex gap-1 border-b border-gray-200 px-4">
+          {(['all', 'apparatus', 'gear'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => handleTypeChange(t)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                typeFilter === t
+                  ? 'border-red-700 text-red-700'
+                  : 'border-transparent text-gray-500 hover:text-navy-700'
+              }`}
+            >
+              {t === 'all' ? 'All' : TYPE_LABELS[t]}
+            </button>
+          ))}
+        </div>
 
-          {/* Status filter */}
+        {/* Filter toolbar */}
+        <div className="flex flex-wrap gap-3 items-center px-4 py-3 border-b border-gray-200">
           <select
             value={statusFilter}
             onChange={async (e) => {
@@ -287,10 +314,21 @@ function AssetsIndex() {
               setOffset(0)
               await applyFilters({ status: e.target.value, offset: 0 })
             }}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 text-gray-700 bg-white"
+            className="text-sm border border-gray-300 rounded-md px-3 py-1.5 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-navy-700"
           >
             <option value="">All statuses</option>
-            {typeFilter !== 'gear' && (
+            {typeFilter === 'all' && (
+              <>
+                <option value="in_service">In Service</option>
+                <option value="available">Available</option>
+                <option value="assigned">Assigned</option>
+                <option value="out_of_service">Out of Service</option>
+                <option value="reserve">Reserve</option>
+                <option value="decommissioned">Decommissioned</option>
+                <option value="expired">Expired</option>
+              </>
+            )}
+            {typeFilter === 'apparatus' && (
               <>
                 <option value="in_service">In Service</option>
                 <option value="out_of_service">Out of Service</option>
@@ -298,7 +336,7 @@ function AssetsIndex() {
                 <option value="decommissioned">Decommissioned</option>
               </>
             )}
-            {typeFilter !== 'apparatus' && (
+            {typeFilter === 'gear' && (
               <>
                 <option value="available">Available</option>
                 <option value="assigned">Assigned</option>
@@ -309,27 +347,24 @@ function AssetsIndex() {
             )}
           </select>
 
-          {/* Search */}
           <input
             type="search"
             placeholder="Search name, unit #, serial #…"
             value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="flex-1 min-w-48 text-sm border border-gray-300 rounded-lg px-3 py-1.5 text-gray-700"
+            onChange={(e) => handleSearchInput(e.target.value)}
+            className="flex-1 min-w-48 text-sm border border-gray-300 rounded-md px-3 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-navy-700"
           />
         </div>
-      </div>
 
-      {/* Asset table */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        {/* Table */}
         {loading ? (
           <div className="py-16 flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-navy-700" />
           </div>
         ) : assets.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-gray-500 text-sm">No assets found.</p>
-            <p className="text-gray-400 text-xs mt-1">Add your first asset using the button above.</p>
+            <p className="text-sm font-semibold text-gray-700">No assets found</p>
+            <p className="text-xs text-gray-400 mt-1">Adjust your filters or add a new asset.</p>
           </div>
         ) : (
           <>
@@ -337,14 +372,16 @@ function AssetsIndex() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Type</th>
+                  {typeFilter === 'all' && (
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Type</th>
+                  )}
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Category</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>ID / Serial</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Expiration</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-200">
                 {assets.map((asset) => {
                   const expDays = asset.expirationDate ? daysUntil(asset.expirationDate, org.scheduleDayStart) : null
                   return (
@@ -364,7 +401,9 @@ function AssetsIndex() {
                           <div className="text-xs text-gray-400">→ {asset.assignedToApparatusName}</div>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{TYPE_LABELS[asset.assetType] ?? asset.assetType}</td>
+                      {typeFilter === 'all' && (
+                        <td className="px-4 py-3 text-gray-600">{TYPE_LABELS[asset.assetType] ?? asset.assetType}</td>
+                      )}
                       <td className="px-4 py-3 text-gray-600">{CATEGORY_LABELS[asset.category] ?? asset.category}</td>
                       <td className="px-4 py-3">{statusBadge(asset.status)}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs font-mono">

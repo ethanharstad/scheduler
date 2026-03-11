@@ -4,6 +4,14 @@
 
 export type AssetType = 'apparatus' | 'gear'
 
+export type RecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual'
+
+export interface RecurrenceRule {
+  freq: RecurrenceFreq
+  dayOfWeek?: number  // 0=Sun..6=Sat, used when freq='weekly'
+  dayOfMonth?: number // 1-28, used when freq='monthly'|'quarterly'|'semi_annual'|'annual'
+}
+
 export type ApparatusCategory =
   | 'engine'
   | 'ladder_truck'
@@ -119,6 +127,7 @@ export interface AssetDetailView extends AssetView {
   inServiceDate: string | null
   warrantyExpirationDate: string | null
   inspectionIntervalDays: number | null
+  inspectionRecurrenceRule: RecurrenceRule | null
   customFields: Record<string, string | number | boolean> | null
 }
 
@@ -295,10 +304,32 @@ export type GetInspectionHistoryOutput =
   | { success: true; inspections: InspectionView[]; total: number }
   | { success: false; error: 'UNAUTHORIZED' | 'NOT_FOUND' }
 
+export interface EditInspectionInput {
+  orgSlug: string
+  assetId: string
+  inspectionId: string
+  result: 'pass' | 'fail'
+  notes: string | null
+  inspectionDate: string
+}
+export type EditInspectionOutput =
+  | { success: true; inspection: InspectionView }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_INPUT' }
+
+export interface DeleteInspectionInput {
+  orgSlug: string
+  assetId: string
+  inspectionId: string
+}
+export type DeleteInspectionOutput =
+  | { success: true }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' }
+
 export interface SetInspectionIntervalInput {
   orgSlug: string
   assetId: string
   intervalDays: number | null
+  recurrenceRule: RecurrenceRule | null
 }
 export type SetInspectionIntervalOutput =
   | { success: true; asset: AssetView }
