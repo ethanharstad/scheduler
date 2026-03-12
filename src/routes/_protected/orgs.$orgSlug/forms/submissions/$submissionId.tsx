@@ -1,5 +1,4 @@
-import { createFileRoute, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { createFileRoute } from '@tanstack/react-router'
 import { getSubmissionServerFn } from '@/server/forms'
 import type { FormFieldDefinition, FormResponseValueView } from '@/lib/form.types'
 
@@ -17,9 +16,7 @@ export const Route = createFileRoute(
 })
 
 function SubmissionDetail() {
-  const { org } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
   const { submission } = Route.useLoaderData()
-  const navigate = useNavigate()
 
   const valueMap = new Map<string, FormResponseValueView>()
   for (const v of submission.values) {
@@ -28,18 +25,6 @@ function SubmissionDetail() {
 
   return (
     <div className="space-y-6">
-      <button
-        onClick={() =>
-          void navigate({
-            to: '/orgs/$orgSlug/forms/submissions',
-            params: { orgSlug: org.slug },
-          })
-        }
-        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-navy-700"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to Submissions
-      </button>
-
       {/* Metadata */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h2
@@ -66,12 +51,12 @@ function SubmissionDetail() {
             </span>
           </div>
         </div>
-        {submission.linkedEntityType && (
+        {submission.linkedEntityType && submission.linkedEntityName && (
           <div className="mt-2 text-sm">
-            <span className="text-gray-500">Linked to:</span>{' '}
-            <span className="font-medium text-gray-900">
-              {submission.linkedEntityType} — {submission.linkedEntityId}
-            </span>
+            <span className="text-gray-500">
+              {submission.linkedEntityType === 'staff_member' ? 'Staff Member:' : 'Asset:'}
+            </span>{' '}
+            <span className="font-medium text-gray-900">{submission.linkedEntityName}</span>
           </div>
         )}
       </div>

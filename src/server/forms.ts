@@ -940,6 +940,26 @@ export const getSubmissionServerFn = createServerFn({ method: 'GET' })
       }
     }
 
+    // Fetch linked entity name
+    let linkedEntityName: string | null = null
+    if (row.linked_entity_id) {
+      if (row.linked_entity_type === 'asset') {
+        const nameRow = await env.DB.prepare(
+          `SELECT name FROM asset WHERE id = ? AND org_id = ?`,
+        )
+          .bind(row.linked_entity_id, membership.orgId)
+          .first<{ name: string }>()
+        linkedEntityName = nameRow?.name ?? null
+      } else if (row.linked_entity_type === 'staff_member') {
+        const nameRow = await env.DB.prepare(
+          `SELECT name FROM staff_member WHERE id = ? AND org_id = ?`,
+        )
+          .bind(row.linked_entity_id, membership.orgId)
+          .first<{ name: string }>()
+        linkedEntityName = nameRow?.name ?? null
+      }
+    }
+
     // Fetch values
     type ValueRow = {
       field_key: string
@@ -974,7 +994,7 @@ export const getSubmissionServerFn = createServerFn({ method: 'GET' })
       status: row.status as 'in_progress' | 'complete',
       linkedEntityType: row.linked_entity_type as FormSubmissionDetailView['linkedEntityType'],
       linkedEntityId: row.linked_entity_id,
-      linkedEntityName: null,
+      linkedEntityName,
       submittedAt: row.submitted_at,
       fields: JSON.parse(row.fields_json) as FormFieldDefinition[],
       values,

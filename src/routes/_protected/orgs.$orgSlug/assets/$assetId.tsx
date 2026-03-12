@@ -482,9 +482,18 @@ function AssetDetailPage() {
     setShowEdit(false)
   }
 
-  // Load schedules on first details tab view
+  async function loadLocations() {
+    const result = await listAssetLocationsServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id } })
+    if (result.success) setLocations(result.locations)
+    setLocationsLoaded(true)
+  }
+
+  // Load schedules and locations on first details tab view
   if (activeTab === 'details' && !schedulesLoaded) {
     void loadSchedules()
+  }
+  if (activeTab === 'details' && !locationsLoaded && canManage && !isDecommissioned) {
+    void loadLocations()
   }
 
   const inputClass = 'w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-navy-700'
@@ -878,16 +887,7 @@ function AssetDetailPage() {
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Locations</h3>
               {!locationsLoaded ? (
-                <button
-                  onClick={async () => {
-                    const result = await listAssetLocationsServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id } })
-                    if (result.success) setLocations(result.locations)
-                    setLocationsLoaded(true)
-                  }}
-                  className="text-sm text-navy-700 hover:underline"
-                >
-                  Load locations…
-                </button>
+                <p className="text-sm text-gray-400">Loading…</p>
               ) : (
                 <>
                   {locations.length === 0 && <p className="text-sm text-gray-500 mb-3">No locations defined.</p>}
