@@ -31,6 +31,7 @@ import {
   createAssetLocationServerFn,
   updateAssetLocationServerFn,
   deleteAssetLocationServerFn,
+  getApparatusGearServerFn,
 } from '@/server/assets'
 import { listStaffServerFn } from '@/server/staff'
 
@@ -144,7 +145,11 @@ function AssetDetailPage() {
   const { asset: initialAsset, staffList, apparatusList } = Route.useLoaderData()
 
   const [asset, setAsset] = useState<AssetDetailView | null>(initialAsset)
-  const [activeTab, setActiveTab] = useState<'details' | 'inspections' | 'audit'>('details')
+  const [activeTab, setActiveTab] = useState<'details' | 'assigned-gear' | 'inspections' | 'audit'>('details')
+
+  // Assigned gear state (apparatus only)
+  const [assignedGear, setAssignedGear] = useState<AssetView[]>([])
+  const [assignedGearLoaded, setAssignedGearLoaded] = useState(false)
 
   // Assignment state
   const [assignMode, setAssignMode] = useState<'staff' | 'apparatus'>('staff')
@@ -320,8 +325,17 @@ function AssetDetailPage() {
     }
   }
 
-  async function handleTabChange(tab: 'details' | 'inspections' | 'audit') {
+  async function loadAssignedGear() {
+    const result = await getApparatusGearServerFn({ data: { orgSlug: org.slug, apparatusId: asset.id } })
+    if (result.success) {
+      setAssignedGear(result.assets)
+      setAssignedGearLoaded(true)
+    }
+  }
+
+  async function handleTabChange(tab: 'details' | 'assigned-gear' | 'inspections' | 'audit') {
     setActiveTab(tab)
+    if (tab === 'assigned-gear' && !assignedGearLoaded) await loadAssignedGear()
     if (tab === 'inspections' && !inspLoaded) await loadInspections()
     if (tab === 'audit' && !auditLoaded) await loadAudit()
   }
@@ -486,13 +500,13 @@ function AssetDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
-        {(['details', 'inspections', 'audit'] as const).map((tab) => (
+        {(['details', ...(!isGear ? ['assigned-gear'] : []), 'inspections', 'audit'] as Array<'details' | 'assigned-gear' | 'inspections' | 'audit'>).map((tab) => (
           <button
             key={tab}
             onClick={() => handleTabChange(tab)}
-            className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${activeTab === tab ? 'border-navy-700 text-navy-700' : 'border-transparent text-gray-600 hover:text-gray-900'}`}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${activeTab === tab ? 'border-navy-700 text-navy-700' : 'border-transparent text-gray-600 hover:text-gray-900'}`}
           >
-            {tab === 'audit' ? 'Audit Log' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'audit' ? 'Audit Log' : tab === 'assigned-gear' ? 'Assigned Gear' : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
@@ -949,6 +963,71 @@ function AssetDetailPage() {
           )}
         </div>
       )}
+
+      {/* Tab: Assigned Gear */}
+      {activeTab === 'assigned-gear' && (() => {
+        if (!assignedGearLoaded) {
+          return (
+            <div className="bg-white border border-gray-200 rounded-lg py-12 text-center">
+              <p className="text-sm text-gray-400">Loading…</p>
+            </div>
+          )
+        }
+        if (assignedGear.length === 0) {
+          return (
+            <div className="bg-white border border-gray-200 rounded-lg py-12 text-center">
+              <p className="text-sm text-gray-500">No gear assigned to this apparatus.</p>
+            </div>
+          )
+        }
+        // Group gear by location
+        const groups = new Map<string | null, AssetView[]>()
+        for (const g of assignedGear) {
+          const key = g.assignedToLocationId ?? null
+          if (!groups.has(key)) groups.set(key, [])
+          groups.get(key)!.push(g)
+        }
+        // Sort: named locations first (by name), then null
+        const sortedKeys = [...groups.keys()].sort((a, b) => {
+          if (a === null) return 1
+          if (b === null) return -1
+          const aName = assignedGear.find(g => g.assignedToLocationId === a)?.assignedToLocationName ?? ''
+          const bName = assignedGear.find(g => g.assignedToLocationId === b)?.assignedToLocationName ?? ''
+          return aName.localeCompare(bName)
+        })
+        return (
+          <div className="space-y-4">
+            {sortedKeys.map((locationId) => {
+              const items = groups.get(locationId)!
+              const locationName = locationId
+                ? (items[0]?.assignedToLocationName ?? locationId)
+                : 'No Location'
+              return (
+                <div key={locationId ?? '__none__'} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500" style={{ fontFamily: 'var(--font-condensed)' }}>{locationName}</h4>
+                  </div>
+                  <table className="min-w-full divide-y divide-gray-100">
+                    <tbody className="divide-y divide-gray-100">
+                      {items.map((g) => (
+                        <tr key={g.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <Link to="/orgs/$orgSlug/assets/$assetId" params={{ orgSlug: org.slug, assetId: g.id }} className="font-medium text-navy-700 hover:underline">
+                              {g.name}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{CATEGORY_LABELS[g.category] ?? g.category}</td>
+                          <td className="px-4 py-3">{statusBadge(g.status)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
 
       {/* Tab: Inspections */}
       {activeTab === 'inspections' && (
