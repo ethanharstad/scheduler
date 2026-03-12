@@ -16,6 +16,7 @@ import {
 } from '@/lib/asset.types'
 import {
   getAssetServerFn,
+  listAssetsServerFn,
   assignGearServerFn,
   unassignGearServerFn,
   logInspectionServerFn,
@@ -36,14 +37,16 @@ import { listStaffServerFn } from '@/server/staff'
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/assets/$assetId')({
   head: () => ({ meta: [{ title: 'Asset Detail | Scene Ready' }] }),
   loader: async ({ params }) => {
-    const [assetResult, staffResult] = await Promise.all([
+    const [assetResult, staffResult, apparatusResult] = await Promise.all([
       getAssetServerFn({ data: { orgSlug: params.orgSlug, assetId: params.assetId } }),
       listStaffServerFn({ data: { orgSlug: params.orgSlug } }),
+      listAssetsServerFn({ data: { orgSlug: params.orgSlug, assetType: 'apparatus', limit: 200 } }),
     ])
-    if (!assetResult.success) return { asset: null, staffList: [] }
+    if (!assetResult.success) return { asset: null, staffList: [], apparatusList: [] }
     return {
       asset: assetResult.asset,
       staffList: staffResult.success ? staffResult.members : [],
+      apparatusList: apparatusResult.success ? apparatusResult.assets : [],
     }
   },
   component: AssetDetailPage,
@@ -138,7 +141,7 @@ type StaffMember = { memberId: string; displayName: string; userId: string; emai
 
 function AssetDetailPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { asset: initialAsset, staffList } = Route.useLoaderData()
+  const { asset: initialAsset, staffList, apparatusList } = Route.useLoaderData()
 
   const [asset, setAsset] = useState<AssetDetailView | null>(initialAsset)
   const [activeTab, setActiveTab] = useState<'details' | 'inspections' | 'audit'>('details')
@@ -706,20 +709,24 @@ function AssetDetailPage() {
                   ) : (
                     <div className="space-y-2">
                       <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Enter apparatus asset ID…"
+                        <select
                           value={assignApparatusId}
                           onChange={(e) => {
-                            setAssignApparatusId(e.target.value)
+                            const id = e.target.value
+                            setAssignApparatusId(id)
                             setAssignLocationId('')
                             setAssignLocations([])
-                          }}
-                          onBlur={() => {
-                            if (assignApparatusId.trim()) fetchLocationsForApparatus(assignApparatusId.trim())
+                            if (id) fetchLocationsForApparatus(id)
                           }}
                           className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
-                        />
+                        >
+                          <option value="">Select apparatus…</option>
+                          {(apparatusList as AssetView[]).filter((a) => a.id !== asset.id && a.status !== 'decommissioned').map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.unitNumber ? `${a.unitNumber} — ` : ''}{a.name}
+                            </option>
+                          ))}
+                        </select>
                         <button onClick={handleAssign} disabled={assignBusy || !assignApparatusId} className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
                           {assignBusy ? '…' : 'Assign'}
                         </button>
