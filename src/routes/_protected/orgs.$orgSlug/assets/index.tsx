@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Clock, ChevronDown, ChevronUp, Plus } from 'lucide-react'
-import { canDo } from '@/lib/rbac'
+import { AlertTriangle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import {
   listAssetsServerFn,
   getExpiringAssetsServerFn,
@@ -118,8 +117,7 @@ function daysUntil(dateStr: string, scheduleDayStart: string): number {
 }
 
 function AssetsIndex() {
-  const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const canManage = canDo(userRole, 'manage-assets')
+  const { org } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
   const { assets: initialAssets, total: initialTotal, expiringAssets, overdueAssets } = Route.useLoaderData()
 
   const [assets, setAssets] = useState<AssetView[]>(initialAssets)
@@ -184,24 +182,6 @@ function AssetsIndex() {
 
   return (
     <div className="space-y-6">
-      {/* Page header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-navy-700">Assets</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage apparatus and gear for {org.name}.</p>
-          <p className="text-sm text-gray-400">{total} asset{total !== 1 ? 's' : ''}</p>
-        </div>
-        {canManage && (
-          <Link
-            to="/orgs/$orgSlug/assets/new"
-            params={{ orgSlug: org.slug }}
-            className="flex items-center gap-1.5 px-4 py-2 bg-red-700 hover:bg-red-800 text-white rounded-md text-sm font-semibold transition-colors"
-          >
-            <Plus className="w-4 h-4" /> Add Asset
-          </Link>
-        )}
-      </div>
-
       {/* Alerts section */}
       {hasAlerts && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
