@@ -304,25 +304,36 @@ function AssetDetailPage() {
       : addFreq === 'daily'
         ? { freq: 'daily' }
         : { freq: addFreq, dayOfMonth: addDom }
-    const result = await addInspectionScheduleServerFn({
-      data: { orgSlug: org.slug, assetId: currentAsset.id, formTemplateId: addTemplateId, label: addLabel.trim(), recurrenceRule: rule },
-    })
-    setAddBusy(false)
-    if (!result.success) { setAddError(result.error); return }
-    setSchedules((prev) => [...prev, result.schedule])
-    setShowAddSchedule(false)
-    setAddLabel('')
-    setAddTemplateId('')
-    setAddFreq('weekly')
+    try {
+      const result = await addInspectionScheduleServerFn({
+        data: { orgSlug: org.slug, assetId: currentAsset.id, formTemplateId: addTemplateId, label: addLabel.trim(), recurrenceRule: rule },
+      })
+      if (!result.success) { setAddError(result.error); return }
+      setSchedules((prev) => [...prev, result.schedule])
+      setShowAddSchedule(false)
+      setAddLabel('')
+      setAddTemplateId('')
+      setAddFreq('weekly')
+    } catch {
+      setAddError('Failed to add schedule. Please try again.')
+    } finally {
+      setAddBusy(false)
+    }
   }
 
   async function handleDeleteSchedule(scheduleId: string) {
     setDeleteScheduleBusy(true)
-    const result = await deleteInspectionScheduleServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id, scheduleId } })
-    setDeleteScheduleBusy(false)
-    if (result.success) {
-      setSchedules((prev) => prev.filter((s) => s.id !== scheduleId))
-      setDeletingScheduleId(null)
+    try {
+      const result = await deleteInspectionScheduleServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id, scheduleId } })
+      if (result.success) {
+        setSchedules((prev) => prev.filter((s) => s.id !== scheduleId))
+        setDeletingScheduleId(null)
+      }
+    } catch {
+      // Schedule may already be deleted; refresh list
+      await loadSchedules()
+    } finally {
+      setDeleteScheduleBusy(false)
     }
   }
 

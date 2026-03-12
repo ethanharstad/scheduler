@@ -171,15 +171,19 @@ async function writeAssetAuditLog(
   assetId: string,
   detail?: Record<string, string | number | boolean | null | object>,
 ): Promise<void> {
-  const id = crypto.randomUUID()
-  const now = isoNow()
-  const detailJson = detail ? JSON.stringify(detail) : null
-  await env.DB.prepare(
-    `INSERT INTO asset_audit_log (id, org_id, actor_staff_id, action, asset_id, detail_json, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(id, orgId, actorStaffId, action, assetId, detailJson, now)
-    .run()
+  try {
+    const id = crypto.randomUUID()
+    const now = isoNow()
+    const detailJson = detail ? JSON.stringify(detail) : null
+    await env.DB.prepare(
+      `INSERT INTO asset_audit_log (id, org_id, actor_staff_id, action, asset_id, detail_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(id, orgId, actorStaffId, action, assetId, detailJson, now)
+      .run()
+  } catch {
+    // Audit logging must never break the primary operation
+  }
 }
 
 // ---------------------------------------------------------------------------
