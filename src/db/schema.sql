@@ -103,6 +103,27 @@ CREATE        INDEX IF NOT EXISTS idx_org_membership_user   ON org_membership(us
 CREATE        INDEX IF NOT EXISTS idx_org_membership_org    ON org_membership(org_id);
 
 -- ============================================================
+-- Stations (011-station-management)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS station (
+  id          TEXT NOT NULL PRIMARY KEY,              -- crypto.randomUUID()
+  org_id      TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,                          -- 2-100 chars; unique per org (case-insensitive)
+  code        TEXT,                                   -- optional short code e.g. "STA-1"; unique per org if set
+  address     TEXT,                                   -- optional free-text physical address
+  status      TEXT NOT NULL DEFAULT 'active',         -- 'active' | 'inactive'
+  sort_order  INTEGER NOT NULL DEFAULT 0,             -- explicit display ordering; lower = first
+  created_at  TEXT NOT NULL,                          -- ISO 8601
+  updated_at  TEXT NOT NULL,                          -- ISO 8601
+  CHECK (status IN ('active', 'inactive'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_station_org_name ON station(org_id, LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_station_org_code ON station(org_id, LOWER(code)) WHERE code IS NOT NULL;
+CREATE        INDEX IF NOT EXISTS idx_station_org      ON station(org_id);
+
+-- ============================================================
 -- Qualifications (008-qualifications)
 -- Must precede staff_member (rank FK) and position (rank FK)
 -- ============================================================
@@ -405,6 +426,7 @@ CREATE TABLE IF NOT EXISTS asset (
   unit_number               TEXT,
   assigned_to_staff_id      TEXT REFERENCES staff_member(id) ON DELETE SET NULL,
   assigned_to_apparatus_id  TEXT REFERENCES asset(id) ON DELETE SET NULL,
+  assigned_to_location_id   TEXT REFERENCES asset_location(id) ON DELETE SET NULL,
   created_at                TEXT NOT NULL,
   updated_at                TEXT NOT NULL,
   CHECK (asset_type IN ('apparatus', 'gear')),
@@ -430,6 +452,24 @@ CREATE INDEX IF NOT EXISTS idx_asset_apparatus_assignment
 
 CREATE INDEX IF NOT EXISTS idx_asset_expiration
   ON asset(org_id, expiration_date) WHERE expiration_date IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_asset_location_assignment
+  ON asset(assigned_to_location_id) WHERE assigned_to_location_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS asset_location (
+  id          TEXT NOT NULL PRIMARY KEY,
+  org_id      TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  asset_id    TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  description TEXT,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE(asset_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_asset_location_asset
+  ON asset_location(asset_id, sort_order);
 
 -- Inspection schedules: many-to-many between assets and form templates
 CREATE TABLE IF NOT EXISTS asset_inspection_schedule (

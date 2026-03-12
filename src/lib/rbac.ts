@@ -21,6 +21,7 @@ const ROLE_PERMISSIONS: Record<OrgRole, ReadonlySet<Permission>> = {
     'manage-assets',
     'manage-forms',
     'submit-forms',
+    'manage-stations',
   ]),
   admin: new Set<Permission>([
     'view-org-settings',
@@ -38,6 +39,7 @@ const ROLE_PERMISSIONS: Record<OrgRole, ReadonlySet<Permission>> = {
     'manage-assets',
     'manage-forms',
     'submit-forms',
+    'manage-stations',
   ]),
   manager: new Set<Permission>([
     'create-edit-schedules',

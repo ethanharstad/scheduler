@@ -5,6 +5,7 @@ import type {
   AssetView,
   AssetDetailView,
   InspectionScheduleView,
+  AssetLocationView,
   AssetAuditEntry,
   CreateAssetInput,
   CreateAssetOutput,
@@ -39,6 +40,14 @@ import type {
   GetApparatusGearOutput,
   GetAssetAuditLogInput,
   GetAssetAuditLogOutput,
+  CreateAssetLocationInput,
+  CreateAssetLocationOutput,
+  UpdateAssetLocationInput,
+  UpdateAssetLocationOutput,
+  DeleteAssetLocationInput,
+  DeleteAssetLocationOutput,
+  ListAssetLocationsInput,
+  ListAssetLocationsOutput,
   RecurrenceRule,
 } from '@/lib/asset.types'
 import {
@@ -192,6 +201,8 @@ type AssetRow = {
   assigned_to_staff_name: string | null
   assigned_to_apparatus_id: string | null
   assigned_to_apparatus_name: string | null
+  assigned_to_location_id: string | null
+  assigned_to_location_name: string | null
   expiration_date: string | null
   created_at: string
   updated_at: string
@@ -222,6 +233,8 @@ function rowToAssetView(r: AssetRow): AssetView {
     assignedToStaffName: r.assigned_to_staff_name,
     assignedToApparatusId: r.assigned_to_apparatus_id,
     assignedToApparatusName: r.assigned_to_apparatus_name,
+    assignedToLocationId: r.assigned_to_location_id,
+    assignedToLocationName: r.assigned_to_location_name,
     expirationDate: r.expiration_date,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -247,6 +260,8 @@ const ASSET_LIST_SELECT = `
   sm.name AS assigned_to_staff_name,
   a.assigned_to_apparatus_id,
   app.name AS assigned_to_apparatus_name,
+  a.assigned_to_location_id,
+  loc.name AS assigned_to_location_name,
   a.expiration_date,
   a.created_at, a.updated_at`
 
@@ -257,6 +272,8 @@ const ASSET_DETAIL_SELECT = `
   sm.name AS assigned_to_staff_name,
   a.assigned_to_apparatus_id,
   app.name AS assigned_to_apparatus_name,
+  a.assigned_to_location_id,
+  loc.name AS assigned_to_location_name,
   a.expiration_date,
   a.created_at, a.updated_at,
   a.notes, a.manufacture_date, a.purchased_date, a.in_service_date,
@@ -264,7 +281,8 @@ const ASSET_DETAIL_SELECT = `
 
 const ASSET_JOINS = `
   LEFT JOIN staff_member sm ON sm.id = a.assigned_to_staff_id
-  LEFT JOIN asset app ON app.id = a.assigned_to_apparatus_id`
+  LEFT JOIN asset app ON app.id = a.assigned_to_apparatus_id
+  LEFT JOIN asset_location loc ON loc.id = a.assigned_to_location_id`
 
 // ---------------------------------------------------------------------------
 // A. Asset CRUD
@@ -593,7 +611,7 @@ export const changeAssetStatusServerFn = createServerFn({ method: 'POST' })
         .all<GearRow>()
 
       const stmts = [
-        env.DB.prepare(`UPDATE asset SET assigned_to_apparatus_id = NULL, status = 'available', updated_at = ? WHERE assigned_to_apparatus_id = ? AND org_id = ?`)
+        env.DB.prepare(`UPDATE asset SET assigned_to_apparatus_id = NULL, assigned_to_location_id = NULL, status = 'available', updated_at = ? WHERE assigned_to_apparatus_id = ? AND org_id = ?`)
           .bind(now, asset.id, membership.orgId),
         env.DB.prepare(`UPDATE asset SET status = ?, updated_at = ? WHERE id = ? AND org_id = ?`)
           .bind(data.newStatus, now, asset.id, membership.orgId),
@@ -609,7 +627,7 @@ export const changeAssetStatusServerFn = createServerFn({ method: 'POST' })
     } else if (data.newStatus === 'decommissioned' && asset.asset_type === 'gear') {
       // Clear assignment if exists
       await env.DB.prepare(
-        `UPDATE asset SET status = ?, assigned_to_staff_id = NULL, assigned_to_apparatus_id = NULL, updated_at = ? WHERE id = ? AND org_id = ?`,
+        `UPDATE asset SET status = ?, assigned_to_staff_id = NULL, assigned_to_apparatus_id = NULL, assigned_to_location_id = NULL, updated_at = ? WHERE id = ? AND org_id = ?`,
       )
         .bind(data.newStatus, now, asset.id, membership.orgId)
         .run()
@@ -694,15 +712,31 @@ export const assignGearServerFn = createServerFn({ method: 'POST' })
       if (!targetApp) return { success: false, error: 'INVALID_TARGET' }
     }
 
+    // Validate optional location belongs to the target asset
+    const locationId = data.assignToLocationId || null
+    if (locationId) {
+      const targetAssetId = data.assignToApparatusId || data.assignToStaffId
+      if (!targetAssetId) return { success: false, error: 'INVALID_INPUT' }
+      // Location must belong to the apparatus being assigned to
+      if (!data.assignToApparatusId) return { success: false, error: 'INVALID_INPUT' }
+      const loc = await env.DB.prepare(
+        `SELECT id FROM asset_location WHERE id = ? AND asset_id = ?`,
+      )
+        .bind(locationId, data.assignToApparatusId)
+        .first<{ id: string }>()
+      if (!loc) return { success: false, error: 'INVALID_TARGET' }
+    }
+
     const now = isoNow()
     const wasPreviouslyAssigned = asset.assigned_to_staff_id || asset.assigned_to_apparatus_id
 
     await env.DB.prepare(
-      `UPDATE asset SET assigned_to_staff_id = ?, assigned_to_apparatus_id = ?, status = 'assigned', updated_at = ? WHERE id = ?`,
+      `UPDATE asset SET assigned_to_staff_id = ?, assigned_to_apparatus_id = ?, assigned_to_location_id = ?, status = 'assigned', updated_at = ? WHERE id = ?`,
     )
       .bind(
         data.assignToStaffId || null,
         data.assignToApparatusId || null,
+        locationId,
         now,
         asset.id,
       )
@@ -718,6 +752,7 @@ export const assignGearServerFn = createServerFn({ method: 'POST' })
       await writeAssetAuditLog(env, membership.orgId, actorStaffRow.id, 'asset.assigned', asset.id, {
         to_staff_id: data.assignToStaffId || null,
         to_apparatus_id: data.assignToApparatusId || null,
+        to_location_id: locationId,
       })
     }
 
@@ -759,7 +794,7 @@ export const unassignGearServerFn = createServerFn({ method: 'POST' })
 
     const now = isoNow()
     await env.DB.prepare(
-      `UPDATE asset SET assigned_to_staff_id = NULL, assigned_to_apparatus_id = NULL, status = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE asset SET assigned_to_staff_id = NULL, assigned_to_apparatus_id = NULL, assigned_to_location_id = NULL, status = ?, updated_at = ? WHERE id = ?`,
     )
       .bind(newStatus, now, asset.id)
       .run()
@@ -1218,3 +1253,160 @@ export const getAssetAuditLogServerFn = createServerFn({ method: 'POST' })
     return { success: true, entries, total }
   })
 
+// ---------------------------------------------------------------------------
+// I. Asset Locations
+// ---------------------------------------------------------------------------
+
+type AssetLocationRow = {
+  id: string
+  asset_id: string
+  name: string
+  description: string | null
+  sort_order: number
+}
+
+function rowToAssetLocationView(r: AssetLocationRow): AssetLocationView {
+  return {
+    id: r.id,
+    assetId: r.asset_id,
+    name: r.name,
+    description: r.description,
+    sortOrder: r.sort_order,
+  }
+}
+
+export const listAssetLocationsServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: ListAssetLocationsInput) => d)
+  .handler(async (ctx): Promise<ListAssetLocationsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+
+    const assetCheck = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
+      .bind(data.assetId, membership.orgId)
+      .first<{ id: string }>()
+    if (!assetCheck) return { success: false, error: 'NOT_FOUND' }
+
+    const rows = await env.DB.prepare(
+      `SELECT id, asset_id, name, description, sort_order FROM asset_location WHERE asset_id = ? AND org_id = ? ORDER BY sort_order ASC, name ASC`,
+    )
+      .bind(data.assetId, membership.orgId)
+      .all<AssetLocationRow>()
+
+    return { success: true, locations: (rows.results ?? []).map(rowToAssetLocationView) }
+  })
+
+export const createAssetLocationServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: CreateAssetLocationInput) => d)
+  .handler(async (ctx): Promise<CreateAssetLocationOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
+
+    const assetCheck = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
+      .bind(data.assetId, membership.orgId)
+      .first<{ id: string }>()
+    if (!assetCheck) return { success: false, error: 'NOT_FOUND' }
+
+    const trimmedName = data.name.trim()
+    if (!trimmedName) return { success: false, error: 'DUPLICATE_NAME' }
+
+    // Check for duplicate name on this asset
+    const dup = await env.DB.prepare(
+      `SELECT id FROM asset_location WHERE asset_id = ? AND name = ?`,
+    )
+      .bind(data.assetId, trimmedName)
+      .first<{ id: string }>()
+    if (dup) return { success: false, error: 'DUPLICATE_NAME' }
+
+    const id = crypto.randomUUID()
+    const now = isoNow()
+    const sortOrder = data.sortOrder ?? 0
+
+    await env.DB.prepare(
+      `INSERT INTO asset_location (id, org_id, asset_id, name, description, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(id, membership.orgId, data.assetId, trimmedName, data.description ?? null, sortOrder, now, now)
+      .run()
+
+    return {
+      success: true,
+      location: { id, assetId: data.assetId, name: trimmedName, description: data.description ?? null, sortOrder },
+    }
+  })
+
+export const updateAssetLocationServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: UpdateAssetLocationInput) => d)
+  .handler(async (ctx): Promise<UpdateAssetLocationOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
+
+    const existing = await env.DB.prepare(
+      `SELECT id, asset_id, name, description, sort_order FROM asset_location WHERE id = ? AND asset_id = ? AND org_id = ?`,
+    )
+      .bind(data.locationId, data.assetId, membership.orgId)
+      .first<AssetLocationRow>()
+    if (!existing) return { success: false, error: 'NOT_FOUND' }
+
+    const newName = data.name !== undefined ? data.name.trim() : existing.name
+    if (!newName) return { success: false, error: 'DUPLICATE_NAME' }
+
+    // Check for duplicate name (different record)
+    if (newName !== existing.name) {
+      const dup = await env.DB.prepare(
+        `SELECT id FROM asset_location WHERE asset_id = ? AND name = ? AND id != ?`,
+      )
+        .bind(data.assetId, newName, data.locationId)
+        .first<{ id: string }>()
+      if (dup) return { success: false, error: 'DUPLICATE_NAME' }
+    }
+
+    const newDesc = data.description !== undefined ? data.description : existing.description
+    const newSort = data.sortOrder !== undefined ? data.sortOrder : existing.sort_order
+    const now = isoNow()
+
+    await env.DB.prepare(
+      `UPDATE asset_location SET name = ?, description = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
+    )
+      .bind(newName, newDesc, newSort, now, data.locationId)
+      .run()
+
+    return {
+      success: true,
+      location: { id: data.locationId, assetId: data.assetId, name: newName, description: newDesc, sortOrder: newSort },
+    }
+  })
+
+export const deleteAssetLocationServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: DeleteAssetLocationInput) => d)
+  .handler(async (ctx): Promise<DeleteAssetLocationOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
+
+    const existing = await env.DB.prepare(
+      `SELECT id FROM asset_location WHERE id = ? AND asset_id = ? AND org_id = ?`,
+    )
+      .bind(data.locationId, data.assetId, membership.orgId)
+      .first<{ id: string }>()
+    if (!existing) return { success: false, error: 'NOT_FOUND' }
+
+    // Delete location — FK ON DELETE SET NULL clears assigned_to_location_id on gear
+    await env.DB.prepare(`DELETE FROM asset_location WHERE id = ?`)
+      .bind(data.locationId)
+      .run()
+
+    return { success: true }
+  })

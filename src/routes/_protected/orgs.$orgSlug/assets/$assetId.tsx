@@ -4,6 +4,7 @@ import { canDo } from '@/lib/rbac'
 import type {
   AssetDetailView,
   InspectionScheduleView,
+  AssetLocationView,
   AssetAuditEntry,
   AssetView,
   RecurrenceFreq,
@@ -16,6 +17,7 @@ import {
 import type { FormFieldDefinition, LinkedEntityType } from '@/lib/form.types'
 import {
   getAssetServerFn,
+  listAssetsServerFn,
   assignGearServerFn,
   unassignGearServerFn,
   getAssetAuditLogServerFn,
@@ -25,6 +27,11 @@ import {
   updateInspectionScheduleServerFn,
   deleteInspectionScheduleServerFn,
   getInspectionSchedulesServerFn,
+  listAssetLocationsServerFn,
+  createAssetLocationServerFn,
+  updateAssetLocationServerFn,
+  deleteAssetLocationServerFn,
+  getApparatusGearServerFn,
 } from '@/server/assets'
 import { listStaffServerFn } from '@/server/staff'
 import { listFormTemplatesServerFn, getFormTemplateServerFn, submitFormServerFn, listSubmissionsServerFn } from '@/server/forms'
@@ -34,14 +41,16 @@ import type { FormSubmissionView } from '@/lib/form.types'
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/assets/$assetId')({
   head: () => ({ meta: [{ title: 'Asset Detail | Scene Ready' }] }),
   loader: async ({ params }) => {
-    const [assetResult, staffResult] = await Promise.all([
+    const [assetResult, staffResult, apparatusResult] = await Promise.all([
       getAssetServerFn({ data: { orgSlug: params.orgSlug, assetId: params.assetId } }),
       listStaffServerFn({ data: { orgSlug: params.orgSlug } }),
+      listAssetsServerFn({ data: { orgSlug: params.orgSlug, assetType: 'apparatus', limit: 200 } }),
     ])
-    if (!assetResult.success) return { asset: null, staffList: [] }
+    if (!assetResult.success) return { asset: null, staffList: [], apparatusList: [] }
     return {
       asset: assetResult.asset,
       staffList: staffResult.success ? staffResult.members : [],
+      apparatusList: apparatusResult.success ? apparatusResult.assets : [],
     }
   },
   component: AssetDetailPage,
@@ -128,15 +137,21 @@ type StaffMember = { memberId: string; displayName: string; userId: string; emai
 
 function AssetDetailPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { asset: initialAsset, staffList } = Route.useLoaderData()
+  const { asset: initialAsset, staffList, apparatusList } = Route.useLoaderData()
 
   const [asset, setAsset] = useState<AssetDetailView | null>(initialAsset)
-  const [activeTab, setActiveTab] = useState<'details' | 'inspections' | 'audit'>('details')
+  const [activeTab, setActiveTab] = useState<'details' | 'assigned-gear' | 'inspections' | 'audit'>('details')
+
+  // Assigned gear state (apparatus only)
+  const [assignedGear, setAssignedGear] = useState<AssetView[]>([])
+  const [assignedGearLoaded, setAssignedGearLoaded] = useState(false)
 
   // Assignment state
   const [assignMode, setAssignMode] = useState<'staff' | 'apparatus'>('staff')
   const [assignStaffId, setAssignStaffId] = useState('')
   const [assignApparatusId, setAssignApparatusId] = useState('')
+  const [assignLocationId, setAssignLocationId] = useState('')
+  const [assignLocations, setAssignLocations] = useState<AssetLocationView[]>([])
   const [assignBusy, setAssignBusy] = useState(false)
   const [assignError, setAssignError] = useState<string | null>(null)
 
@@ -170,6 +185,20 @@ function AssetDetailPage() {
   const [submissionsTotal, setSubmissionsTotal] = useState(0)
   const [submissionsLoaded, setSubmissionsLoaded] = useState(false)
   const [submissionsOffset, setSubmissionsOffset] = useState(0)
+
+  // Asset locations state (locations defined on this asset)
+  const [locations, setLocations] = useState<AssetLocationView[]>([])
+  const [locationsLoaded, setLocationsLoaded] = useState(false)
+  const [newLocName, setNewLocName] = useState('')
+  const [newLocDesc, setNewLocDesc] = useState('')
+  const [newLocSort, setNewLocSort] = useState(0)
+  const [locBusy, setLocBusy] = useState(false)
+  const [locError, setLocError] = useState<string | null>(null)
+  const [editingLocId, setEditingLocId] = useState<string | null>(null)
+  const [editLocName, setEditLocName] = useState('')
+  const [editLocDesc, setEditLocDesc] = useState('')
+  const [editLocSort, setEditLocSort] = useState(0)
+  const [deletingLocId, setDeletingLocId] = useState<string | null>(null)
 
   // Audit state
   const [auditEntries, setAuditEntries] = useState<AssetAuditEntry[]>([])
@@ -214,6 +243,12 @@ function AssetDetailPage() {
   const isGear = currentAsset.assetType === 'gear'
   const statuses = isGear ? GEAR_STATUSES : APPARATUS_STATUSES
 
+  async function fetchLocationsForApparatus(apparatusId: string) {
+    const result = await listAssetLocationsServerFn({ data: { orgSlug: org.slug, assetId: apparatusId } })
+    if (result.success) setAssignLocations(result.locations)
+    else setAssignLocations([])
+  }
+
   async function handleAssign() {
     if (!isGear) return
     setAssignError(null)
@@ -224,6 +259,7 @@ function AssetDetailPage() {
         assetId: currentAsset.id,
         assignToStaffId: assignMode === 'staff' ? assignStaffId || undefined : undefined,
         assignToApparatusId: assignMode === 'apparatus' ? assignApparatusId || undefined : undefined,
+        assignToLocationId: assignMode === 'apparatus' && assignLocationId ? assignLocationId : undefined,
       },
     })
     setAssignBusy(false)
@@ -231,6 +267,8 @@ function AssetDetailPage() {
     setAsset((a) => a ? { ...a, ...result.asset } : a)
     setAssignStaffId('')
     setAssignApparatusId('')
+    setAssignLocationId('')
+    setAssignLocations([])
   }
 
   async function handleUnassign() {
@@ -366,9 +404,18 @@ function AssetDetailPage() {
     }
   }
 
-  async function handleTabChange(tab: 'details' | 'inspections' | 'audit') {
+  async function loadAssignedGear() {
+    const result = await getApparatusGearServerFn({ data: { orgSlug: org.slug, apparatusId: asset.id } })
+    if (result.success) {
+      setAssignedGear(result.assets)
+      setAssignedGearLoaded(true)
+    }
+  }
+
+  async function handleTabChange(tab: 'details' | 'assigned-gear' | 'inspections' | 'audit') {
     setActiveTab(tab)
     if (tab === 'details' && !schedulesLoaded) await loadSchedules()
+    if (tab === 'assigned-gear' && !assignedGearLoaded) await loadAssignedGear()
     if (tab === 'inspections' && !submissionsLoaded) await loadSubmissions()
     if (tab === 'audit' && !auditLoaded) await loadAudit()
   }
@@ -458,13 +505,13 @@ function AssetDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
-        {(['details', 'inspections', 'audit'] as const).map((tab) => (
+        {(['details', ...(!isGear ? ['assigned-gear'] : []), 'inspections', 'audit'] as Array<'details' | 'assigned-gear' | 'inspections' | 'audit'>).map((tab) => (
           <button
             key={tab}
             onClick={() => handleTabChange(tab)}
-            className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${activeTab === tab ? 'border-navy-700 text-navy-700' : 'border-transparent text-gray-600 hover:text-gray-900'}`}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${activeTab === tab ? 'border-navy-700 text-navy-700' : 'border-transparent text-gray-600 hover:text-gray-900'}`}
           >
-            {tab === 'audit' ? 'Audit Log' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'audit' ? 'Audit Log' : tab === 'assigned-gear' ? 'Assigned Gear' : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
@@ -724,13 +771,22 @@ function AssetDetailPage() {
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Assignment</h3>
               {(currentAsset.assignedToStaffName || currentAsset.assignedToApparatusName) ? (
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-700">
-                    Assigned to: <span className="font-semibold">{currentAsset.assignedToStaffName ?? currentAsset.assignedToApparatusName}</span>
-                  </p>
-                  {canManage && (
-                    <button onClick={() => void handleUnassign()} disabled={assignBusy}
-                      className="px-3 py-1.5 text-xs text-danger border border-danger rounded-lg hover:bg-danger-bg disabled:opacity-60">
-                      {assignBusy ? '…' : 'Unassign'}
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Assigned to: {currentAsset.assignedToStaffName ?? currentAsset.assignedToApparatusName}
+                      {currentAsset.assignedToLocationName && (
+                        <span className="text-gray-500"> / {currentAsset.assignedToLocationName}</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500">{currentAsset.assignedToStaffId ? 'Staff member' : 'Apparatus'}{currentAsset.assignedToLocationName ? ` — ${currentAsset.assignedToLocationName}` : ''}</p>
+                  </div>
+                  {canManage && !isDecommissioned && (
+                    <button
+                      onClick={() => void handleUnassign()}
+                      disabled={assignBusy}
+                      className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-60"
+                    >
+                      {assignBusy ? 'Unassigning…' : 'Unassign'}
                     </button>
                   )}
                 </div>
@@ -744,37 +800,293 @@ function AssetDetailPage() {
                       </label>
                     ))}
                   </div>
-                  <div className="flex gap-2">
-                    {assignMode === 'staff' ? (
+                  {assignMode === 'staff' ? (
+                    <div className="flex gap-2">
                       <select value={assignStaffId} onChange={(e) => setAssignStaffId(e.target.value)} className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700">
                         <option value="">Select staff…</option>
                         {(staffList as StaffMember[]).map((s) => (
                           <option key={s.memberId} value={s.memberId}>{s.displayName}</option>
                         ))}
                       </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={assignApparatusId}
-                        onChange={(e) => setAssignApparatusId(e.target.value)}
-                        placeholder="Apparatus ID"
-                        className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
-                      />
-                    )}
-                    <button onClick={() => void handleAssign()} disabled={assignBusy || (assignMode === 'staff' ? !assignStaffId : !assignApparatusId)}
-                      className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
-                      {assignBusy ? '…' : 'Assign'}
-                    </button>
-                  </div>
+                      <button onClick={() => void handleAssign()} disabled={assignBusy || !assignStaffId} className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
+                        {assignBusy ? '…' : 'Assign'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <select
+                          value={assignApparatusId}
+                          onChange={(e) => {
+                            const id = e.target.value
+                            setAssignApparatusId(id)
+                            setAssignLocationId('')
+                            setAssignLocations([])
+                            if (id) fetchLocationsForApparatus(id)
+                          }}
+                          className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                        >
+                          <option value="">Select apparatus…</option>
+                          {(apparatusList as AssetView[]).filter((a) => a.id !== currentAsset.id && a.status !== 'decommissioned').map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.unitNumber ? `${a.unitNumber} — ` : ''}{a.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button onClick={() => void handleAssign()} disabled={assignBusy || !assignApparatusId} className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
+                          {assignBusy ? '…' : 'Assign'}
+                        </button>
+                      </div>
+                      {assignLocations.length > 0 && (
+                        <select
+                          value={assignLocationId}
+                          onChange={(e) => setAssignLocationId(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                        >
+                          <option value="">No specific location</option>
+                          {assignLocations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>{loc.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
                   {assignError && <p className="text-xs text-danger mt-2">{assignError}</p>}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Asset Locations */}
+          {canManage && !isDecommissioned && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Locations</h3>
+              {!locationsLoaded ? (
+                <button
+                  onClick={async () => {
+                    const result = await listAssetLocationsServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id } })
+                    if (result.success) setLocations(result.locations)
+                    setLocationsLoaded(true)
+                  }}
+                  className="text-sm text-navy-700 hover:underline"
+                >
+                  Load locations…
+                </button>
+              ) : (
+                <>
+                  {locations.length === 0 && <p className="text-sm text-gray-500 mb-3">No locations defined.</p>}
+                  {locations.length > 0 && (
+                    <div className="space-y-2 mb-4">
+                      {locations.map((loc) => (
+                        <div key={loc.id} className="flex items-center justify-between border border-gray-100 rounded-md px-3 py-2">
+                          {editingLocId === loc.id ? (
+                            <div className="flex-1 space-y-2">
+                              <input
+                                type="text"
+                                value={editLocName}
+                                onChange={(e) => setEditLocName(e.target.value)}
+                                className="w-full text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                                placeholder="Location name"
+                              />
+                              <input
+                                type="text"
+                                value={editLocDesc}
+                                onChange={(e) => setEditLocDesc(e.target.value)}
+                                className="w-full text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                                placeholder="Description (optional)"
+                              />
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-gray-500">Order:</label>
+                                <input
+                                  type="number"
+                                  value={editLocSort}
+                                  onChange={(e) => setEditLocSort(parseInt(e.target.value) || 0)}
+                                  className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  disabled={locBusy}
+                                  onClick={async () => {
+                                    setLocBusy(true)
+                                    setLocError(null)
+                                    const result = await updateAssetLocationServerFn({
+                                      data: { orgSlug: org.slug, assetId: currentAsset.id, locationId: loc.id, name: editLocName, description: editLocDesc || null, sortOrder: editLocSort },
+                                    })
+                                    setLocBusy(false)
+                                    if (!result.success) { setLocError(result.error); return }
+                                    setLocations((prev) => prev.map((l) => l.id === loc.id ? result.location : l).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
+                                    setEditingLocId(null)
+                                  }}
+                                  className="px-3 py-1 text-xs bg-navy-700 text-white rounded-md disabled:opacity-60"
+                                >
+                                  {locBusy ? '…' : 'Save'}
+                                </button>
+                                <button onClick={() => setEditingLocId(null)} className="px-3 py-1 text-xs border border-gray-300 rounded-md">Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">{loc.name}</p>
+                                {loc.description && <p className="text-xs text-gray-500">{loc.description}</p>}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => {
+                                    setEditingLocId(loc.id)
+                                    setEditLocName(loc.name)
+                                    setEditLocDesc(loc.description ?? '')
+                                    setEditLocSort(loc.sortOrder)
+                                  }}
+                                  className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
+                                >
+                                  Edit
+                                </button>
+                                {deletingLocId === loc.id ? (
+                                  <button
+                                    disabled={locBusy}
+                                    onClick={async () => {
+                                      setLocBusy(true)
+                                      const result = await deleteAssetLocationServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id, locationId: loc.id } })
+                                      setLocBusy(false)
+                                      if (result.success) setLocations((prev) => prev.filter((l) => l.id !== loc.id))
+                                      setDeletingLocId(null)
+                                    }}
+                                    className="px-2 py-1 text-xs text-danger hover:bg-danger-bg rounded"
+                                  >
+                                    {locBusy ? '…' : 'Confirm'}
+                                  </button>
+                                ) : (
+                                  <button onClick={() => setDeletingLocId(loc.id)} className="px-2 py-1 text-xs text-gray-400 hover:text-danger rounded">
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="border-t border-gray-100 pt-3 space-y-2">
+                    <input
+                      type="text"
+                      value={newLocName}
+                      onChange={(e) => setNewLocName(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                      placeholder="New location name…"
+                    />
+                    <input
+                      type="text"
+                      value={newLocDesc}
+                      onChange={(e) => setNewLocDesc(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                      placeholder="Description (optional)"
+                    />
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-500">Sort order:</label>
+                      <input
+                        type="number"
+                        value={newLocSort}
+                        onChange={(e) => setNewLocSort(parseInt(e.target.value) || 0)}
+                        className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                      />
+                    </div>
+                    {locError && <p className="text-xs text-danger">{locError}</p>}
+                    <button
+                      disabled={locBusy || !newLocName.trim()}
+                      onClick={async () => {
+                        setLocBusy(true)
+                        setLocError(null)
+                        const result = await createAssetLocationServerFn({
+                          data: { orgSlug: org.slug, assetId: currentAsset.id, name: newLocName.trim(), description: newLocDesc || undefined, sortOrder: newLocSort },
+                        })
+                        setLocBusy(false)
+                        if (!result.success) { setLocError(result.error); return }
+                        setLocations((prev) => [...prev, result.location].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
+                        setNewLocName('')
+                        setNewLocDesc('')
+                        setNewLocSort(0)
+                      }}
+                      className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800"
+                    >
+                      {locBusy ? 'Adding…' : 'Add Location'}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}
         </div>
       )}
 
-      {/* Tab: Inspections (Form Submissions) */}
+      {/* Tab: Assigned Gear */}
+      {activeTab === 'assigned-gear' && (() => {
+        if (!assignedGearLoaded) {
+          return (
+            <div className="bg-white border border-gray-200 rounded-lg py-12 text-center">
+              <p className="text-sm text-gray-400">Loading…</p>
+            </div>
+          )
+        }
+        if (assignedGear.length === 0) {
+          return (
+            <div className="bg-white border border-gray-200 rounded-lg py-12 text-center">
+              <p className="text-sm text-gray-500">No gear assigned to this apparatus.</p>
+            </div>
+          )
+        }
+        // Group gear by location
+        const groups = new Map<string | null, AssetView[]>()
+        for (const g of assignedGear) {
+          const key = g.assignedToLocationId ?? null
+          if (!groups.has(key)) groups.set(key, [])
+          groups.get(key)!.push(g)
+        }
+        // Sort: named locations first (by name), then null
+        const sortedKeys = [...groups.keys()].sort((a, b) => {
+          if (a === null) return 1
+          if (b === null) return -1
+          const aName = assignedGear.find(g => g.assignedToLocationId === a)?.assignedToLocationName ?? ''
+          const bName = assignedGear.find(g => g.assignedToLocationId === b)?.assignedToLocationName ?? ''
+          return aName.localeCompare(bName)
+        })
+        return (
+          <div className="space-y-4">
+            {sortedKeys.map((locationId) => {
+              const items = groups.get(locationId)!
+              const locationName = locationId
+                ? (items[0]?.assignedToLocationName ?? locationId)
+                : 'No Location'
+              return (
+                <div key={locationId ?? '__none__'} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500" style={{ fontFamily: 'var(--font-condensed)' }}>{locationName}</h4>
+                  </div>
+                  <table className="min-w-full divide-y divide-gray-100">
+                    <tbody className="divide-y divide-gray-100">
+                      {items.map((g) => (
+                        <tr key={g.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <Link to="/orgs/$orgSlug/assets/$assetId" params={{ orgSlug: org.slug, assetId: g.id }} className="font-medium text-navy-700 hover:underline">
+                              {g.name}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{CATEGORY_LABELS[g.category] ?? g.category}</td>
+                          <td className="px-4 py-3">{statusBadge(g.status)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
+      {/* Tab: Inspections */}
       {activeTab === 'inspections' && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           {submissions.length === 0 && submissionsLoaded ? (
