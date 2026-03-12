@@ -3,6 +3,7 @@ import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
 import { canDo } from '@/lib/rbac'
 import type {
   AssetDetailView,
+  AssetLocationView,
   InspectionView,
   AssetAuditEntry,
   AssetView,
@@ -25,6 +26,10 @@ import {
   setInspectionIntervalServerFn,
   editInspectionServerFn,
   deleteInspectionServerFn,
+  listAssetLocationsServerFn,
+  createAssetLocationServerFn,
+  updateAssetLocationServerFn,
+  deleteAssetLocationServerFn,
 } from '@/server/assets'
 import { listStaffServerFn } from '@/server/staff'
 
@@ -142,8 +147,24 @@ function AssetDetailPage() {
   const [assignMode, setAssignMode] = useState<'staff' | 'apparatus'>('staff')
   const [assignStaffId, setAssignStaffId] = useState('')
   const [assignApparatusId, setAssignApparatusId] = useState('')
+  const [assignLocationId, setAssignLocationId] = useState('')
+  const [assignLocations, setAssignLocations] = useState<AssetLocationView[]>([])
   const [assignBusy, setAssignBusy] = useState(false)
   const [assignError, setAssignError] = useState<string | null>(null)
+
+  // Asset locations state (locations defined on this asset)
+  const [locations, setLocations] = useState<AssetLocationView[]>([])
+  const [locationsLoaded, setLocationsLoaded] = useState(false)
+  const [newLocName, setNewLocName] = useState('')
+  const [newLocDesc, setNewLocDesc] = useState('')
+  const [newLocSort, setNewLocSort] = useState(0)
+  const [locBusy, setLocBusy] = useState(false)
+  const [locError, setLocError] = useState<string | null>(null)
+  const [editingLocId, setEditingLocId] = useState<string | null>(null)
+  const [editLocName, setEditLocName] = useState('')
+  const [editLocDesc, setEditLocDesc] = useState('')
+  const [editLocSort, setEditLocSort] = useState(0)
+  const [deletingLocId, setDeletingLocId] = useState<string | null>(null)
 
   // Inspection state
   const [inspResult, setInspResult] = useState<'pass' | 'fail'>('pass')
@@ -210,6 +231,12 @@ function AssetDetailPage() {
   const isGear = asset.assetType === 'gear'
   const statuses = isGear ? GEAR_STATUSES : APPARATUS_STATUSES
 
+  async function fetchLocationsForApparatus(apparatusId: string) {
+    const result = await listAssetLocationsServerFn({ data: { orgSlug: org.slug, assetId: apparatusId } })
+    if (result.success) setAssignLocations(result.locations)
+    else setAssignLocations([])
+  }
+
   async function handleAssign() {
     if (!isGear) return
     setAssignError(null)
@@ -220,6 +247,7 @@ function AssetDetailPage() {
         assetId: asset.id,
         assignToStaffId: assignMode === 'staff' ? assignStaffId || undefined : undefined,
         assignToApparatusId: assignMode === 'apparatus' ? assignApparatusId || undefined : undefined,
+        assignToLocationId: assignMode === 'apparatus' && assignLocationId ? assignLocationId : undefined,
       },
     })
     setAssignBusy(false)
@@ -230,6 +258,8 @@ function AssetDetailPage() {
     setAsset((a) => a ? { ...a, ...result.asset } : a)
     setAssignStaffId('')
     setAssignApparatusId('')
+    setAssignLocationId('')
+    setAssignLocations([])
   }
 
   async function handleUnassign() {
@@ -632,8 +662,11 @@ function AssetDetailPage() {
                   <div>
                     <p className="text-sm font-medium text-gray-900">
                       Assigned to: {asset.assignedToStaffName ?? asset.assignedToApparatusName}
+                      {asset.assignedToLocationName && (
+                        <span className="text-gray-500"> / {asset.assignedToLocationName}</span>
+                      )}
                     </p>
-                    <p className="text-xs text-gray-500">{asset.assignedToStaffId ? 'Staff member' : 'Apparatus'}</p>
+                    <p className="text-xs text-gray-500">{asset.assignedToStaffId ? 'Staff member' : 'Apparatus'}{asset.assignedToLocationName ? ` — ${asset.assignedToLocationName}` : ''}</p>
                   </div>
                   {canManage && !isDecommissioned && (
                     <button
@@ -671,21 +704,204 @@ function AssetDetailPage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Enter apparatus asset ID…"
-                        value={assignApparatusId}
-                        onChange={(e) => setAssignApparatusId(e.target.value)}
-                        className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
-                      />
-                      <button onClick={handleAssign} disabled={assignBusy || !assignApparatusId} className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
-                        {assignBusy ? '…' : 'Assign'}
-                      </button>
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Enter apparatus asset ID…"
+                          value={assignApparatusId}
+                          onChange={(e) => {
+                            setAssignApparatusId(e.target.value)
+                            setAssignLocationId('')
+                            setAssignLocations([])
+                          }}
+                          onBlur={() => {
+                            if (assignApparatusId.trim()) fetchLocationsForApparatus(assignApparatusId.trim())
+                          }}
+                          className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                        />
+                        <button onClick={handleAssign} disabled={assignBusy || !assignApparatusId} className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
+                          {assignBusy ? '…' : 'Assign'}
+                        </button>
+                      </div>
+                      {assignLocations.length > 0 && (
+                        <select
+                          value={assignLocationId}
+                          onChange={(e) => setAssignLocationId(e.target.value)}
+                          className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                        >
+                          <option value="">No specific location</option>
+                          {assignLocations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>{loc.name}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   )}
                   {assignError && <p className="text-xs text-danger mt-2">{assignError}</p>}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Asset Locations */}
+          {canManage && !isDecommissioned && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Locations</h3>
+              {!locationsLoaded ? (
+                <button
+                  onClick={async () => {
+                    const result = await listAssetLocationsServerFn({ data: { orgSlug: org.slug, assetId: asset.id } })
+                    if (result.success) setLocations(result.locations)
+                    setLocationsLoaded(true)
+                  }}
+                  className="text-sm text-navy-700 hover:underline"
+                >
+                  Load locations…
+                </button>
+              ) : (
+                <>
+                  {locations.length === 0 && <p className="text-sm text-gray-500 mb-3">No locations defined.</p>}
+                  {locations.length > 0 && (
+                    <div className="space-y-2 mb-4">
+                      {locations.map((loc) => (
+                        <div key={loc.id} className="flex items-center justify-between border border-gray-100 rounded-md px-3 py-2">
+                          {editingLocId === loc.id ? (
+                            <div className="flex-1 space-y-2">
+                              <input
+                                type="text"
+                                value={editLocName}
+                                onChange={(e) => setEditLocName(e.target.value)}
+                                className="w-full text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                                placeholder="Location name"
+                              />
+                              <input
+                                type="text"
+                                value={editLocDesc}
+                                onChange={(e) => setEditLocDesc(e.target.value)}
+                                className="w-full text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                                placeholder="Description (optional)"
+                              />
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-gray-500">Order:</label>
+                                <input
+                                  type="number"
+                                  value={editLocSort}
+                                  onChange={(e) => setEditLocSort(parseInt(e.target.value) || 0)}
+                                  className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  disabled={locBusy}
+                                  onClick={async () => {
+                                    setLocBusy(true)
+                                    setLocError(null)
+                                    const result = await updateAssetLocationServerFn({
+                                      data: { orgSlug: org.slug, assetId: asset.id, locationId: loc.id, name: editLocName, description: editLocDesc || null, sortOrder: editLocSort },
+                                    })
+                                    setLocBusy(false)
+                                    if (!result.success) { setLocError(result.error); return }
+                                    setLocations((prev) => prev.map((l) => l.id === loc.id ? result.location : l).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
+                                    setEditingLocId(null)
+                                  }}
+                                  className="px-3 py-1 text-xs bg-navy-700 text-white rounded-md disabled:opacity-60"
+                                >
+                                  {locBusy ? '…' : 'Save'}
+                                </button>
+                                <button onClick={() => setEditingLocId(null)} className="px-3 py-1 text-xs border border-gray-300 rounded-md">Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">{loc.name}</p>
+                                {loc.description && <p className="text-xs text-gray-500">{loc.description}</p>}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => {
+                                    setEditingLocId(loc.id)
+                                    setEditLocName(loc.name)
+                                    setEditLocDesc(loc.description ?? '')
+                                    setEditLocSort(loc.sortOrder)
+                                  }}
+                                  className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
+                                >
+                                  Edit
+                                </button>
+                                {deletingLocId === loc.id ? (
+                                  <button
+                                    disabled={locBusy}
+                                    onClick={async () => {
+                                      setLocBusy(true)
+                                      const result = await deleteAssetLocationServerFn({ data: { orgSlug: org.slug, assetId: asset.id, locationId: loc.id } })
+                                      setLocBusy(false)
+                                      if (result.success) setLocations((prev) => prev.filter((l) => l.id !== loc.id))
+                                      setDeletingLocId(null)
+                                    }}
+                                    className="px-2 py-1 text-xs text-danger hover:bg-danger-bg rounded"
+                                  >
+                                    {locBusy ? '…' : 'Confirm'}
+                                  </button>
+                                ) : (
+                                  <button onClick={() => setDeletingLocId(loc.id)} className="px-2 py-1 text-xs text-gray-400 hover:text-danger rounded">
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="border-t border-gray-100 pt-3 space-y-2">
+                    <input
+                      type="text"
+                      value={newLocName}
+                      onChange={(e) => setNewLocName(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                      placeholder="New location name…"
+                    />
+                    <input
+                      type="text"
+                      value={newLocDesc}
+                      onChange={(e) => setNewLocDesc(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                      placeholder="Description (optional)"
+                    />
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-500">Sort order:</label>
+                      <input
+                        type="number"
+                        value={newLocSort}
+                        onChange={(e) => setNewLocSort(parseInt(e.target.value) || 0)}
+                        className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                      />
+                    </div>
+                    {locError && <p className="text-xs text-danger">{locError}</p>}
+                    <button
+                      disabled={locBusy || !newLocName.trim()}
+                      onClick={async () => {
+                        setLocBusy(true)
+                        setLocError(null)
+                        const result = await createAssetLocationServerFn({
+                          data: { orgSlug: org.slug, assetId: asset.id, name: newLocName.trim(), description: newLocDesc || undefined, sortOrder: newLocSort },
+                        })
+                        setLocBusy(false)
+                        if (!result.success) { setLocError(result.error); return }
+                        setLocations((prev) => [...prev, result.location].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
+                        setNewLocName('')
+                        setNewLocDesc('')
+                        setNewLocSort(0)
+                      }}
+                      className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800"
+                    >
+                      {locBusy ? 'Adding…' : 'Add Location'}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}

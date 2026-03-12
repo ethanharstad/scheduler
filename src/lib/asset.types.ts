@@ -96,6 +96,18 @@ export const GEAR_STATUSES: GearStatus[] = [
 ]
 
 // ---------------------------------------------------------------------------
+// Asset Location types
+// ---------------------------------------------------------------------------
+
+export interface AssetLocationView {
+  id: string
+  assetId: string
+  name: string
+  description: string | null
+  sortOrder: number
+}
+
+// ---------------------------------------------------------------------------
 // View types
 // ---------------------------------------------------------------------------
 
@@ -114,6 +126,8 @@ export interface AssetView {
   assignedToStaffName: string | null
   assignedToApparatusId: string | null
   assignedToApparatusName: string | null
+  assignedToLocationId: string | null
+  assignedToLocationName: string | null
   expirationDate: string | null
   nextInspectionDue: string | null
   createdAt: string
@@ -259,6 +273,7 @@ export interface AssignGearInput {
   assetId: string
   assignToStaffId?: string
   assignToApparatusId?: string
+  assignToLocationId?: string
 }
 export type AssignGearOutput =
   | { success: true; asset: AssetView }
@@ -374,4 +389,48 @@ export interface GetAssetAuditLogInput {
 }
 export type GetAssetAuditLogOutput =
   | { success: true; entries: AssetAuditEntry[]; total: number }
+  | { success: false; error: 'UNAUTHORIZED' | 'NOT_FOUND' }
+
+// ---------------------------------------------------------------------------
+// Asset Location CRUD I/O types
+// ---------------------------------------------------------------------------
+
+export interface CreateAssetLocationInput {
+  orgSlug: string
+  assetId: string
+  name: string
+  description?: string
+  sortOrder?: number
+}
+export type CreateAssetLocationOutput =
+  | { success: true; location: AssetLocationView }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'DUPLICATE_NAME' }
+
+export interface UpdateAssetLocationInput {
+  orgSlug: string
+  assetId: string
+  locationId: string
+  name?: string
+  description?: string | null
+  sortOrder?: number
+}
+export type UpdateAssetLocationOutput =
+  | { success: true; location: AssetLocationView }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'DUPLICATE_NAME' }
+
+export interface DeleteAssetLocationInput {
+  orgSlug: string
+  assetId: string
+  locationId: string
+}
+export type DeleteAssetLocationOutput =
+  | { success: true }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' }
+
+export interface ListAssetLocationsInput {
+  orgSlug: string
+  assetId: string
+}
+export type ListAssetLocationsOutput =
+  | { success: true; locations: AssetLocationView[] }
   | { success: false; error: 'UNAUTHORIZED' | 'NOT_FOUND' }

@@ -408,6 +408,7 @@ CREATE TABLE IF NOT EXISTS asset (
   unit_number               TEXT,
   assigned_to_staff_id      TEXT REFERENCES staff_member(id) ON DELETE SET NULL,
   assigned_to_apparatus_id  TEXT REFERENCES asset(id) ON DELETE SET NULL,
+  assigned_to_location_id   TEXT REFERENCES asset_location(id) ON DELETE SET NULL,
   created_at                TEXT NOT NULL,
   updated_at                TEXT NOT NULL,
   CHECK (asset_type IN ('apparatus', 'gear')),
@@ -436,6 +437,24 @@ CREATE INDEX IF NOT EXISTS idx_asset_expiration
 
 CREATE INDEX IF NOT EXISTS idx_asset_inspection_due
   ON asset(org_id, next_inspection_due) WHERE next_inspection_due IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_asset_location_assignment
+  ON asset(assigned_to_location_id) WHERE assigned_to_location_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS asset_location (
+  id          TEXT NOT NULL PRIMARY KEY,
+  org_id      TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  asset_id    TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  description TEXT,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE(asset_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_asset_location_asset
+  ON asset_location(asset_id, sort_order);
 
 CREATE TABLE IF NOT EXISTS asset_inspection (
   id                  TEXT NOT NULL PRIMARY KEY,
