@@ -49,6 +49,9 @@ import type {
   CheckPositionEligibilityOutput,
   GetExpiringCertsOutput,
   GetStaffMemberDetailsOutput,
+  OrgCertView,
+  ListOrgCertsInput,
+  ListOrgCertsOutput,
 } from '@/lib/qualifications.types'
 
 // ---------------------------------------------------------------------------
@@ -1690,4 +1693,89 @@ export const getStaffMemberDetailsServerFn = createServerFn({ method: 'GET' })
     }
 
     return { success: true, staffMember, certs }
+  })
+
+// ---------------------------------------------------------------------------
+// I. Org-wide certification status
+// ---------------------------------------------------------------------------
+
+function orgToday(scheduleDayStart: string): string {
+  const now = new Date()
+  const [h, m] = scheduleDayStart.split(':').map(Number)
+  const dayStartMs = ((h ?? 0) * 60 + (m ?? 0)) * 60 * 1000
+  const utcMs = now.getUTCHours() * 3600000 + now.getUTCMinutes() * 60000
+  const effectiveDate = utcMs < dayStartMs ? new Date(now.getTime() - 86400000) : now
+  return effectiveDate.toISOString().slice(0, 10)
+}
+
+export const listOrgCertsServerFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: ListOrgCertsInput) => d)
+  .handler(async (ctx): Promise<ListOrgCertsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership || !canDo(membership.role, 'view-certifications')) {
+      return { success: false, error: 'UNAUTHORIZED' }
+    }
+
+    type OrgRow = { schedule_day_start: string }
+    const orgRow = await env.DB.prepare(
+      `SELECT schedule_day_start FROM organization WHERE id = ?`,
+    ).bind(membership.orgId).first<OrgRow>()
+    const today = orgToday(orgRow?.schedule_day_start ?? '00:00')
+
+    const soonDate = new Date(today + 'T00:00:00Z')
+    soonDate.setUTCDate(soonDate.getUTCDate() + 30)
+    const soonStr = soonDate.toISOString().slice(0, 10)
+
+    type Row = {
+      id: string
+      staff_member_id: string
+      staff_member_name: string
+      cert_type_id: string
+      cert_type_name: string
+      cert_level_id: string | null
+      cert_level_name: string | null
+      issued_at: string | null
+      expires_at: string | null
+      cert_number: string | null
+      notes: string | null
+      status: string
+    }
+
+    const rows = await env.DB.prepare(
+      `SELECT sc.id, sc.staff_member_id, sm.name AS staff_member_name,
+              sc.cert_type_id, ct.name AS cert_type_name,
+              sc.cert_level_id, cl.name AS cert_level_name,
+              sc.issued_at, sc.expires_at, sc.cert_number, sc.notes, sc.status
+       FROM staff_certification sc
+       JOIN staff_member sm ON sm.id = sc.staff_member_id
+       JOIN cert_type ct ON ct.id = sc.cert_type_id
+       LEFT JOIN cert_level cl ON cl.id = sc.cert_level_id
+       WHERE sc.org_id = ? AND sm.status != 'removed'
+       ORDER BY sm.name ASC, ct.name ASC`,
+    ).bind(membership.orgId).all<Row>()
+
+    const certs: OrgCertView[] = (rows.results ?? []).map((r) => ({
+      id: r.id,
+      staffMemberId: r.staff_member_id,
+      staffMemberName: r.staff_member_name,
+      certTypeId: r.cert_type_id,
+      certTypeName: r.cert_type_name,
+      certLevelId: r.cert_level_id,
+      certLevelName: r.cert_level_name,
+      issuedAt: r.issued_at,
+      expiresAt: r.expires_at,
+      certNumber: r.cert_number,
+      notes: r.notes,
+      status: r.status as OrgCertView['status'],
+      isExpiringSoon:
+        r.status === 'active' &&
+        r.expires_at !== null &&
+        r.expires_at > today &&
+        r.expires_at <= soonStr,
+    }))
+
+    return { success: true, certs }
   })

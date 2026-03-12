@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Award, Star, Briefcase, X, Check } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
-import type { RankView, CertTypeView, CertLevelView, PositionView } from '@/lib/qualifications.types'
+import type { RankView, CertTypeView, PositionView } from '@/lib/qualifications.types'
 import {
   listRanksServerFn,
   createRankServerFn,
@@ -1001,8 +1001,21 @@ function QualificationsPage() {
   return (
     <div className="max-w-4xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-navy-700 mb-1">Qualifications</h1>
-        <p className="text-gray-500 text-sm">Manage ranks, certifications, and named shift positions for {org.name}.</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-navy-700 mb-1">Qualifications</h1>
+            <p className="text-gray-500 text-sm">Manage ranks, certifications, and named shift positions for {org.name}.</p>
+          </div>
+          {canDo(userRole, 'view-certifications') && (
+            <Link
+              to="/orgs/$orgSlug/qualifications/certifications"
+              params={{ orgSlug: org.slug }}
+              className="shrink-0 text-sm text-navy-600 hover:text-navy-800 font-medium"
+            >
+              View Certification Status →
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}

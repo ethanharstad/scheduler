@@ -234,3 +234,24 @@ export type GetExpiringCertsOutput =
 export type GetStaffMemberDetailsOutput =
   | { success: true; staffMember: StaffMemberDetailView; certs: StaffCertView[] }
   | { success: false; error: 'UNAUTHORIZED' | 'NOT_FOUND' }
+
+export interface OrgCertView {
+  id: string
+  staffMemberId: string
+  staffMemberName: string
+  certTypeId: string
+  certTypeName: string
+  certLevelId: string | null
+  certLevelName: string | null
+  issuedAt: string | null
+  expiresAt: string | null
+  certNumber: string | null
+  notes: string | null
+  status: 'active' | 'expired' | 'revoked'
+  isExpiringSoon: boolean
+}
+
+export type ListOrgCertsInput = { orgSlug: string }
+export type ListOrgCertsOutput =
+  | { success: true; certs: OrgCertView[] }
+  | { success: false; error: 'UNAUTHORIZED' }

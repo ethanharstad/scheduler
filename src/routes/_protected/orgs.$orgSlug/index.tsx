@@ -2,7 +2,7 @@ import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
 import { AlertTriangle, Calendar, Clock, Shield, Users, Wrench } from 'lucide-react'
 import { listStaffServerFn } from '@/server/staff'
 import { listPlatoonsServerFn } from '@/server/platoons'
-import { getTodayAssignmentsServerFn, getMyUpcomingShiftsServerFn } from '@/server/schedule'
+import { getTodayAssignmentsServerFn, getMyUpcomingShiftsServerFn, listSchedulesServerFn } from '@/server/schedule'
 import { getExpiringCertsServerFn } from '@/server/qualifications'
 import { listPendingTimeOffServerFn } from '@/server/constraints'
 import { getExpiringAssetsServerFn, getOverdueInspectionsServerFn } from '@/server/assets'
@@ -18,7 +18,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
   }),
   loader: async ({ params }) => {
     const today = new Date().toISOString().slice(0, 10)
-    const [staffResult, platoonsResult, todayResult, expiringResult, pendingTimeOffResult, expiringAssetsResult, overdueInspectionsResult, myShiftsResult] = await Promise.all([
+    const [staffResult, platoonsResult, todayResult, expiringResult, pendingTimeOffResult, expiringAssetsResult, overdueInspectionsResult, myShiftsResult, schedulesResult] = await Promise.all([
       listStaffServerFn({ data: { orgSlug: params.orgSlug } }),
       listPlatoonsServerFn({ data: { orgSlug: params.orgSlug } }),
       getTodayAssignmentsServerFn({ data: { orgSlug: params.orgSlug, date: today } }),
@@ -27,6 +27,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
       getExpiringAssetsServerFn({ data: { orgSlug: params.orgSlug, lookaheadDays: 30 } }).catch(() => null),
       getOverdueInspectionsServerFn({ data: { orgSlug: params.orgSlug } }).catch(() => null),
       getMyUpcomingShiftsServerFn({ data: { orgSlug: params.orgSlug } }).catch(() => null),
+      listSchedulesServerFn({ data: { orgSlug: params.orgSlug } }).catch(() => null),
     ])
     const members = staffResult.success ? staffResult.members : []
     const platoons = platoonsResult.success ? platoonsResult.platoons : []
@@ -36,6 +37,10 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
     const expiringAssets = expiringAssetsResult?.success ? expiringAssetsResult.assets : []
     const overdueInspections = overdueInspectionsResult?.success ? overdueInspectionsResult.assets : []
     const myUpcomingShifts = myShiftsResult && myShiftsResult.success ? myShiftsResult.shifts : []
+    const schedules = schedulesResult?.success ? schedulesResult.schedules : []
+    const currentSchedule = schedules.find(
+      (s) => s.status === 'published' && s.startDate <= today && s.endDate >= today
+    ) ?? null
     return {
       activeCount: members.filter((m) => m.status !== 'pending').length,
       totalCount: members.length,
@@ -46,6 +51,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
       expiringAssets,
       overdueInspections,
       myUpcomingShifts,
+      currentScheduleId: currentSchedule?.id ?? null,
       today,
     }
   },
@@ -62,40 +68,114 @@ function formatTime(datetime: string): string {
   return `${hour12}:${m} ${ampm}`
 }
 
-function OnShiftToday({ assignments, today }: { assignments: TodayAssignment[]; today: string }) {
-  const label = new Date(today + 'T00:00:00').toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
+function ScheduleWidget({
+  assignments,
+  shifts,
+  orgSlug,
+  today,
+  currentScheduleId,
+}: {
+  assignments: TodayAssignment[]
+  shifts: UpcomingShift[]
+  orgSlug: string
+  today: string
+  currentScheduleId: string | null
+}) {
+  const todayLabel = new Date(today + 'T00:00:00').toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
     day: 'numeric',
   })
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
-          On Shift Today
-        </h2>
-        <span className="text-xs text-gray-400">{label}</span>
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-navy-600" />
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+            Schedule
+          </h2>
+        </div>
+        {currentScheduleId ? (
+          <Link
+            to="/orgs/$orgSlug/schedules/$scheduleId"
+            params={{ orgSlug, scheduleId: currentScheduleId }}
+            className="text-xs text-navy-600 hover:text-navy-800 font-medium"
+          >
+            View schedule &rarr;
+          </Link>
+        ) : (
+          <Link
+            to="/orgs/$orgSlug/schedules"
+            params={{ orgSlug }}
+            className="text-xs text-navy-600 hover:text-navy-800 font-medium"
+          >
+            View schedule &rarr;
+          </Link>
+        )}
       </div>
-      {assignments.length === 0 ? (
-        <p className="text-sm text-gray-400">No assignments scheduled for today.</p>
-      ) : (
-        <ul className="divide-y divide-gray-100">
-          {assignments.map((a, i) => (
-            <li key={i} className="flex items-center justify-between py-2">
-              <span className="text-sm font-medium text-navy-700">{a.staffMemberName}</span>
-              <div className="flex items-center gap-3 text-xs text-gray-500">
-                {a.position && (
-                  <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium" style={{ fontFamily: 'var(--font-condensed)' }}>
-                    {a.position}
-                  </span>
-                )}
-                <span>{formatTime(a.startDatetime)} – {formatTime(a.endDatetime)}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="grid grid-cols-2 divide-x divide-gray-100">
+        {/* On Shift Today */}
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+              On Shift Today
+            </span>
+            <span className="text-xs text-gray-400">{todayLabel}</span>
+          </div>
+          {assignments.length === 0 ? (
+            <p className="text-sm text-gray-400">No assignments today.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {assignments.map((a, i) => (
+                <li key={i} className="flex items-center justify-between py-2">
+                  <span className="text-sm font-medium text-navy-700">{a.staffMemberName}</span>
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    {a.position && (
+                      <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium" style={{ fontFamily: 'var(--font-condensed)' }}>
+                        {a.position}
+                      </span>
+                    )}
+                    <span className="whitespace-nowrap">{formatTime(a.startDatetime)} – {formatTime(a.endDatetime)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {/* My Upcoming Shifts */}
+        <div className="p-5">
+          <div className="mb-3">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+              My Upcoming Shifts
+            </span>
+          </div>
+          {shifts.length === 0 ? (
+            <p className="text-sm text-gray-400">No upcoming shifts scheduled.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {shifts.map((s, i) => {
+                const dateLabel = new Date(s.startDatetime).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+                return (
+                  <li key={i} className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-medium text-navy-700 whitespace-nowrap">{dateLabel}</span>
+                      {s.position && (
+                        <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium" style={{ fontFamily: 'var(--font-condensed)' }}>
+                          {s.position}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 whitespace-nowrap ml-3">
+                      {formatTime(s.startDatetime)} – {formatTime(s.endDatetime)}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -205,127 +285,156 @@ function AssetComplianceWidget({
   orgSlug: string
   today: string
 }) {
-  if (expiringAssets.length === 0 && overdueInspections.length === 0) return null
+  const actuallyOverdue = overdueInspections.filter(
+    (a) => a.nextInspectionDue && daysUntil(a.nextInspectionDue, today) < 0
+  )
+  const dueSoon = overdueInspections.filter(
+    (a) => !a.nextInspectionDue || daysUntil(a.nextInspectionDue, today) >= 0
+  )
+
+  const totalAlerts = actuallyOverdue.length + dueSoon.length + expiringAssets.length
+  const hasOverdue = actuallyOverdue.length > 0
+
+  const allClear = totalAlerts === 0
+
   return (
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-      <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100">
-        <Wrench className="w-4 h-4 text-navy-600" />
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
-          Asset Compliance Alerts
-        </h2>
-      </div>
-      {overdueInspections.length > 0 && (
-        <div className="px-6 py-4 bg-danger-bg border-b border-danger/20">
-          <div className="flex items-center gap-2 mb-2">
-            <Wrench className="w-3.5 h-3.5 text-danger" />
-            <span className="text-xs font-semibold text-danger uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
-              Overdue Inspections
-            </span>
-          </div>
-          <ul className="divide-y divide-danger/10">
-            {overdueInspections.map((a) => {
-              const days = a.nextInspectionDue ? daysUntil(a.nextInspectionDue, today) : null
-              return (
-                <li key={a.id} className="flex items-center justify-between py-2">
-                  <Link
-                    to="/orgs/$orgSlug/assets"
-                    params={{ orgSlug }}
-                    className="text-sm font-medium text-navy-700 hover:underline"
-                  >
-                    {a.name}
-                  </Link>
-                  <span className="text-xs text-danger font-semibold">
-                    {days === null ? 'Overdue' : days === 0 ? 'Due today' : days < 0 ? `${Math.abs(days)}d overdue` : `Due in ${days}d`}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
-      {expiringAssets.length > 0 && (
-        <div className="px-6 py-4 bg-warning-bg">
-          <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-warning" />
-            <span className="text-xs font-semibold text-warning uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
-              Expiring Within 30 Days
-            </span>
-          </div>
-          <ul className="divide-y divide-warning/10">
-            {expiringAssets.map((a) => {
-              const days = a.expirationDate ? daysUntil(a.expirationDate, today) : null
-              return (
-                <li key={a.id} className="flex items-center justify-between py-2">
-                  <Link
-                    to="/orgs/$orgSlug/assets"
-                    params={{ orgSlug }}
-                    className="text-sm font-medium text-navy-700 hover:underline"
-                  >
-                    {a.name}
-                  </Link>
-                  <span className="text-xs text-warning font-semibold">
-                    {days === null ? 'Expiring' : days === 0 ? 'Today' : `${days}d`}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function MyUpcomingShiftsWidget({ shifts, orgSlug }: { shifts: UpcomingShift[]; orgSlug: string }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-navy-600" />
+          <Wrench className="w-4 h-4 text-navy-600" />
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
-            My Upcoming Shifts
+            Asset Compliance Alerts
           </h2>
+          {!allClear && (
+            <span
+              className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-bold ${hasOverdue ? 'bg-danger text-white' : 'bg-warning text-white'}`}
+              style={{ fontFamily: 'var(--font-condensed)', minWidth: '1.5rem' }}
+            >
+              {totalAlerts}
+            </span>
+          )}
         </div>
         <Link
-          to="/orgs/$orgSlug/schedules"
+          to="/orgs/$orgSlug/assets"
           params={{ orgSlug }}
           className="text-xs text-navy-600 hover:text-navy-800 font-medium"
         >
-          View schedule &rarr;
+          View assets &rarr;
         </Link>
       </div>
-      {shifts.length === 0 ? (
-        <p className="text-sm text-gray-400">No upcoming shifts scheduled.</p>
+      {allClear ? (
+        <div className="px-6 py-5 flex items-center gap-3 bg-success-bg">
+          <Shield className="w-4 h-4 text-success flex-shrink-0" />
+          <span className="text-sm text-success font-medium">All assets are compliant</span>
+        </div>
       ) : (
-        <ul className="divide-y divide-gray-100">
-          {shifts.map((s, i) => {
-            const startDate = new Date(s.startDatetime)
-            const dateLabel = startDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-            return (
-              <li key={i} className="flex items-center justify-between py-2.5">
-                <div>
-                  <span className="text-sm font-medium text-navy-700">{dateLabel}</span>
-                  {s.position && (
-                    <span className="ml-2 px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium" style={{ fontFamily: 'var(--font-condensed)' }}>
-                      {s.position}
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs text-gray-500 whitespace-nowrap ml-3">
-                  {formatTime(s.startDatetime)} – {formatTime(s.endDatetime)}
+        <>
+          {actuallyOverdue.length > 0 && (
+            <div className={`px-6 py-4 bg-danger-bg border-b border-danger/20 ${(dueSoon.length > 0 || expiringAssets.length > 0) ? '' : ''}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-3.5 h-3.5 text-danger" />
+                <span className="text-xs font-semibold text-danger uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+                  Overdue Inspections
                 </span>
-              </li>
-            )
-          })}
-        </ul>
+              </div>
+              <ul className="divide-y divide-danger/10">
+                {actuallyOverdue.map((a) => {
+                  const days = a.nextInspectionDue ? daysUntil(a.nextInspectionDue, today) : null
+                  return (
+                    <li key={a.id} className="flex items-center justify-between py-2">
+                      <Link
+                        to="/orgs/$orgSlug/assets"
+                        params={{ orgSlug }}
+                        className="text-sm font-medium text-navy-700 hover:underline"
+                      >
+                        {a.name}
+                      </Link>
+                      <span className="text-xs text-danger font-semibold">
+                        {days === null ? 'Overdue' : `${Math.abs(days)}d overdue`}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {dueSoon.length > 0 && (
+            <div className={`px-6 py-4 bg-warning-bg border-b border-warning/20`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-3.5 h-3.5 text-warning" />
+                <span className="text-xs font-semibold text-warning uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+                  Inspections Due Soon
+                </span>
+              </div>
+              <ul className="divide-y divide-warning/10">
+                {dueSoon.map((a) => {
+                  const days = a.nextInspectionDue ? daysUntil(a.nextInspectionDue, today) : null
+                  return (
+                    <li key={a.id} className="flex items-center justify-between py-2">
+                      <Link
+                        to="/orgs/$orgSlug/assets"
+                        params={{ orgSlug }}
+                        className="text-sm font-medium text-navy-700 hover:underline"
+                      >
+                        {a.name}
+                      </Link>
+                      <span className="text-xs text-warning font-semibold">
+                        {days === null ? 'Due soon' : days === 0 ? 'Due today' : `Due in ${days}d`}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {expiringAssets.length > 0 && (
+            <div className="px-6 py-4 bg-warning-bg">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+                <span className="text-xs font-semibold text-warning uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+                  Expiring Within 30 Days
+                </span>
+              </div>
+              <ul className="divide-y divide-warning/10">
+                {expiringAssets.map((a) => {
+                  const days = a.expirationDate ? daysUntil(a.expirationDate, today) : null
+                  const absDate = a.expirationDate
+                    ? new Date(a.expirationDate + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                    : null
+                  return (
+                    <li key={a.id} className="flex items-center justify-between py-2">
+                      <Link
+                        to="/orgs/$orgSlug/assets"
+                        params={{ orgSlug }}
+                        className="text-sm font-medium text-navy-700 hover:underline"
+                      >
+                        {a.name}
+                      </Link>
+                      <span className="text-xs text-warning font-semibold">
+                        {days === null
+                          ? 'Expiring'
+                          : days === 0
+                          ? 'Today'
+                          : days <= 14 && absDate
+                          ? `${absDate} (${days}d)`
+                          : `${days}d`}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
 }
 
+
 function OrgDashboard() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { activeCount, totalCount, platoonCount, todayAssignments, expiringCerts, pendingTimeOff, expiringAssets, overdueInspections, myUpcomingShifts, today } = Route.useLoaderData()
+  const { activeCount, totalCount, platoonCount, todayAssignments, expiringCerts, pendingTimeOff, expiringAssets, overdueInspections, myUpcomingShifts, currentScheduleId, today } = Route.useLoaderData()
   const canViewCerts = canDo(userRole, 'view-certifications')
   const canApproveTimeOff = canDo(userRole, 'approve-time-off')
   const canManageAssets = canDo(userRole, 'manage-assets')
@@ -353,8 +462,7 @@ function OrgDashboard() {
           today={today}
         />
       )}
-      <MyUpcomingShiftsWidget shifts={myUpcomingShifts} orgSlug={org.slug} />
-      <OnShiftToday assignments={todayAssignments} today={today} />
+      <ScheduleWidget assignments={todayAssignments} shifts={myUpcomingShifts} orgSlug={org.slug} today={today} currentScheduleId={currentScheduleId} />
 
       <div className="grid grid-cols-2 gap-4">
         <Link

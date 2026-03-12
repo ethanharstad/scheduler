@@ -72,6 +72,9 @@ function useBreadcrumbs(): Crumb[] {
       return [{ label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: scheduleName }]
     }
     if (pathname === `${base}/qualifications`) return [{ label: 'Qualifications' }]
+    if (pathname === `${base}/qualifications/certifications`) {
+      return [{ label: 'Qualifications', to: '/orgs/$orgSlug/qualifications', params: { orgSlug: slug } }, { label: 'Certification Status' }]
+    }
     if (pathname.startsWith(`${base}/qualifications/positions/`)) {
       return [{ label: 'Qualifications', to: '/orgs/$orgSlug/qualifications', params: { orgSlug: slug } }, { label: 'Eligibility' }]
     }
