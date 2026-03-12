@@ -39,8 +39,7 @@ ALTER TABLE form_submission ADD COLUMN schedule_id TEXT REFERENCES asset_inspect
 --    (SQLite cannot alter CHECK constraints in-place)
 DROP INDEX IF EXISTS idx_audit_asset;
 DROP INDEX IF EXISTS idx_audit_actor;
-
-ALTER TABLE asset_audit_log RENAME TO _asset_audit_log_old;
+DROP TABLE IF EXISTS asset_audit_log;
 
 CREATE TABLE asset_audit_log (
   id               TEXT NOT NULL PRIMARY KEY,
@@ -61,13 +60,6 @@ CREATE TABLE asset_audit_log (
     'asset.schedule_deleted'
   ))
 );
-
-INSERT INTO asset_audit_log (id, org_id, actor_staff_id, action, asset_id, detail_json, created_at)
-  SELECT id, org_id, actor_staff_id, action, asset_id, detail_json, created_at
-  FROM _asset_audit_log_old
-  WHERE action NOT IN ('asset.inspected', 'asset.inspection_edited', 'asset.inspection_deleted');
-
-DROP TABLE _asset_audit_log_old;
 
 CREATE INDEX IF NOT EXISTS idx_audit_asset
   ON asset_audit_log(org_id, asset_id, created_at DESC);
