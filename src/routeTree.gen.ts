@@ -24,6 +24,7 @@ import { Route as ProtectedOrgsIndexRouteImport } from './routes/_protected/orgs
 import { Route as ProtectedOrgsOrgSlugRouteImport } from './routes/_protected/orgs.$orgSlug'
 import { Route as ProtectedAdminAdminRouteImport } from './routes/_protected/_admin/admin'
 import { Route as ProtectedOrgsOrgSlugIndexRouteImport } from './routes/_protected/orgs.$orgSlug/index'
+import { Route as ProtectedOrgsOrgSlugStationsRouteImport } from './routes/_protected/orgs.$orgSlug/stations'
 import { Route as ProtectedOrgsOrgSlugStaffRouteImport } from './routes/_protected/orgs.$orgSlug/staff'
 import { Route as ProtectedOrgsOrgSlugSettingsRouteImport } from './routes/_protected/orgs.$orgSlug/settings'
 import { Route as ProtectedOrgsOrgSlugSchedulesRouteImport } from './routes/_protected/orgs.$orgSlug/schedules'
@@ -130,6 +131,12 @@ const ProtectedOrgsOrgSlugIndexRoute =
   ProtectedOrgsOrgSlugIndexRouteImport.update({
     id: '/',
     path: '/',
+    getParentRoute: () => ProtectedOrgsOrgSlugRoute,
+  } as any)
+const ProtectedOrgsOrgSlugStationsRoute =
+  ProtectedOrgsOrgSlugStationsRouteImport.update({
+    id: '/stations',
+    path: '/stations',
     getParentRoute: () => ProtectedOrgsOrgSlugRoute,
   } as any)
 const ProtectedOrgsOrgSlugStaffRoute =
@@ -353,6 +360,7 @@ export interface FileRoutesByFullPath {
   '/orgs/$orgSlug/schedules': typeof ProtectedOrgsOrgSlugSchedulesRouteWithChildren
   '/orgs/$orgSlug/settings': typeof ProtectedOrgsOrgSlugSettingsRoute
   '/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
+  '/orgs/$orgSlug/stations': typeof ProtectedOrgsOrgSlugStationsRoute
   '/orgs/$orgSlug/': typeof ProtectedOrgsOrgSlugIndexRoute
   '/orgs/$orgSlug/assets/$assetId': typeof ProtectedOrgsOrgSlugAssetsAssetIdRoute
   '/orgs/$orgSlug/assets/my-gear': typeof ProtectedOrgsOrgSlugAssetsMyGearRoute
@@ -395,6 +403,7 @@ export interface FileRoutesByTo {
   '/orgs/$orgSlug/availability': typeof ProtectedOrgsOrgSlugAvailabilityRoute
   '/orgs/$orgSlug/members': typeof ProtectedOrgsOrgSlugMembersRoute
   '/orgs/$orgSlug/settings': typeof ProtectedOrgsOrgSlugSettingsRoute
+  '/orgs/$orgSlug/stations': typeof ProtectedOrgsOrgSlugStationsRoute
   '/orgs/$orgSlug': typeof ProtectedOrgsOrgSlugIndexRoute
   '/orgs/$orgSlug/assets/$assetId': typeof ProtectedOrgsOrgSlugAssetsAssetIdRoute
   '/orgs/$orgSlug/assets/my-gear': typeof ProtectedOrgsOrgSlugAssetsMyGearRoute
@@ -444,6 +453,7 @@ export interface FileRoutesById {
   '/_protected/orgs/$orgSlug/schedules': typeof ProtectedOrgsOrgSlugSchedulesRouteWithChildren
   '/_protected/orgs/$orgSlug/settings': typeof ProtectedOrgsOrgSlugSettingsRoute
   '/_protected/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
+  '/_protected/orgs/$orgSlug/stations': typeof ProtectedOrgsOrgSlugStationsRoute
   '/_protected/orgs/$orgSlug/': typeof ProtectedOrgsOrgSlugIndexRoute
   '/_protected/orgs/$orgSlug/assets/$assetId': typeof ProtectedOrgsOrgSlugAssetsAssetIdRoute
   '/_protected/orgs/$orgSlug/assets/my-gear': typeof ProtectedOrgsOrgSlugAssetsMyGearRoute
@@ -494,6 +504,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/schedules'
     | '/orgs/$orgSlug/settings'
     | '/orgs/$orgSlug/staff'
+    | '/orgs/$orgSlug/stations'
     | '/orgs/$orgSlug/'
     | '/orgs/$orgSlug/assets/$assetId'
     | '/orgs/$orgSlug/assets/my-gear'
@@ -536,6 +547,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/availability'
     | '/orgs/$orgSlug/members'
     | '/orgs/$orgSlug/settings'
+    | '/orgs/$orgSlug/stations'
     | '/orgs/$orgSlug'
     | '/orgs/$orgSlug/assets/$assetId'
     | '/orgs/$orgSlug/assets/my-gear'
@@ -584,6 +596,7 @@ export interface FileRouteTypes {
     | '/_protected/orgs/$orgSlug/schedules'
     | '/_protected/orgs/$orgSlug/settings'
     | '/_protected/orgs/$orgSlug/staff'
+    | '/_protected/orgs/$orgSlug/stations'
     | '/_protected/orgs/$orgSlug/'
     | '/_protected/orgs/$orgSlug/assets/$assetId'
     | '/_protected/orgs/$orgSlug/assets/my-gear'
@@ -726,6 +739,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/orgs/$orgSlug/'
       preLoaderRoute: typeof ProtectedOrgsOrgSlugIndexRouteImport
+      parentRoute: typeof ProtectedOrgsOrgSlugRoute
+    }
+    '/_protected/orgs/$orgSlug/stations': {
+      id: '/_protected/orgs/$orgSlug/stations'
+      path: '/stations'
+      fullPath: '/orgs/$orgSlug/stations'
+      preLoaderRoute: typeof ProtectedOrgsOrgSlugStationsRouteImport
       parentRoute: typeof ProtectedOrgsOrgSlugRoute
     }
     '/_protected/orgs/$orgSlug/staff': {
@@ -1135,6 +1155,7 @@ interface ProtectedOrgsOrgSlugRouteChildren {
   ProtectedOrgsOrgSlugSchedulesRoute: typeof ProtectedOrgsOrgSlugSchedulesRouteWithChildren
   ProtectedOrgsOrgSlugSettingsRoute: typeof ProtectedOrgsOrgSlugSettingsRoute
   ProtectedOrgsOrgSlugStaffRoute: typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
+  ProtectedOrgsOrgSlugStationsRoute: typeof ProtectedOrgsOrgSlugStationsRoute
   ProtectedOrgsOrgSlugIndexRoute: typeof ProtectedOrgsOrgSlugIndexRoute
 }
 
@@ -1149,6 +1170,7 @@ const ProtectedOrgsOrgSlugRouteChildren: ProtectedOrgsOrgSlugRouteChildren = {
     ProtectedOrgsOrgSlugSchedulesRouteWithChildren,
   ProtectedOrgsOrgSlugSettingsRoute: ProtectedOrgsOrgSlugSettingsRoute,
   ProtectedOrgsOrgSlugStaffRoute: ProtectedOrgsOrgSlugStaffRouteWithChildren,
+  ProtectedOrgsOrgSlugStationsRoute: ProtectedOrgsOrgSlugStationsRoute,
   ProtectedOrgsOrgSlugIndexRoute: ProtectedOrgsOrgSlugIndexRoute,
 }
 

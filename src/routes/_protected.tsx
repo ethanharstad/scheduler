@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatches, useNavigate } from '@tanstack/react-router'
 import { Fragment, useState, useEffect, useRef } from 'react'
-import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, ClipboardList, GraduationCap, LayoutDashboard, LogOut, Settings, Shield, Truck, UserCircle, UserCog, Users } from 'lucide-react'
+import { Building2, Calendar, CalendarCheck, Check, ChevronsUpDown, ClipboardList, GraduationCap, Landmark, LayoutDashboard, LogOut, Settings, Shield, Truck, UserCircle, UserCog, Users } from 'lucide-react'
 import { getSessionServerFn } from '@/lib/auth'
 import { logoutServerFn } from '@/server/auth'
 import { listUserOrgsServerFn } from '@/server/org'
@@ -52,6 +52,7 @@ function useBreadcrumbs(): Crumb[] {
     if (pathname === base) return [{ label: 'Dashboard' }]
     if (pathname === `${base}/staff`) return [{ label: 'Staff' }]
     if (pathname === `${base}/staff/audit`) return [{ label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: 'Audit Log' }]
+    if (pathname === `${base}/stations`) return [{ label: 'Stations' }]
     if (pathname === `${base}/members`) return [{ label: 'Members' }]
     if (pathname === `${base}/settings`) return [{ label: 'Settings' }]
     if (pathname === `${base}/availability`) return [{ label: 'Availability' }]
@@ -360,6 +361,12 @@ function ProtectedLayout() {
                 params={{ orgSlug: effectiveOrgCtx.org.slug }}
                 icon={<UserCog className="w-5 h-5" />}
                 label="Staff"
+              />
+              <NavItem
+                to="/orgs/$orgSlug/stations"
+                params={{ orgSlug: effectiveOrgCtx.org.slug }}
+                icon={<Landmark className="w-5 h-5" />}
+                label="Stations"
               />
               {canDo(effectiveOrgCtx.userRole, 'view-certifications') && (
                 <NavItem
