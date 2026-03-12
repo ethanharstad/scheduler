@@ -1,9 +1,9 @@
-import { useState, Fragment } from 'react'
+import { useState } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
 import { canDo } from '@/lib/rbac'
 import type {
   AssetDetailView,
-  InspectionView,
+  InspectionScheduleView,
   AssetAuditEntry,
   AssetView,
   RecurrenceFreq,
@@ -13,20 +13,23 @@ import {
   APPARATUS_STATUSES,
   GEAR_STATUSES,
 } from '@/lib/asset.types'
+import type { FormFieldDefinition, LinkedEntityType } from '@/lib/form.types'
 import {
   getAssetServerFn,
   assignGearServerFn,
   unassignGearServerFn,
-  logInspectionServerFn,
-  getInspectionHistoryServerFn,
   getAssetAuditLogServerFn,
   changeAssetStatusServerFn,
   updateAssetServerFn,
-  setInspectionIntervalServerFn,
-  editInspectionServerFn,
-  deleteInspectionServerFn,
+  addInspectionScheduleServerFn,
+  updateInspectionScheduleServerFn,
+  deleteInspectionScheduleServerFn,
+  getInspectionSchedulesServerFn,
 } from '@/server/assets'
 import { listStaffServerFn } from '@/server/staff'
+import { listFormTemplatesServerFn, getFormTemplateServerFn, submitFormServerFn, listSubmissionsServerFn } from '@/server/forms'
+import { FormRenderer, type FormValues, type FormErrors } from '@/components/form-renderer/FormRenderer'
+import type { FormSubmissionView } from '@/lib/form.types'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/assets/$assetId')({
   head: () => ({ meta: [{ title: 'Asset Detail | Scene Ready' }] }),
@@ -79,14 +82,6 @@ const FREQ_OPTIONS: { label: string; value: RecurrenceFreq }[] = [
 ]
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-const FREQ_TO_DAYS: Record<RecurrenceFreq, number> = {
-  daily: 1, weekly: 7, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365,
-}
-
-const LEGACY_DAYS_TO_FREQ: Record<number, RecurrenceFreq> = {
-  1: 'daily', 7: 'weekly', 30: 'monthly', 90: 'quarterly', 182: 'semi_annual', 365: 'annual',
-}
 
 function describeRule(rule: RecurrenceRule): string {
   const dow = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -145,16 +140,36 @@ function AssetDetailPage() {
   const [assignBusy, setAssignBusy] = useState(false)
   const [assignError, setAssignError] = useState<string | null>(null)
 
-  // Inspection state
-  const [inspResult, setInspResult] = useState<'pass' | 'fail'>('pass')
-  const [inspNotes, setInspNotes] = useState('')
-  const [inspDate, setInspDate] = useState('')
-  const [inspBusy, setInspBusy] = useState(false)
-  const [inspError, setInspError] = useState<string | null>(null)
-  const [inspections, setInspections] = useState<InspectionView[]>([])
-  const [inspTotal, setInspTotal] = useState(0)
-  const [inspLoaded, setInspLoaded] = useState(false)
-  const [inspOffset, setInspOffset] = useState(0)
+  // Schedules state
+  const [schedules, setSchedules] = useState<InspectionScheduleView[]>([])
+  const [schedulesLoaded, setSchedulesLoaded] = useState(false)
+  const [showAddSchedule, setShowAddSchedule] = useState(false)
+  const [addLabel, setAddLabel] = useState('')
+  const [addTemplateId, setAddTemplateId] = useState('')
+  const [addFreq, setAddFreq] = useState<RecurrenceFreq>('weekly')
+  const [addDow, setAddDow] = useState(5)
+  const [addDom, setAddDom] = useState(1)
+  const [addBusy, setAddBusy] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [formTemplates, setFormTemplates] = useState<{ id: string; name: string }[]>([])
+  const [formTemplatesLoaded, setFormTemplatesLoaded] = useState(false)
+  const [deletingScheduleId, setDeletingScheduleId] = useState<string | null>(null)
+  const [deleteScheduleBusy, setDeleteScheduleBusy] = useState(false)
+
+  // Inline inspection form state
+  const [activeInspSchedule, setActiveInspSchedule] = useState<InspectionScheduleView | null>(null)
+  const [inspFields, setInspFields] = useState<FormFieldDefinition[]>([])
+  const [inspValues, setInspValues] = useState<FormValues>({})
+  const [inspErrors, setInspErrors] = useState<FormErrors>({})
+  const [inspSubmitting, setInspSubmitting] = useState(false)
+  const [inspSubmitError, setInspSubmitError] = useState<string | null>(null)
+  const [inspFormLoading, setInspFormLoading] = useState(false)
+
+  // Inspections tab (form submissions)
+  const [submissions, setSubmissions] = useState<FormSubmissionView[]>([])
+  const [submissionsTotal, setSubmissionsTotal] = useState(0)
+  const [submissionsLoaded, setSubmissionsLoaded] = useState(false)
+  const [submissionsOffset, setSubmissionsOffset] = useState(0)
 
   // Audit state
   const [auditEntries, setAuditEntries] = useState<AssetAuditEntry[]>([])
@@ -179,23 +194,8 @@ function AssetDetailPage() {
   const [editBusy, setEditBusy] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
-  // Interval state
-  const [intervalBusy, setIntervalBusy] = useState(false)
-  const [pendingFreq, setPendingFreq] = useState<RecurrenceFreq | null>(null)
-  const [pendingDow, setPendingDow] = useState(5) // Friday
-  const [pendingDom, setPendingDom] = useState(1)
-
-  // Edit inspection state
-  const [editingInspId, setEditingInspId] = useState<string | null>(null)
-  const [editInspResult, setEditInspResult] = useState<'pass' | 'fail'>('pass')
-  const [editInspDate, setEditInspDate] = useState('')
-  const [editInspNotes, setEditInspNotes] = useState('')
-  const [editInspBusy, setEditInspBusy] = useState(false)
-  const [editInspError, setEditInspError] = useState<string | null>(null)
-  const [deletingInspId, setDeletingInspId] = useState<string | null>(null)
-  const [deleteInspBusy, setDeleteInspBusy] = useState(false)
-
   const canManage = canDo(userRole, 'manage-assets')
+  const canSubmitForms = canDo(userRole, 'submit-forms')
   const LIMIT = 50
 
   if (!asset) {
@@ -206,8 +206,12 @@ function AssetDetailPage() {
     )
   }
 
-  const isDecommissioned = asset.status === 'decommissioned'
-  const isGear = asset.assetType === 'gear'
+  // After the null guard above, asset is always defined for the rest of this render.
+  // We assign to a const so closures (event handlers) can rely on the narrowed type.
+  const currentAsset = asset
+
+  const isDecommissioned = currentAsset.status === 'decommissioned'
+  const isGear = currentAsset.assetType === 'gear'
   const statuses = isGear ? GEAR_STATUSES : APPARATUS_STATUSES
 
   async function handleAssign() {
@@ -217,16 +221,13 @@ function AssetDetailPage() {
     const result = await assignGearServerFn({
       data: {
         orgSlug: org.slug,
-        assetId: asset.id,
+        assetId: currentAsset.id,
         assignToStaffId: assignMode === 'staff' ? assignStaffId || undefined : undefined,
         assignToApparatusId: assignMode === 'apparatus' ? assignApparatusId || undefined : undefined,
       },
     })
     setAssignBusy(false)
-    if (!result.success) {
-      setAssignError(result.error)
-      return
-    }
+    if (!result.success) { setAssignError(result.error); return }
     setAsset((a) => a ? { ...a, ...result.asset } : a)
     setAssignStaffId('')
     setAssignApparatusId('')
@@ -234,51 +235,129 @@ function AssetDetailPage() {
 
   async function handleUnassign() {
     setAssignBusy(true)
-    const result = await unassignGearServerFn({ data: { orgSlug: org.slug, assetId: asset.id } })
+    const result = await unassignGearServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id } })
     setAssignBusy(false)
     if (result.success) setAsset((a) => a ? { ...a, ...result.asset } : a)
   }
 
-  async function handleLogInspection(e: React.FormEvent) {
-    e.preventDefault()
-    setInspError(null)
-    setInspBusy(true)
-    const result = await logInspectionServerFn({
-      data: {
-        orgSlug: org.slug,
-        assetId: asset.id,
-        result: inspResult,
-        notes: inspNotes || undefined,
-        inspectionDate: inspDate || undefined,
-      },
-    })
-    setInspBusy(false)
-    if (!result.success) { setInspError(result.error); return }
-    setInspNotes('')
-    setInspDate('')
-    setInspResult('pass')
-    // Reload inspections if tab is open
-    if (inspLoaded) {
-      const r = await getInspectionHistoryServerFn({ data: { orgSlug: org.slug, assetId: asset.id, limit: LIMIT, offset: 0 } })
-      if (r.success) { setInspections(r.inspections); setInspTotal(r.total); setInspOffset(0) }
+  async function loadSchedules() {
+    const result = await getInspectionSchedulesServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id } })
+    if (result.success) {
+      setSchedules(result.schedules)
+      setSchedulesLoaded(true)
     }
-    // Update asset's nextInspectionDue
-    const updated = await getAssetServerFn({ data: { orgSlug: org.slug, assetId: asset.id } })
-    if (updated.success) setAsset(updated.asset)
   }
 
-  async function loadInspections(off = 0) {
-    const result = await getInspectionHistoryServerFn({ data: { orgSlug: org.slug, assetId: asset.id, limit: LIMIT, offset: off } })
+  async function loadFormTemplates() {
+    if (formTemplatesLoaded) return
+    const result = await listFormTemplatesServerFn({ data: { orgSlug: org.slug, category: 'equipment_inspection', status: 'published', includeSystem: true } })
     if (result.success) {
-      setInspections(result.inspections)
-      setInspTotal(result.total)
-      setInspLoaded(true)
-      setInspOffset(off)
+      setFormTemplates(result.templates.map((t) => ({ id: t.id, name: t.name })))
+      setFormTemplatesLoaded(true)
+    }
+  }
+
+  async function handleAddSchedule() {
+    if (!addLabel.trim() || !addTemplateId) return
+    setAddBusy(true)
+    setAddError(null)
+    const rule: RecurrenceRule = addFreq === 'weekly'
+      ? { freq: 'weekly', dayOfWeek: addDow }
+      : addFreq === 'daily'
+        ? { freq: 'daily' }
+        : { freq: addFreq, dayOfMonth: addDom }
+    const result = await addInspectionScheduleServerFn({
+      data: { orgSlug: org.slug, assetId: currentAsset.id, formTemplateId: addTemplateId, label: addLabel.trim(), recurrenceRule: rule },
+    })
+    setAddBusy(false)
+    if (!result.success) { setAddError(result.error); return }
+    setSchedules((prev) => [...prev, result.schedule])
+    setShowAddSchedule(false)
+    setAddLabel('')
+    setAddTemplateId('')
+    setAddFreq('weekly')
+  }
+
+  async function handleDeleteSchedule(scheduleId: string) {
+    setDeleteScheduleBusy(true)
+    const result = await deleteInspectionScheduleServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id, scheduleId } })
+    setDeleteScheduleBusy(false)
+    if (result.success) {
+      setSchedules((prev) => prev.filter((s) => s.id !== scheduleId))
+      setDeletingScheduleId(null)
+    }
+  }
+
+  async function handleToggleActive(schedule: InspectionScheduleView) {
+    const result = await updateInspectionScheduleServerFn({
+      data: { orgSlug: org.slug, assetId: currentAsset.id, scheduleId: schedule.id, isActive: !schedule.isActive },
+    })
+    if (result.success) {
+      setSchedules((prev) => prev.map((s) => s.id === schedule.id ? result.schedule : s))
+    }
+  }
+
+  async function startInspection(schedule: InspectionScheduleView) {
+    setInspFormLoading(true)
+    setActiveInspSchedule(schedule)
+    setInspValues({})
+    setInspErrors({})
+    setInspSubmitError(null)
+
+    const result = await getFormTemplateServerFn({ data: { orgSlug: org.slug, templateId: schedule.formTemplateId } })
+    setInspFormLoading(false)
+    if (result.success) {
+      setInspFields(result.currentVersion.fields)
+    }
+  }
+
+  async function handleInspSubmit() {
+    if (!activeInspSchedule) return
+    setInspSubmitting(true)
+    setInspSubmitError(null)
+    setInspErrors({})
+
+    const result = await submitFormServerFn({
+      data: {
+        orgSlug: org.slug,
+        templateId: activeInspSchedule.formTemplateId,
+        linkedEntityType: 'asset' as LinkedEntityType,
+        linkedEntityId: currentAsset.id,
+        scheduleId: activeInspSchedule.id,
+        values: inspValues,
+      },
+    })
+
+    setInspSubmitting(false)
+    if (result.success) {
+      setActiveInspSchedule(null)
+      setInspFields([])
+      setInspValues({})
+      // Refresh schedules to update next due dates
+      await loadSchedules()
+      // Refresh submissions if loaded
+      if (submissionsLoaded) await loadSubmissions(0)
+    } else if (result.error === 'VALIDATION_ERROR' && result.validationErrors) {
+      setInspErrors(result.validationErrors)
+    } else {
+      setInspSubmitError('Failed to submit inspection.')
+    }
+  }
+
+  async function loadSubmissions(off = 0) {
+    const result = await listSubmissionsServerFn({
+      data: { orgSlug: org.slug, linkedEntityType: 'asset', linkedEntityId: currentAsset.id, limit: LIMIT, offset: off },
+    })
+    if (result.success) {
+      setSubmissions(result.submissions)
+      setSubmissionsTotal(result.total)
+      setSubmissionsLoaded(true)
+      setSubmissionsOffset(off)
     }
   }
 
   async function loadAudit(off = 0) {
-    const result = await getAssetAuditLogServerFn({ data: { orgSlug: org.slug, assetId: asset.id, limit: LIMIT, offset: off } })
+    const result = await getAssetAuditLogServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id, limit: LIMIT, offset: off } })
     if (result.success) {
       setAuditEntries(result.entries)
       setAuditTotal(result.total)
@@ -289,76 +368,30 @@ function AssetDetailPage() {
 
   async function handleTabChange(tab: 'details' | 'inspections' | 'audit') {
     setActiveTab(tab)
-    if (tab === 'inspections' && !inspLoaded) await loadInspections()
+    if (tab === 'details' && !schedulesLoaded) await loadSchedules()
+    if (tab === 'inspections' && !submissionsLoaded) await loadSubmissions()
     if (tab === 'audit' && !auditLoaded) await loadAudit()
   }
 
   async function handleStatusChange() {
     if (!newStatus) return
-    if (newStatus === 'decommissioned' && !confirmDecomm) {
-      setConfirmDecomm(true)
-      return
-    }
+    if (newStatus === 'decommissioned' && !confirmDecomm) { setConfirmDecomm(true); return }
     setStatusBusy(true)
-    const result = await changeAssetStatusServerFn({ data: { orgSlug: org.slug, assetId: asset.id, newStatus } })
+    const result = await changeAssetStatusServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id, newStatus } })
     setStatusBusy(false)
     if (!result.success) { setStatusError(result.error); return }
-    setAsset((a) => a ? { ...a, ...(result.asset as AssetView), notes: a.notes, manufactureDate: a.manufactureDate, purchasedDate: a.purchasedDate, inServiceDate: a.inServiceDate, warrantyExpirationDate: a.warrantyExpirationDate, inspectionIntervalDays: a.inspectionIntervalDays, customFields: a.customFields } : a)
+    setAsset((a) => a ? { ...a, ...(result.asset as AssetView), notes: a.notes, manufactureDate: a.manufactureDate, purchasedDate: a.purchasedDate, inServiceDate: a.inServiceDate, warrantyExpirationDate: a.warrantyExpirationDate, customFields: a.customFields } : a)
     setNewStatus('')
     setConfirmDecomm(false)
   }
 
-  function openEditInsp(insp: InspectionView) {
-    setEditingInspId(insp.id)
-    setEditInspResult(insp.result)
-    setEditInspDate(insp.inspectionDate)
-    setEditInspNotes(insp.notes ?? '')
-    setEditInspError(null)
-    setDeletingInspId(null)
-  }
-
-  async function handleEditInsp(inspId: string) {
-    setEditInspBusy(true)
-    setEditInspError(null)
-    const result = await editInspectionServerFn({
-      data: {
-        orgSlug: org.slug,
-        assetId: asset!.id,
-        inspectionId: inspId,
-        result: editInspResult,
-        notes: editInspNotes.trim() || null,
-        inspectionDate: editInspDate,
-      },
-    })
-    setEditInspBusy(false)
-    if (!result.success) { setEditInspError(result.error); return }
-    setInspections((prev) => prev.map((i) => (i.id === inspId ? result.inspection : i)))
-    setEditingInspId(null)
-    const updated = await getAssetServerFn({ data: { orgSlug: org.slug, assetId: asset!.id } })
-    if (updated.success) setAsset(updated.asset)
-  }
-
-  async function handleDeleteInsp(inspId: string) {
-    setDeleteInspBusy(true)
-    const result = await deleteInspectionServerFn({
-      data: { orgSlug: org.slug, assetId: asset!.id, inspectionId: inspId },
-    })
-    setDeleteInspBusy(false)
-    if (!result.success) return
-    setInspections((prev) => prev.filter((i) => i.id !== inspId))
-    setInspTotal((t) => t - 1)
-    setDeletingInspId(null)
-    const updated = await getAssetServerFn({ data: { orgSlug: org.slug, assetId: asset!.id } })
-    if (updated.success) setAsset(updated.asset)
-  }
-
   function openEdit() {
-    setEditName(asset.name)
-    setEditNotes(asset.notes ?? '')
-    setEditMake(asset.make ?? '')
-    setEditModel(asset.model ?? '')
-    setEditSerial(asset.serialNumber ?? '')
-    setEditExpiration(asset.expirationDate ?? '')
+    setEditName(currentAsset.name)
+    setEditNotes(currentAsset.notes ?? '')
+    setEditMake(currentAsset.make ?? '')
+    setEditModel(currentAsset.model ?? '')
+    setEditSerial(currentAsset.serialNumber ?? '')
+    setEditExpiration(currentAsset.expirationDate ?? '')
     setEditError(null)
     setShowEdit(true)
   }
@@ -370,7 +403,7 @@ function AssetDetailPage() {
     const result = await updateAssetServerFn({
       data: {
         orgSlug: org.slug,
-        assetId: asset.id,
+        assetId: currentAsset.id,
         name: editName.trim() || undefined,
         make: editMake.trim() || null,
         model: editModel.trim() || null,
@@ -381,47 +414,19 @@ function AssetDetailPage() {
     })
     setEditBusy(false)
     if (!result.success) { setEditError(result.error); return }
-    const updated = await getAssetServerFn({ data: { orgSlug: org.slug, assetId: asset.id } })
+    const updated = await getAssetServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id } })
     if (updated.success) setAsset(updated.asset)
     setShowEdit(false)
   }
 
-  async function handleSetSchedule(rule: RecurrenceRule | null) {
-    const intervalDays = rule ? FREQ_TO_DAYS[rule.freq] : null
-    setIntervalBusy(true)
-    const result = await setInspectionIntervalServerFn({
-      data: { orgSlug: org.slug, assetId: asset.id, intervalDays, recurrenceRule: rule },
-    })
-    setIntervalBusy(false)
-    if (result.success) {
-      setAsset((a) => a ? { ...a, inspectionIntervalDays: intervalDays, inspectionRecurrenceRule: rule, nextInspectionDue: result.asset.nextInspectionDue } : a)
-    }
-  }
-
-  function onFreqClick(freq: RecurrenceFreq) {
-    if (freq === 'daily') {
-      handleSetSchedule({ freq: 'daily' })
-      setPendingFreq(null)
-    } else {
-      setPendingFreq(freq)
-      if (freq === 'weekly') setPendingDow(asset.inspectionRecurrenceRule?.dayOfWeek ?? 5)
-      else setPendingDom(asset.inspectionRecurrenceRule?.dayOfMonth ?? 1)
-    }
-  }
-
-  function onDowClick(dow: number) {
-    setPendingDow(dow)
-    handleSetSchedule({ freq: 'weekly', dayOfWeek: dow })
-    setPendingFreq(null)
-  }
-
-  function onApplyMonthly() {
-    if (!pendingFreq || pendingFreq === 'weekly') return
-    handleSetSchedule({ freq: pendingFreq, dayOfMonth: pendingDom })
-    setPendingFreq(null)
+  // Load schedules on first details tab view
+  if (activeTab === 'details' && !schedulesLoaded) {
+    void loadSchedules()
   }
 
   const inputClass = 'w-full text-sm border border-gray-300 rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-navy-700'
+
+  const today = orgToday(org.scheduleDayStart)
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -431,16 +436,16 @@ function AssetDetailPage() {
           <div>
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-bold text-navy-700" style={{ fontFamily: 'var(--font-condensed)' }}>
-                {asset.name}
+                {currentAsset.name}
               </h2>
-              {statusBadge(asset.status)}
+              {statusBadge(currentAsset.status)}
             </div>
             <div className="flex gap-4 mt-1 text-sm text-gray-500">
-              <span>{asset.assetType === 'apparatus' ? 'Apparatus' : 'Gear'}</span>
+              <span>{currentAsset.assetType === 'apparatus' ? 'Apparatus' : 'Gear'}</span>
               <span>·</span>
-              <span>{CATEGORY_LABELS[asset.category] ?? asset.category}</span>
-              {asset.unitNumber && <><span>·</span><span className="font-mono">{asset.unitNumber}</span></>}
-              {asset.serialNumber && <><span>·</span><span className="font-mono text-xs">{asset.serialNumber}</span></>}
+              <span>{CATEGORY_LABELS[currentAsset.category] ?? currentAsset.category}</span>
+              {currentAsset.unitNumber && <><span>·</span><span className="font-mono">{currentAsset.unitNumber}</span></>}
+              {currentAsset.serialNumber && <><span>·</span><span className="font-mono text-xs">{currentAsset.serialNumber}</span></>}
             </div>
           </div>
           {canManage && !isDecommissioned && (
@@ -471,18 +476,18 @@ function AssetDetailPage() {
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Asset Info</h3>
             <dl className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <Field label="Name" value={asset.name} />
-              <Field label="Category" value={CATEGORY_LABELS[asset.category] ?? asset.category} />
-              <Field label="Status" value={STATUS_LABELS[asset.status] ?? asset.status} />
-              {asset.unitNumber && <Field label="Unit Number" value={asset.unitNumber} />}
-              <Field label="Make" value={asset.make} />
-              <Field label="Model" value={asset.model} />
-              <Field label="Serial Number" value={asset.serialNumber} />
+              <Field label="Name" value={currentAsset.name} />
+              <Field label="Category" value={CATEGORY_LABELS[currentAsset.category] ?? currentAsset.category} />
+              <Field label="Status" value={STATUS_LABELS[currentAsset.status] ?? currentAsset.status} />
+              {currentAsset.unitNumber && <Field label="Unit Number" value={currentAsset.unitNumber} />}
+              <Field label="Make" value={currentAsset.make} />
+              <Field label="Model" value={currentAsset.model} />
+              <Field label="Serial Number" value={currentAsset.serialNumber} />
             </dl>
-            {asset.notes && (
+            {currentAsset.notes && (
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1" style={{ fontFamily: 'var(--font-condensed)' }}>Notes</dt>
-                <dd className="text-sm text-gray-900 whitespace-pre-line">{asset.notes}</dd>
+                <dd className="text-sm text-gray-900 whitespace-pre-line">{currentAsset.notes}</dd>
               </div>
             )}
           </div>
@@ -491,235 +496,277 @@ function AssetDetailPage() {
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Lifecycle</h3>
             <dl className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <Field label="Manufactured" value={asset.manufactureDate} />
-              <Field label="Purchased" value={asset.purchasedDate} />
-              <Field label="In Service" value={asset.inServiceDate} />
-              <Field label="Expires" value={asset.expirationDate} />
-              <Field label="Warranty Expires" value={asset.warrantyExpirationDate} />
+              <Field label="Manufactured" value={currentAsset.manufactureDate} />
+              <Field label="Purchased" value={currentAsset.purchasedDate} />
+              <Field label="In Service" value={currentAsset.inServiceDate} />
+              <Field label="Expires" value={currentAsset.expirationDate} />
+              <Field label="Warranty Expires" value={currentAsset.warrantyExpirationDate} />
             </dl>
           </div>
 
           {/* Custom fields */}
-          {asset.customFields && Object.keys(asset.customFields).length > 0 && (
+          {currentAsset.customFields && Object.keys(currentAsset.customFields).length > 0 && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Custom Fields</h3>
               <dl className="grid grid-cols-2 gap-3">
-                {Object.entries(asset.customFields).map(([k, v]) => (
+                {Object.entries(currentAsset.customFields).map(([k, v]) => (
                   <Field key={k} label={k} value={String(v)} />
                 ))}
               </dl>
             </div>
           )}
 
-          {/* Inspection Schedule */}
-          {canManage && (() => {
-            const activeFreq = asset.inspectionRecurrenceRule?.freq
-              ?? (asset.inspectionIntervalDays ? LEGACY_DAYS_TO_FREQ[asset.inspectionIntervalDays] : null)
-            const displayFreq = pendingFreq ?? activeFreq
-            const btnBase = 'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50'
-            const btnActive = 'bg-navy-700 text-white border-navy-700'
-            const btnInactive = 'border-gray-300 text-gray-600 hover:bg-gray-50'
-            return (
-              <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Inspection Schedule</h3>
+          {/* Inspection Schedules */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500" style={{ fontFamily: 'var(--font-condensed)' }}>Inspection Schedules</h3>
+              {canManage && !isDecommissioned && (
+                <button
+                  onClick={() => { setShowAddSchedule(true); void loadFormTemplates() }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-navy-700 text-white hover:bg-navy-800"
+                >
+                  Add Schedule
+                </button>
+              )}
+            </div>
 
-                {/* Frequency selector */}
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  {FREQ_OPTIONS.map((f) => (
-                    <button key={f.value} disabled={intervalBusy} onClick={() => onFreqClick(f.value)}
-                      className={`${btnBase} ${displayFreq === f.value ? btnActive : btnInactive}`}>
-                      {f.label}
-                    </button>
-                  ))}
-                  <button disabled={intervalBusy} onClick={() => { handleSetSchedule(null); setPendingFreq(null) }}
-                    className={`${btnBase} ${!displayFreq ? btnActive : btnInactive}`}>
-                    None
-                  </button>
+            {schedules.length === 0 && schedulesLoaded && !showAddSchedule && (
+              <p className="text-sm text-gray-400">No inspection schedules configured.</p>
+            )}
+
+            {schedules.length > 0 && (
+              <div className="space-y-3 mb-4">
+                {schedules.map((sched) => {
+                  const isOverdue = sched.nextInspectionDue ? sched.nextInspectionDue < today : false
+                  const isDueToday = sched.nextInspectionDue === today
+                  return (
+                    <div key={sched.id} className={`border rounded-lg p-4 ${!sched.isActive ? 'bg-gray-50 border-gray-200 opacity-60' : 'border-gray-200'}`}>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-gray-900">{sched.label}</span>
+                            {!sched.isActive && <span className="text-xs text-gray-400">(inactive)</span>}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {sched.formTemplateName} · {describeRule(sched.recurrenceRule)}
+                          </p>
+                          {sched.nextInspectionDue && sched.isActive && (
+                            <p className={`text-xs mt-1 ${isOverdue ? 'text-danger font-semibold' : isDueToday ? 'text-warning font-semibold' : 'text-gray-500'}`}>
+                              Next due: {sched.nextInspectionDue}
+                              {isOverdue && ' (OVERDUE)'}
+                              {isDueToday && ' (due today)'}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {sched.isActive && (canManage || canSubmitForms || isGear) && (
+                            <button
+                              onClick={() => startInspection(sched)}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-navy-700 text-white hover:bg-navy-800"
+                            >
+                              Start Inspection
+                            </button>
+                          )}
+                          {canManage && (
+                            <>
+                              <button onClick={() => handleToggleActive(sched)} className="text-xs text-gray-500 hover:underline">
+                                {sched.isActive ? 'Disable' : 'Enable'}
+                              </button>
+                              {deletingScheduleId === sched.id ? (
+                                <span className="flex items-center gap-1 text-xs">
+                                  <button onClick={() => handleDeleteSchedule(sched.id)} disabled={deleteScheduleBusy} className="text-danger font-semibold hover:underline disabled:opacity-60">
+                                    {deleteScheduleBusy ? '…' : 'Confirm'}
+                                  </button>
+                                  <button onClick={() => setDeletingScheduleId(null)} className="text-gray-500 hover:underline">Cancel</button>
+                                </span>
+                              ) : (
+                                <button onClick={() => setDeletingScheduleId(sched.id)} className="text-xs text-danger hover:underline">Delete</button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Add Schedule Form */}
+            {showAddSchedule && (
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700">New Inspection Schedule</h4>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Label</label>
+                  <input type="text" value={addLabel} onChange={(e) => setAddLabel(e.target.value)} className={inputClass} placeholder="e.g. Weekly Visual Check" maxLength={200} />
                 </div>
-
-                {/* Day-of-week sub-picker (weekly) */}
-                {pendingFreq === 'weekly' && (
-                  <div className="flex gap-1 mb-3 flex-wrap">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Form Template</label>
+                  <select value={addTemplateId} onChange={(e) => setAddTemplateId(e.target.value)} className={inputClass}>
+                    <option value="">Select a form template…</option>
+                    {formTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {FREQ_OPTIONS.map((f) => (
+                      <button key={f.value} onClick={() => setAddFreq(f.value)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${addFreq === f.value ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {addFreq === 'weekly' && (
+                  <div className="flex gap-1 flex-wrap">
                     {DAYS_OF_WEEK.map((day, i) => (
-                      <button key={i} disabled={intervalBusy} onClick={() => onDowClick(i)}
-                        className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 ${pendingDow === i ? btnActive : btnInactive}`}>
+                      <button key={i} onClick={() => setAddDow(i)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${addDow === i ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
                         {day}
                       </button>
                     ))}
                   </div>
                 )}
-
-                {/* Day-of-month sub-picker (monthly / quarterly / semi-annual / annual) */}
-                {pendingFreq && pendingFreq !== 'weekly' && (
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                {addFreq !== 'daily' && addFreq !== 'weekly' && (
+                  <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-600">On the</span>
-                    <select value={pendingDom} onChange={(e) => setPendingDom(Number(e.target.value))}
-                      className="text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700">
+                    <select value={addDom} onChange={(e) => setAddDom(Number(e.target.value))} className="text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700">
                       {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
                         <option key={d} value={d}>{d}</option>
                       ))}
                     </select>
-                    <span className="text-sm text-gray-600">of the {FREQ_OPTIONS.find(f => f.value === pendingFreq)?.label.toLowerCase()}</span>
-                    <button disabled={intervalBusy} onClick={onApplyMonthly}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-navy-700 text-white hover:bg-navy-800 disabled:opacity-50">
-                      Set
+                    <span className="text-sm text-gray-600">of the {FREQ_OPTIONS.find(f => f.value === addFreq)?.label.toLowerCase()}</span>
+                  </div>
+                )}
+                {addError && <p className="text-xs text-danger">{addError}</p>}
+                <div className="flex gap-2">
+                  <button onClick={() => void handleAddSchedule()} disabled={addBusy || !addLabel.trim() || !addTemplateId}
+                    className="px-4 py-2 bg-navy-700 text-white text-sm font-semibold rounded-lg hover:bg-navy-800 disabled:opacity-60">
+                    {addBusy ? 'Adding…' : 'Add Schedule'}
+                  </button>
+                  <button onClick={() => setShowAddSchedule(false)} className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Inline Inspection Form */}
+          {activeInspSchedule && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-navy-700" style={{ fontFamily: 'var(--font-condensed)' }}>
+                  {activeInspSchedule.label} — {activeInspSchedule.formTemplateName}
+                </h3>
+                <button onClick={() => { setActiveInspSchedule(null); setInspFields([]) }} className="text-xs text-gray-500 hover:underline">Cancel</button>
+              </div>
+
+              {inspFormLoading ? (
+                <p className="text-sm text-gray-400">Loading form…</p>
+              ) : (
+                <div className="space-y-6">
+                  <FormRenderer
+                    fields={inspFields}
+                    values={inspValues}
+                    errors={inspErrors}
+                    onChange={(key, val) => {
+                      setInspValues((prev) => ({ ...prev, [key]: val }))
+                      setInspErrors((prev) => { const next = { ...prev }; delete next[key]; return next })
+                    }}
+                  />
+                  {inspSubmitError && <p className="text-sm text-danger">{inspSubmitError}</p>}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => void handleInspSubmit()}
+                      disabled={inspSubmitting}
+                      className="px-4 py-2 text-sm font-semibold text-white bg-red-700 rounded-lg hover:bg-red-800 disabled:opacity-50"
+                    >
+                      {inspSubmitting ? 'Submitting…' : 'Submit Inspection'}
                     </button>
-                    <button onClick={() => setPendingFreq(null)}
-                      className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">
+                    <button
+                      onClick={() => { setActiveInspSchedule(null); setInspFields([]) }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
                       Cancel
                     </button>
                   </div>
-                )}
-
-                {/* Current schedule & next due */}
-                {!pendingFreq && asset.inspectionIntervalDays && (
-                  <p className="text-sm text-gray-500 mb-1">
-                    Schedule: {asset.inspectionRecurrenceRule
-                      ? describeRule(asset.inspectionRecurrenceRule)
-                      : FREQ_OPTIONS.find(f => FREQ_TO_DAYS[f.value] === asset.inspectionIntervalDays)?.label ?? `Every ${asset.inspectionIntervalDays} days`}
-                  </p>
-                )}
-                {asset.nextInspectionDue && !pendingFreq && (() => {
-                  const today = orgToday(org.scheduleDayStart)
-                  const isOverdue = asset.nextInspectionDue! < today
-                  const isDueToday = asset.nextInspectionDue === today
-                  return (
-                    <p className={`text-sm ${isOverdue ? 'text-danger font-semibold' : isDueToday ? 'text-warning font-semibold' : 'text-gray-600'}`}>
-                      Next inspection due: {asset.nextInspectionDue}
-                      {isOverdue && ' (OVERDUE)'}
-                      {isDueToday && ' (due today)'}
-                    </p>
-                  )
-                })()}
-              </div>
-            )
-          })()}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Status Change */}
           {canManage && !isDecommissioned && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Change Status</h3>
-              <div className="flex gap-2 items-center">
+              <div className="flex items-center gap-3">
                 <select value={newStatus} onChange={(e) => { setNewStatus(e.target.value); setConfirmDecomm(false) }} className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700">
-                  <option value="">Select new status…</option>
-                  {statuses.filter((s) => s !== asset.status).map((s) => (
+                  <option value="">Select…</option>
+                  {statuses.filter((s) => s !== currentAsset.status).map((s) => (
                     <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
                   ))}
                 </select>
-                {newStatus && (
-                  <button
-                    onClick={handleStatusChange}
-                    disabled={statusBusy}
-                    className={`px-4 py-1.5 text-sm font-semibold rounded-lg text-white disabled:opacity-60 ${newStatus === 'decommissioned' ? 'bg-danger hover:bg-red-700' : 'bg-navy-700 hover:bg-navy-800'}`}
-                  >
-                    {statusBusy ? 'Updating…' : newStatus === 'decommissioned' && !confirmDecomm ? 'Confirm Decommission?' : 'Update Status'}
-                  </button>
-                )}
+                <button onClick={() => void handleStatusChange()} disabled={statusBusy || !newStatus}
+                  className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
+                  {statusBusy ? '…' : confirmDecomm ? 'Confirm Decommission' : 'Change'}
+                </button>
               </div>
-              {confirmDecomm && (
-                <p className="text-xs text-danger mt-2">⚠ This cannot be undone. All assigned gear will be unassigned. Click again to confirm.</p>
-              )}
               {statusError && <p className="text-xs text-danger mt-2">{statusError}</p>}
+              {confirmDecomm && <p className="text-xs text-warning mt-2">Decommissioning is permanent. Click again to confirm.</p>}
             </div>
           )}
 
           {/* Gear Assignment */}
-          {isGear && (
+          {isGear && !isDecommissioned && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Assignment</h3>
-              {(asset.assignedToStaffName || asset.assignedToApparatusName) ? (
+              {(currentAsset.assignedToStaffName || currentAsset.assignedToApparatusName) ? (
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Assigned to: {asset.assignedToStaffName ?? asset.assignedToApparatusName}
-                    </p>
-                    <p className="text-xs text-gray-500">{asset.assignedToStaffId ? 'Staff member' : 'Apparatus'}</p>
-                  </div>
-                  {canManage && !isDecommissioned && (
-                    <button
-                      onClick={handleUnassign}
-                      disabled={assignBusy}
-                      className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-60"
-                    >
-                      {assignBusy ? 'Unassigning…' : 'Unassign'}
+                  <p className="text-sm text-gray-700">
+                    Assigned to: <span className="font-semibold">{currentAsset.assignedToStaffName ?? currentAsset.assignedToApparatusName}</span>
+                  </p>
+                  {canManage && (
+                    <button onClick={() => void handleUnassign()} disabled={assignBusy}
+                      className="px-3 py-1.5 text-xs text-danger border border-danger rounded-lg hover:bg-danger-bg disabled:opacity-60">
+                      {assignBusy ? '…' : 'Unassign'}
                     </button>
                   )}
                 </div>
-              ) : (
-                <p className="text-sm text-gray-500 mb-3">Not currently assigned.</p>
-              )}
-
-              {canManage && !isDecommissioned && asset.status !== 'expired' && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <div className="flex gap-2 mb-3">
-                    {(['staff', 'apparatus'] as const).map((m) => (
-                      <button key={m} onClick={() => setAssignMode(m)} className={`px-3 py-1 text-xs font-medium rounded-lg border ${assignMode === m ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600'}`}>
-                        {m === 'staff' ? 'Assign to Staff' : 'Assign to Apparatus'}
-                      </button>
+              ) : canManage && (
+                <div className="space-y-3">
+                  <div className="flex gap-4">
+                    {(['staff', 'apparatus'] as const).map((mode) => (
+                      <label key={mode} className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="assignMode" value={mode} checked={assignMode === mode} onChange={() => setAssignMode(mode)} className="accent-navy-700" />
+                        <span className="text-sm font-medium text-gray-700 capitalize">{mode}</span>
+                      </label>
                     ))}
                   </div>
-                  {assignMode === 'staff' ? (
-                    <div className="flex gap-2">
+                  <div className="flex gap-2">
+                    {assignMode === 'staff' ? (
                       <select value={assignStaffId} onChange={(e) => setAssignStaffId(e.target.value)} className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700">
-                        <option value="">Select staff member…</option>
-                        {(staffList as StaffMember[]).filter((m) => m.role !== 'owner' || true).map((m) => (
-                          <option key={m.memberId} value={m.userId}>{m.displayName}</option>
+                        <option value="">Select staff…</option>
+                        {(staffList as StaffMember[]).map((s) => (
+                          <option key={s.memberId} value={s.memberId}>{s.displayName}</option>
                         ))}
                       </select>
-                      <button onClick={handleAssign} disabled={assignBusy || !assignStaffId} className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
-                        {assignBusy ? '…' : 'Assign'}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
+                    ) : (
                       <input
                         type="text"
-                        placeholder="Enter apparatus asset ID…"
                         value={assignApparatusId}
                         onChange={(e) => setAssignApparatusId(e.target.value)}
+                        placeholder="Apparatus ID"
                         className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
                       />
-                      <button onClick={handleAssign} disabled={assignBusy || !assignApparatusId} className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
-                        {assignBusy ? '…' : 'Assign'}
-                      </button>
-                    </div>
-                  )}
+                    )}
+                    <button onClick={() => void handleAssign()} disabled={assignBusy || (assignMode === 'staff' ? !assignStaffId : !assignApparatusId)}
+                      className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800">
+                      {assignBusy ? '…' : 'Assign'}
+                    </button>
+                  </div>
                   {assignError && <p className="text-xs text-danger mt-2">{assignError}</p>}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Log Inspection */}
-          {(canManage || isGear) && (
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Log Inspection</h3>
-              <form onSubmit={handleLogInspection} className="space-y-3">
-                <div className="flex gap-4">
-                  {(['pass', 'fail'] as const).map((r) => (
-                    <label key={r} className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="result" value={r} checked={inspResult === r} onChange={() => setInspResult(r)} className="accent-navy-700" />
-                      <span className={`text-sm font-medium ${r === 'pass' ? 'text-success' : 'text-danger'}`}>{r === 'pass' ? 'Pass' : 'Fail'}</span>
-                    </label>
-                  ))}
-                </div>
-                <input type="date" value={inspDate} onChange={(e) => setInspDate(e.target.value)} className="text-sm border border-gray-300 rounded-md px-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-navy-700" placeholder="Today" />
-                <textarea value={inspNotes} onChange={(e) => setInspNotes(e.target.value)} rows={2} className={`${inputClass} resize-none`} placeholder="Notes (optional)…" />
-                {inspError && <p className="text-xs text-danger">{inspError}</p>}
-                <button type="submit" disabled={inspBusy} className="px-4 py-2 bg-navy-700 text-white text-sm font-semibold rounded-lg hover:bg-navy-800 disabled:opacity-60">
-                  {inspBusy ? 'Logging…' : 'Log Inspection'}
-                </button>
-              </form>
-              {canDo(userRole, 'submit-forms') && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <Link
-                    to="/orgs/$orgSlug/forms"
-                    params={{ orgSlug: org.slug }}
-                    search={{ entityType: 'asset', entityId: asset.id } as never}
-                    className="text-sm font-medium text-navy-700 hover:underline"
-                  >
-                    Use a form template for detailed inspection →
-                  </Link>
                 </div>
               )}
             </div>
@@ -727,13 +774,13 @@ function AssetDetailPage() {
         </div>
       )}
 
-      {/* Tab: Inspections */}
+      {/* Tab: Inspections (Form Submissions) */}
       {activeTab === 'inspections' && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          {inspections.length === 0 && inspLoaded ? (
+          {submissions.length === 0 && submissionsLoaded ? (
             <div className="py-16 text-center">
               <p className="text-sm font-semibold text-gray-700">No inspections recorded</p>
-              <p className="text-xs text-gray-400 mt-1">Use the Log Inspection form on the Details tab.</p>
+              <p className="text-xs text-gray-400 mt-1">Use the inspection schedules on the Details tab to perform inspections.</p>
             </div>
           ) : (
             <>
@@ -742,110 +789,35 @@ function AssetDetailPage() {
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Date</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Inspector</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Result</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Notes</th>
-                    {(canManage || isGear) && (
-                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Actions</th>
-                    )}
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Form</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {inspections.map((insp) => (
-                    <Fragment key={insp.id}>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-gray-900">{insp.inspectionDate}</td>
-                        <td className="px-4 py-3 text-gray-600">{insp.inspectorName}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase ${insp.result === 'pass' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'}`} style={{ fontFamily: 'var(--font-condensed)' }}>
-                            {insp.result}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{insp.notes ?? '—'}</td>
-                        {(canManage || isGear) && (
-                          <td className="px-4 py-3 text-right">
-                            {deletingInspId === insp.id ? (
-                              <span className="flex items-center justify-end gap-2 text-xs">
-                                <span className="text-gray-600">Delete?</span>
-                                <button
-                                  onClick={() => handleDeleteInsp(insp.id)}
-                                  disabled={deleteInspBusy}
-                                  className="text-danger font-semibold hover:underline disabled:opacity-60"
-                                >
-                                  {deleteInspBusy ? '…' : 'Confirm'}
-                                </button>
-                                <button onClick={() => setDeletingInspId(null)} className="text-gray-500 hover:underline">Cancel</button>
-                              </span>
-                            ) : (
-                              <span className="flex items-center justify-end gap-3 text-xs">
-                                <button
-                                  onClick={() => editingInspId === insp.id ? setEditingInspId(null) : openEditInsp(insp)}
-                                  className="text-navy-700 hover:underline"
-                                >
-                                  {editingInspId === insp.id ? 'Cancel' : 'Edit'}
-                                </button>
-                                <button
-                                  onClick={() => { setDeletingInspId(insp.id); setEditingInspId(null) }}
-                                  className="text-danger hover:underline"
-                                >
-                                  Delete
-                                </button>
-                              </span>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                      {editingInspId === insp.id && (
-                        <tr className="bg-blue-50">
-                          <td colSpan={(canManage || isGear) ? 5 : 4} className="px-4 py-3">
-                            <div className="flex flex-wrap items-start gap-3">
-                              <div className="flex gap-4">
-                                {(['pass', 'fail'] as const).map((r) => (
-                                  <label key={r} className="flex items-center gap-1.5 cursor-pointer">
-                                    <input type="radio" name={`edit-result-${insp.id}`} value={r} checked={editInspResult === r} onChange={() => setEditInspResult(r)} className="accent-navy-700" />
-                                    <span className={`text-sm font-medium ${r === 'pass' ? 'text-success' : 'text-danger'}`}>{r === 'pass' ? 'Pass' : 'Fail'}</span>
-                                  </label>
-                                ))}
-                              </div>
-                              <input
-                                type="date"
-                                value={editInspDate}
-                                onChange={(e) => setEditInspDate(e.target.value)}
-                                className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
-                              />
-                              <input
-                                type="text"
-                                value={editInspNotes}
-                                onChange={(e) => setEditInspNotes(e.target.value)}
-                                placeholder="Notes (optional)…"
-                                className="flex-1 min-w-48 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700"
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleEditInsp(insp.id)}
-                                  disabled={editInspBusy || !editInspDate}
-                                  className="px-3 py-1.5 bg-navy-700 text-white text-xs font-semibold rounded-lg hover:bg-navy-800 disabled:opacity-60"
-                                >
-                                  {editInspBusy ? 'Saving…' : 'Save'}
-                                </button>
-                                <button onClick={() => setEditingInspId(null)} className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                            {editInspError && <p className="text-xs text-danger mt-2">{editInspError}</p>}
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
+                  {submissions.map((sub) => (
+                    <tr key={sub.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-900">{sub.submittedAt.slice(0, 10)}</td>
+                      <td className="px-4 py-3 text-gray-600">{sub.submittedByName}</td>
+                      <td className="px-4 py-3 text-gray-600">{sub.templateName}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Link
+                          to="/orgs/$orgSlug/forms/submissions/$submissionId"
+                          params={{ orgSlug: org.slug, submissionId: sub.id }}
+                          className="text-xs text-navy-700 hover:underline font-medium"
+                        >
+                          View
+                        </Link>
+                      </td>
+                    </tr>
                   ))}
                 </tbody>
               </table>
-              {inspTotal > LIMIT && (
+              {submissionsTotal > LIMIT && (
                 <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
-                  <span className="text-sm text-gray-500">Showing {inspOffset + 1}–{Math.min(inspOffset + inspections.length, inspTotal)} of {inspTotal}</span>
+                  <span className="text-sm text-gray-500">Showing {submissionsOffset + 1}–{Math.min(submissionsOffset + submissions.length, submissionsTotal)} of {submissionsTotal}</span>
                   <div className="flex gap-2">
-                    <button disabled={inspOffset === 0} onClick={() => loadInspections(Math.max(0, inspOffset - LIMIT))} className="px-3 py-1 text-sm border border-gray-300 rounded-md disabled:opacity-40">Previous</button>
-                    <button disabled={inspOffset + inspections.length >= inspTotal} onClick={() => loadInspections(inspOffset + LIMIT)} className="px-3 py-1 text-sm border border-gray-300 rounded-md disabled:opacity-40">Next</button>
+                    <button disabled={submissionsOffset === 0} onClick={() => loadSubmissions(Math.max(0, submissionsOffset - LIMIT))} className="px-3 py-1 text-sm border border-gray-300 rounded-md disabled:opacity-40">Previous</button>
+                    <button disabled={submissionsOffset + submissions.length >= submissionsTotal} onClick={() => loadSubmissions(submissionsOffset + LIMIT)} className="px-3 py-1 text-sm border border-gray-300 rounded-md disabled:opacity-40">Next</button>
                   </div>
                 </div>
               )}

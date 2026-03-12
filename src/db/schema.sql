@@ -401,9 +401,6 @@ CREATE TABLE IF NOT EXISTS asset (
   in_service_date           TEXT,
   expiration_date           TEXT,
   warranty_expiration_date  TEXT,
-  inspection_interval_days  INTEGER,
-  inspection_recurrence_rule TEXT,  -- JSON: {"freq":"weekly","dayOfWeek":5}
-  next_inspection_due       TEXT,
   custom_fields             TEXT,
   unit_number               TEXT,
   assigned_to_staff_id      TEXT REFERENCES staff_member(id) ON DELETE SET NULL,
@@ -434,27 +431,23 @@ CREATE INDEX IF NOT EXISTS idx_asset_apparatus_assignment
 CREATE INDEX IF NOT EXISTS idx_asset_expiration
   ON asset(org_id, expiration_date) WHERE expiration_date IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_asset_inspection_due
-  ON asset(org_id, next_inspection_due) WHERE next_inspection_due IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS asset_inspection (
-  id                  TEXT NOT NULL PRIMARY KEY,
-  org_id              TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
-  asset_id            TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
-  inspector_staff_id  TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
-  result              TEXT NOT NULL,
-  notes               TEXT,
-  inspection_date     TEXT NOT NULL,
-  checklist_json      TEXT,
-  created_at          TEXT NOT NULL,
-  CHECK (result IN ('pass', 'fail'))
+-- Inspection schedules: many-to-many between assets and form templates
+CREATE TABLE IF NOT EXISTS asset_inspection_schedule (
+  id                        TEXT NOT NULL PRIMARY KEY,
+  org_id                    TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  asset_id                  TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
+  form_template_id          TEXT NOT NULL REFERENCES form_template(id) ON DELETE CASCADE,
+  label                     TEXT NOT NULL,
+  recurrence_rule           TEXT NOT NULL,                -- JSON: {"freq":"weekly","dayOfWeek":5}
+  interval_days             INTEGER NOT NULL,             -- derived from freq for simpler queries
+  next_inspection_due       TEXT,                         -- ISO date, recalculated after each submission
+  is_active                 INTEGER NOT NULL DEFAULT 1,   -- soft-disable without deleting
+  created_at                TEXT NOT NULL,
+  updated_at                TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_inspection_asset
-  ON asset_inspection(org_id, asset_id, inspection_date DESC);
-
-CREATE INDEX IF NOT EXISTS idx_inspection_inspector
-  ON asset_inspection(inspector_staff_id);
+CREATE INDEX IF NOT EXISTS idx_ais_asset ON asset_inspection_schedule(org_id, asset_id);
+CREATE INDEX IF NOT EXISTS idx_ais_due   ON asset_inspection_schedule(org_id, next_inspection_due) WHERE next_inspection_due IS NOT NULL AND is_active = 1;
 
 CREATE TABLE IF NOT EXISTS asset_audit_log (
   id               TEXT NOT NULL PRIMARY KEY,
@@ -468,11 +461,11 @@ CREATE TABLE IF NOT EXISTS asset_audit_log (
     'asset.created',
     'asset.updated',
     'asset.status_changed',
-    'asset.inspected',
     'asset.assigned',
     'asset.unassigned',
-    'asset.inspection_edited',
-    'asset.inspection_deleted'
+    'asset.schedule_created',
+    'asset.schedule_updated',
+    'asset.schedule_deleted'
   ))
 );
 
@@ -527,6 +520,7 @@ CREATE TABLE IF NOT EXISTS form_submission (
   status              TEXT NOT NULL DEFAULT 'complete',   -- 'in_progress' | 'complete'
   linked_entity_type  TEXT,                               -- 'asset' | 'staff_member' | NULL
   linked_entity_id    TEXT,                               -- FK to the linked entity
+  schedule_id         TEXT REFERENCES asset_inspection_schedule(id) ON DELETE SET NULL,
   submitted_at        TEXT NOT NULL,
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,

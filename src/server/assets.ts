@@ -4,7 +4,7 @@ import { canDo } from '@/lib/rbac'
 import type {
   AssetView,
   AssetDetailView,
-  InspectionView,
+  InspectionScheduleView,
   AssetAuditEntry,
   CreateAssetInput,
   CreateAssetOutput,
@@ -20,26 +20,25 @@ import type {
   AssignGearOutput,
   UnassignGearInput,
   UnassignGearOutput,
-  LogInspectionInput,
-  LogInspectionOutput,
-  GetInspectionHistoryInput,
-  GetInspectionHistoryOutput,
-  SetInspectionIntervalInput,
-  SetInspectionIntervalOutput,
+  AddInspectionScheduleInput,
+  AddInspectionScheduleOutput,
+  UpdateInspectionScheduleInput,
+  UpdateInspectionScheduleOutput,
+  DeleteInspectionScheduleInput,
+  DeleteInspectionScheduleOutput,
+  GetInspectionSchedulesInput,
+  GetInspectionSchedulesOutput,
   GetExpiringAssetsInput,
   GetExpiringAssetsOutput,
   GetOverdueInspectionsInput,
   GetOverdueInspectionsOutput,
+  OverdueInspectionView,
   GetMyGearInput,
   GetMyGearOutput,
   GetApparatusGearInput,
   GetApparatusGearOutput,
   GetAssetAuditLogInput,
   GetAssetAuditLogOutput,
-  EditInspectionInput,
-  EditInspectionOutput,
-  DeleteInspectionInput,
-  DeleteInspectionOutput,
   RecurrenceRule,
 } from '@/lib/asset.types'
 import {
@@ -117,27 +116,22 @@ function computeNextDue(base: string, rule: RecurrenceRule, advance: boolean): s
   return new Date(Date.UTC(year, month, dom)).toISOString().slice(0, 10)
 }
 
-async function recomputeNextDueFromHistory(
+async function recomputeScheduleNextDue(
   env: Cloudflare.Env,
   orgId: string,
-  assetId: string,
-  intervalDays: number,
-  rule: RecurrenceRule | null,
+  scheduleId: string,
+  rule: RecurrenceRule,
 ): Promise<string> {
-  type InspRow = { inspection_date: string }
-  const lastInsp = await env.DB.prepare(
-    `SELECT inspection_date FROM asset_inspection
-     WHERE asset_id = ? AND org_id = ?
-     ORDER BY inspection_date DESC, created_at DESC LIMIT 1`,
-  ).bind(assetId, orgId).first<InspRow>()
+  type SubRow = { submitted_at: string }
+  const lastSub = await env.DB.prepare(
+    `SELECT submitted_at FROM form_submission
+     WHERE schedule_id = ? AND org_id = ? AND status = 'complete'
+     ORDER BY submitted_at DESC LIMIT 1`,
+  ).bind(scheduleId, orgId).first<SubRow>()
 
   const dayStart = await getScheduleDayStart(env, orgId)
-  const base = lastInsp ? lastInsp.inspection_date : orgToday(dayStart)
-
-  if (rule) return computeNextDue(base, rule, !!lastInsp)
-  const d = new Date(base + 'T00:00:00Z')
-  d.setUTCDate(d.getUTCDate() + intervalDays)
-  return d.toISOString().slice(0, 10)
+  const base = lastSub ? lastSub.submitted_at.slice(0, 10) : orgToday(dayStart)
+  return computeNextDue(base, rule, !!lastSub)
 }
 
 function validateCategory(assetType: 'apparatus' | 'gear', category: string): boolean {
@@ -199,7 +193,6 @@ type AssetRow = {
   assigned_to_apparatus_id: string | null
   assigned_to_apparatus_name: string | null
   expiration_date: string | null
-  next_inspection_due: string | null
   created_at: string
   updated_at: string
 }
@@ -210,8 +203,6 @@ type AssetDetailRow = AssetRow & {
   purchased_date: string | null
   in_service_date: string | null
   warranty_expiration_date: string | null
-  inspection_interval_days: number | null
-  inspection_recurrence_rule: string | null
   custom_fields: string | null
 }
 
@@ -232,7 +223,6 @@ function rowToAssetView(r: AssetRow): AssetView {
     assignedToApparatusId: r.assigned_to_apparatus_id,
     assignedToApparatusName: r.assigned_to_apparatus_name,
     expirationDate: r.expiration_date,
-    nextInspectionDue: r.next_inspection_due,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -246,10 +236,6 @@ function rowToAssetDetailView(r: AssetDetailRow): AssetDetailView {
     purchasedDate: r.purchased_date,
     inServiceDate: r.in_service_date,
     warrantyExpirationDate: r.warranty_expiration_date,
-    inspectionIntervalDays: r.inspection_interval_days,
-    inspectionRecurrenceRule: r.inspection_recurrence_rule
-      ? (JSON.parse(r.inspection_recurrence_rule) as RecurrenceRule)
-      : null,
     customFields: r.custom_fields ? (JSON.parse(r.custom_fields) as Record<string, string | number | boolean>) : null,
   }
 }
@@ -261,7 +247,7 @@ const ASSET_LIST_SELECT = `
   sm.name AS assigned_to_staff_name,
   a.assigned_to_apparatus_id,
   app.name AS assigned_to_apparatus_name,
-  a.expiration_date, a.next_inspection_due,
+  a.expiration_date,
   a.created_at, a.updated_at`
 
 const ASSET_DETAIL_SELECT = `
@@ -271,10 +257,10 @@ const ASSET_DETAIL_SELECT = `
   sm.name AS assigned_to_staff_name,
   a.assigned_to_apparatus_id,
   app.name AS assigned_to_apparatus_name,
-  a.expiration_date, a.next_inspection_due,
+  a.expiration_date,
   a.created_at, a.updated_at,
   a.notes, a.manufacture_date, a.purchased_date, a.in_service_date,
-  a.warranty_expiration_date, a.inspection_interval_days, a.inspection_recurrence_rule, a.custom_fields`
+  a.warranty_expiration_date, a.custom_fields`
 
 const ASSET_JOINS = `
   LEFT JOIN staff_member sm ON sm.id = a.assigned_to_staff_id
@@ -802,106 +788,234 @@ export const unassignGearServerFn = createServerFn({ method: 'POST' })
   })
 
 // ---------------------------------------------------------------------------
-// D. Inspections
+// D. Inspection Schedules
 // ---------------------------------------------------------------------------
 
-export const logInspectionServerFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: LogInspectionInput) => d)
-  .handler(async (ctx): Promise<LogInspectionOutput> => {
+const FREQ_TO_DAYS: Record<string, number> = {
+  daily: 1, weekly: 7, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365,
+}
+
+type ScheduleRow = {
+  id: string
+  asset_id: string
+  form_template_id: string
+  form_template_name: string
+  label: string
+  recurrence_rule: string
+  interval_days: number
+  next_inspection_due: string | null
+  is_active: number
+  created_at: string
+  updated_at: string
+}
+
+function rowToScheduleView(r: ScheduleRow): InspectionScheduleView {
+  return {
+    id: r.id,
+    assetId: r.asset_id,
+    formTemplateId: r.form_template_id,
+    formTemplateName: r.form_template_name,
+    label: r.label,
+    recurrenceRule: JSON.parse(r.recurrence_rule) as RecurrenceRule,
+    intervalDays: r.interval_days,
+    nextInspectionDue: r.next_inspection_due,
+    isActive: r.is_active === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+const SCHEDULE_SELECT = `
+  ais.id, ais.asset_id, ais.form_template_id,
+  ft.name AS form_template_name,
+  ais.label, ais.recurrence_rule, ais.interval_days,
+  ais.next_inspection_due, ais.is_active,
+  ais.created_at, ais.updated_at`
+
+const SCHEDULE_JOIN = `LEFT JOIN form_template ft ON ft.id = ais.form_template_id`
+
+export const addInspectionScheduleServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: AddInspectionScheduleInput) => d)
+  .handler(async (ctx): Promise<AddInspectionScheduleOutput> => {
     const { data } = ctx
     const env = ctx.context as unknown as Cloudflare.Env
 
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
-    if (data.result !== 'pass' && data.result !== 'fail') {
-      return { success: false, error: 'INVALID_INPUT' }
-    }
+    const label = data.label?.trim()
+    if (!label || label.length > 200) return { success: false, error: 'INVALID_INPUT' }
 
-    type AssetBasicRow = { id: string; asset_type: string; assigned_to_staff_id: string | null; inspection_interval_days: number | null; inspection_recurrence_rule: string | null }
-    const asset = await env.DB.prepare(
-      `SELECT id, asset_type, assigned_to_staff_id, inspection_interval_days, inspection_recurrence_rule FROM asset WHERE id = ? AND org_id = ?`,
-    )
+    const asset = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
       .bind(data.assetId, membership.orgId)
-      .first<AssetBasicRow>()
-
+      .first<{ id: string }>()
     if (!asset) return { success: false, error: 'NOT_FOUND' }
 
-    // Permission: manage-assets OR assigned staff member
+    // Validate form template exists, belongs to org (or is system), and is published
+    type TplRow = { id: string; status: string; org_id: string | null; is_system: number }
+    const tpl = await env.DB.prepare(
+      `SELECT id, status, org_id, is_system FROM form_template WHERE id = ?`,
+    ).bind(data.formTemplateId).first<TplRow>()
+
+    if (!tpl) return { success: false, error: 'TEMPLATE_NOT_FOUND' }
+    if (tpl.org_id !== null && tpl.org_id !== membership.orgId && tpl.is_system !== 1) {
+      return { success: false, error: 'TEMPLATE_NOT_FOUND' }
+    }
+    if (tpl.status !== 'published') return { success: false, error: 'TEMPLATE_NOT_PUBLISHED' }
+
+    const rule = data.recurrenceRule
+    const intervalDays = FREQ_TO_DAYS[rule.freq] ?? 30
+
+    const dayStart = await getScheduleDayStart(env, membership.orgId)
+    const nextDue = computeNextDue(orgToday(dayStart), rule, false)
+
+    const id = crypto.randomUUID()
+    const now = isoNow()
+    const ruleJson = JSON.stringify(rule)
+
+    await env.DB.prepare(
+      `INSERT INTO asset_inspection_schedule (id, org_id, asset_id, form_template_id, label, recurrence_rule, interval_days, next_inspection_due, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    ).bind(id, membership.orgId, data.assetId, data.formTemplateId, label, ruleJson, intervalDays, nextDue, now, now).run()
+
     type StaffRow = { id: string }
     const staffRow = await env.DB.prepare(
       `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    )
-      .bind(membership.userId, membership.orgId)
-      .first<StaffRow>()
+    ).bind(membership.userId, membership.orgId).first<StaffRow>()
 
-    const hasManageAssets = canDo(membership.role, 'manage-assets')
-    const isAssignedStaff = staffRow && asset.assigned_to_staff_id === staffRow.id
-
-    if (!hasManageAssets && !isAssignedStaff) return { success: false, error: 'FORBIDDEN' }
-    if (!staffRow) return { success: false, error: 'FORBIDDEN' }
-
-    const dayStart = await getScheduleDayStart(env, membership.orgId)
-    const inspectionDate = data.inspectionDate ?? orgToday(dayStart)
-    const id = crypto.randomUUID()
-    const now = isoNow()
-
-    await env.DB.prepare(
-      `INSERT INTO asset_inspection (id, org_id, asset_id, inspector_staff_id, result, notes, inspection_date, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(id, membership.orgId, asset.id, staffRow.id, data.result, data.notes?.trim() || null, inspectionDate, now)
-      .run()
-
-    // Recalculate next_inspection_due if a schedule is set
-    if (asset.inspection_interval_days) {
-      let nextDueStr: string
-      const rule = asset.inspection_recurrence_rule
-        ? (JSON.parse(asset.inspection_recurrence_rule) as RecurrenceRule)
-        : null
-      if (rule) {
-        nextDueStr = computeNextDue(inspectionDate, rule, true)
-      } else {
-        const nextDue = new Date(inspectionDate + 'T00:00:00Z')
-        nextDue.setUTCDate(nextDue.getUTCDate() + asset.inspection_interval_days)
-        nextDueStr = nextDue.toISOString().slice(0, 10)
-      }
-      await env.DB.prepare(`UPDATE asset SET next_inspection_due = ?, updated_at = ? WHERE id = ?`)
-        .bind(nextDueStr, now, asset.id)
-        .run()
+    if (staffRow) {
+      await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.schedule_created', data.assetId, {
+        schedule_id: id,
+        label,
+        form_template_id: data.formTemplateId,
+        freq: rule.freq,
+      })
     }
 
-    await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.inspected', asset.id, {
-      result: data.result,
-      inspection_date: inspectionDate,
-    })
-
-    type InspRow = { id: string; asset_id: string; inspector_staff_id: string; result: string; notes: string | null; inspection_date: string; created_at: string; staff_name: string | null }
     const row = await env.DB.prepare(
-      `SELECT ai.*, sm.name AS staff_name FROM asset_inspection ai
-       LEFT JOIN staff_member sm ON sm.id = ai.inspector_staff_id
-       WHERE ai.id = ?`,
-    )
-      .bind(id)
-      .first<InspRow>()
+      `SELECT ${SCHEDULE_SELECT} FROM asset_inspection_schedule ais ${SCHEDULE_JOIN} WHERE ais.id = ?`,
+    ).bind(id).first<ScheduleRow>()
 
-    const inspection: InspectionView = {
-      id: row!.id,
-      assetId: row!.asset_id,
-      inspectorStaffId: row!.inspector_staff_id,
-      inspectorName: row!.staff_name ?? 'Unknown',
-      result: row!.result as 'pass' | 'fail',
-      notes: row!.notes,
-      inspectionDate: row!.inspection_date,
-      createdAt: row!.created_at,
-    }
-
-    return { success: true, inspection }
+    return { success: true, schedule: rowToScheduleView(row!) }
   })
 
-export const getInspectionHistoryServerFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: GetInspectionHistoryInput) => d)
-  .handler(async (ctx): Promise<GetInspectionHistoryOutput> => {
+export const updateInspectionScheduleServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: UpdateInspectionScheduleInput) => d)
+  .handler(async (ctx): Promise<UpdateInspectionScheduleOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
+
+    type ExistingRow = { id: string; asset_id: string; form_template_id: string; label: string; recurrence_rule: string; interval_days: number; is_active: number }
+    const existing = await env.DB.prepare(
+      `SELECT ais.id, ais.asset_id, ais.form_template_id, ais.label, ais.recurrence_rule, ais.interval_days, ais.is_active
+       FROM asset_inspection_schedule ais
+       JOIN asset a ON a.id = ais.asset_id
+       WHERE ais.id = ? AND ais.asset_id = ? AND a.org_id = ?`,
+    ).bind(data.scheduleId, data.assetId, membership.orgId).first<ExistingRow>()
+
+    if (!existing) return { success: false, error: 'NOT_FOUND' }
+
+    // Validate new template if changing
+    if (data.formTemplateId && data.formTemplateId !== existing.form_template_id) {
+      type TplRow = { id: string; status: string; org_id: string | null; is_system: number }
+      const tpl = await env.DB.prepare(
+        `SELECT id, status, org_id, is_system FROM form_template WHERE id = ?`,
+      ).bind(data.formTemplateId).first<TplRow>()
+
+      if (!tpl) return { success: false, error: 'TEMPLATE_NOT_FOUND' }
+      if (tpl.org_id !== null && tpl.org_id !== membership.orgId && tpl.is_system !== 1) {
+        return { success: false, error: 'TEMPLATE_NOT_FOUND' }
+      }
+      if (tpl.status !== 'published') return { success: false, error: 'TEMPLATE_NOT_PUBLISHED' }
+    }
+
+    const newLabel = data.label !== undefined ? data.label.trim() : existing.label
+    if (!newLabel || newLabel.length > 200) return { success: false, error: 'INVALID_INPUT' }
+
+    const newTemplateId = data.formTemplateId ?? existing.form_template_id
+    const newRule = data.recurrenceRule ?? (JSON.parse(existing.recurrence_rule) as RecurrenceRule)
+    const newIntervalDays = data.recurrenceRule ? (FREQ_TO_DAYS[data.recurrenceRule.freq] ?? 30) : existing.interval_days
+    const newIsActive = data.isActive !== undefined ? (data.isActive ? 1 : 0) : existing.is_active
+
+    const now = isoNow()
+    const ruleJson = JSON.stringify(newRule)
+
+    // Recompute next due if recurrence changed
+    let nextDue: string | null = null
+    if (newIsActive) {
+      nextDue = await recomputeScheduleNextDue(env, membership.orgId, data.scheduleId, newRule)
+    }
+
+    await env.DB.prepare(
+      `UPDATE asset_inspection_schedule SET
+        form_template_id = ?, label = ?, recurrence_rule = ?, interval_days = ?,
+        next_inspection_due = ?, is_active = ?, updated_at = ?
+       WHERE id = ?`,
+    ).bind(newTemplateId, newLabel, ruleJson, newIntervalDays, nextDue, newIsActive, now, data.scheduleId).run()
+
+    type StaffRow = { id: string }
+    const staffRow = await env.DB.prepare(
+      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
+    ).bind(membership.userId, membership.orgId).first<StaffRow>()
+
+    if (staffRow) {
+      await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.schedule_updated', data.assetId, {
+        schedule_id: data.scheduleId,
+        label: newLabel,
+      })
+    }
+
+    const row = await env.DB.prepare(
+      `SELECT ${SCHEDULE_SELECT} FROM asset_inspection_schedule ais ${SCHEDULE_JOIN} WHERE ais.id = ?`,
+    ).bind(data.scheduleId).first<ScheduleRow>()
+
+    return { success: true, schedule: rowToScheduleView(row!) }
+  })
+
+export const deleteInspectionScheduleServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: DeleteInspectionScheduleInput) => d)
+  .handler(async (ctx): Promise<DeleteInspectionScheduleOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
+
+    type ExistingRow = { id: string; label: string }
+    const existing = await env.DB.prepare(
+      `SELECT ais.id, ais.label FROM asset_inspection_schedule ais
+       JOIN asset a ON a.id = ais.asset_id
+       WHERE ais.id = ? AND ais.asset_id = ? AND a.org_id = ?`,
+    ).bind(data.scheduleId, data.assetId, membership.orgId).first<ExistingRow>()
+
+    if (!existing) return { success: false, error: 'NOT_FOUND' }
+
+    await env.DB.prepare(`DELETE FROM asset_inspection_schedule WHERE id = ?`).bind(data.scheduleId).run()
+
+    type StaffRow = { id: string }
+    const staffRow = await env.DB.prepare(
+      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
+    ).bind(membership.userId, membership.orgId).first<StaffRow>()
+
+    if (staffRow) {
+      await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.schedule_deleted', data.assetId, {
+        schedule_id: data.scheduleId,
+        label: existing.label,
+      })
+    }
+
+    return { success: true }
+  })
+
+export const getInspectionSchedulesServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: GetInspectionSchedulesInput) => d)
+  .handler(async (ctx): Promise<GetInspectionSchedulesOutput> => {
     const { data } = ctx
     const env = ctx.context as unknown as Cloudflare.Env
 
@@ -913,108 +1027,13 @@ export const getInspectionHistoryServerFn = createServerFn({ method: 'POST' })
       .first<{ id: string }>()
     if (!assetCheck) return { success: false, error: 'NOT_FOUND' }
 
-    const limit = Math.min(data.limit ?? 50, 200)
-    const offset = data.offset ?? 0
-
-    const countRow = await env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM asset_inspection WHERE asset_id = ? AND org_id = ?`,
-    )
-      .bind(data.assetId, membership.orgId)
-      .first<{ cnt: number }>()
-    const total = countRow?.cnt ?? 0
-
-    type InspRow = { id: string; asset_id: string; inspector_staff_id: string; result: string; notes: string | null; inspection_date: string; created_at: string; staff_name: string | null }
     const rows = await env.DB.prepare(
-      `SELECT ai.id, ai.asset_id, ai.inspector_staff_id, ai.result, ai.notes, ai.inspection_date, ai.created_at,
-              sm.name AS staff_name
-       FROM asset_inspection ai
-       LEFT JOIN staff_member sm ON sm.id = ai.inspector_staff_id
-       WHERE ai.asset_id = ? AND ai.org_id = ?
-       ORDER BY ai.inspection_date DESC, ai.created_at DESC
-       LIMIT ? OFFSET ?`,
-    )
-      .bind(data.assetId, membership.orgId, limit, offset)
-      .all<InspRow>()
+      `SELECT ${SCHEDULE_SELECT} FROM asset_inspection_schedule ais ${SCHEDULE_JOIN}
+       WHERE ais.asset_id = ? AND ais.org_id = ?
+       ORDER BY ais.created_at ASC`,
+    ).bind(data.assetId, membership.orgId).all<ScheduleRow>()
 
-    const inspections: InspectionView[] = (rows.results ?? []).map((r) => ({
-      id: r.id,
-      assetId: r.asset_id,
-      inspectorStaffId: r.inspector_staff_id,
-      inspectorName: r.staff_name ?? 'Unknown',
-      result: r.result as 'pass' | 'fail',
-      notes: r.notes,
-      inspectionDate: r.inspection_date,
-      createdAt: r.created_at,
-    }))
-
-    return { success: true, inspections, total }
-  })
-
-// ---------------------------------------------------------------------------
-// E. Inspection Scheduling
-// ---------------------------------------------------------------------------
-
-export const setInspectionIntervalServerFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: SetInspectionIntervalInput) => d)
-  .handler(async (ctx): Promise<SetInspectionIntervalOutput> => {
-    const { data } = ctx
-    const env = ctx.context as unknown as Cloudflare.Env
-
-    const membership = await requireOrgMembership(env, data.orgSlug)
-    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
-    if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
-
-    const rule = data.recurrenceRule
-    const hasRule = rule !== null
-    const intervalDays = hasRule
-      ? ({ daily: 1, weekly: 7, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 }[rule.freq])
-      : data.intervalDays
-
-    if (!hasRule && intervalDays !== null && (!Number.isInteger(intervalDays) || intervalDays < 1)) {
-      return { success: false, error: 'INVALID_INPUT' }
-    }
-
-    const asset = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
-      .bind(data.assetId, membership.orgId)
-      .first<{ id: string }>()
-    if (!asset) return { success: false, error: 'NOT_FOUND' }
-
-    let nextDue: string | null = null
-    if (intervalDays !== null) {
-      type InspRow = { inspection_date: string }
-      const lastInsp = await env.DB.prepare(
-        `SELECT inspection_date FROM asset_inspection WHERE asset_id = ? ORDER BY inspection_date DESC LIMIT 1`,
-      )
-        .bind(data.assetId)
-        .first<InspRow>()
-
-      const dayStart = await getScheduleDayStart(env, membership.orgId)
-      const baseDate = lastInsp ? lastInsp.inspection_date : orgToday(dayStart)
-
-      if (rule) {
-        nextDue = computeNextDue(baseDate, rule, !!lastInsp)
-      } else {
-        const due = new Date(baseDate + 'T00:00:00Z')
-        due.setUTCDate(due.getUTCDate() + intervalDays)
-        nextDue = due.toISOString().slice(0, 10)
-      }
-    }
-
-    const ruleJson = rule ? JSON.stringify(rule) : null
-    const now = isoNow()
-    await env.DB.prepare(
-      `UPDATE asset SET inspection_interval_days = ?, inspection_recurrence_rule = ?, next_inspection_due = ?, updated_at = ? WHERE id = ?`,
-    )
-      .bind(intervalDays, ruleJson, nextDue, now, data.assetId)
-      .run()
-
-    const row = await env.DB.prepare(
-      `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS} WHERE a.id = ?`,
-    )
-      .bind(data.assetId)
-      .first<AssetRow>()
-
-    return { success: true, asset: rowToAssetView(row!) }
+    return { success: true, schedules: (rows.results ?? []).map(rowToScheduleView) }
   })
 
 // ---------------------------------------------------------------------------
@@ -1065,16 +1084,28 @@ export const getOverdueInspectionsServerFn = createServerFn({ method: 'POST' })
     cutoff.setDate(cutoff.getDate() + lookaheadDays)
     const cutoffStr = cutoff.toISOString().slice(0, 10)
 
+    type OverdueRow = ScheduleRow & { asset_name: string; asset_type: string }
     const rows = await env.DB.prepare(
-      `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS}
-       WHERE a.org_id = ? AND a.next_inspection_due IS NOT NULL AND a.next_inspection_due <= ?
+      `SELECT ${SCHEDULE_SELECT}, a.name AS asset_name, a.asset_type
+       FROM asset_inspection_schedule ais
+       ${SCHEDULE_JOIN}
+       JOIN asset a ON a.id = ais.asset_id
+       WHERE ais.org_id = ? AND ais.is_active = 1
+         AND ais.next_inspection_due IS NOT NULL AND ais.next_inspection_due <= ?
          AND a.status != 'decommissioned'
-       ORDER BY a.next_inspection_due ASC`,
+       ORDER BY ais.next_inspection_due ASC`,
     )
       .bind(membership.orgId, cutoffStr)
-      .all<AssetRow>()
+      .all<OverdueRow>()
 
-    return { success: true, assets: (rows.results ?? []).map(rowToAssetView) }
+    const overdueInspections: OverdueInspectionView[] = (rows.results ?? []).map((r) => ({
+      schedule: rowToScheduleView(r),
+      assetName: r.asset_name,
+      assetId: r.asset_id,
+      assetType: r.asset_type as 'apparatus' | 'gear',
+    }))
+
+    return { success: true, overdueInspections }
   })
 
 export const getMyGearServerFn = createServerFn({ method: 'POST' })
@@ -1187,160 +1218,3 @@ export const getAssetAuditLogServerFn = createServerFn({ method: 'POST' })
     return { success: true, entries, total }
   })
 
-// ---------------------------------------------------------------------------
-// H. Edit / Delete Inspections
-// ---------------------------------------------------------------------------
-
-export const editInspectionServerFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: EditInspectionInput) => d)
-  .handler(async (ctx): Promise<EditInspectionOutput> => {
-    const { data } = ctx
-    const env = ctx.context as unknown as Cloudflare.Env
-
-    const membership = await requireOrgMembership(env, data.orgSlug)
-    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
-
-    if (data.result !== 'pass' && data.result !== 'fail') {
-      return { success: false, error: 'INVALID_INPUT' }
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(data.inspectionDate)) {
-      return { success: false, error: 'INVALID_INPUT' }
-    }
-
-    type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    ).bind(membership.userId, membership.orgId).first<StaffRow>()
-
-    if (!staffRow) return { success: false, error: 'FORBIDDEN' }
-
-    type InspRow = {
-      id: string; asset_id: string; inspector_staff_id: string
-      result: string; notes: string | null; inspection_date: string; created_at: string
-    }
-    const insp = await env.DB.prepare(
-      `SELECT ai.id, ai.asset_id, ai.inspector_staff_id, ai.result, ai.notes,
-              ai.inspection_date, ai.created_at
-       FROM asset_inspection ai
-       JOIN asset a ON a.id = ai.asset_id
-       WHERE ai.id = ? AND ai.asset_id = ? AND a.org_id = ?`,
-    ).bind(data.inspectionId, data.assetId, membership.orgId).first<InspRow>()
-
-    if (!insp) return { success: false, error: 'NOT_FOUND' }
-
-    const canManage = canDo(membership.role, 'manage-assets')
-    if (!canManage && staffRow.id !== insp.inspector_staff_id) {
-      return { success: false, error: 'FORBIDDEN' }
-    }
-
-    const changes: Record<string, unknown> = {}
-    if (data.result !== insp.result) changes['result'] = { from: insp.result, to: data.result }
-    if (data.inspectionDate !== insp.inspection_date) changes['inspection_date'] = { from: insp.inspection_date, to: data.inspectionDate }
-    if ((data.notes ?? null) !== insp.notes) changes['notes'] = { from: insp.notes, to: data.notes }
-
-    const now = isoNow()
-    await env.DB.prepare(
-      `UPDATE asset_inspection SET result = ?, notes = ?, inspection_date = ? WHERE id = ?`,
-    ).bind(data.result, data.notes, data.inspectionDate, insp.id).run()
-
-    type AssetIntervalRow = { inspection_interval_days: number | null; inspection_recurrence_rule: string | null }
-    const assetRow = await env.DB.prepare(
-      `SELECT inspection_interval_days, inspection_recurrence_rule FROM asset WHERE id = ?`,
-    ).bind(insp.asset_id).first<AssetIntervalRow>()
-
-    if (assetRow?.inspection_interval_days) {
-      const rule = assetRow.inspection_recurrence_rule
-        ? (JSON.parse(assetRow.inspection_recurrence_rule) as RecurrenceRule)
-        : null
-      const nextDue = await recomputeNextDueFromHistory(env, membership.orgId, insp.asset_id, assetRow.inspection_interval_days, rule)
-      await env.DB.prepare(`UPDATE asset SET next_inspection_due = ?, updated_at = ? WHERE id = ?`)
-        .bind(nextDue, now, insp.asset_id).run()
-    }
-
-    await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.inspection_edited', insp.asset_id, {
-      inspection_id: insp.id,
-      ...changes,
-    })
-
-    type InspJoinRow = { id: string; asset_id: string; inspector_staff_id: string; result: string; notes: string | null; inspection_date: string; created_at: string; staff_name: string | null }
-    const row = await env.DB.prepare(
-      `SELECT ai.id, ai.asset_id, ai.inspector_staff_id, ai.result, ai.notes, ai.inspection_date, ai.created_at,
-              sm.name AS staff_name
-       FROM asset_inspection ai
-       LEFT JOIN staff_member sm ON sm.id = ai.inspector_staff_id
-       WHERE ai.id = ?`,
-    ).bind(insp.id).first<InspJoinRow>()
-
-    const inspection: InspectionView = {
-      id: row!.id,
-      assetId: row!.asset_id,
-      inspectorStaffId: row!.inspector_staff_id,
-      inspectorName: row!.staff_name ?? 'Unknown',
-      result: row!.result as 'pass' | 'fail',
-      notes: row!.notes,
-      inspectionDate: row!.inspection_date,
-      createdAt: row!.created_at,
-    }
-
-    return { success: true, inspection }
-  })
-
-export const deleteInspectionServerFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: DeleteInspectionInput) => d)
-  .handler(async (ctx): Promise<DeleteInspectionOutput> => {
-    const { data } = ctx
-    const env = ctx.context as unknown as Cloudflare.Env
-
-    const membership = await requireOrgMembership(env, data.orgSlug)
-    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
-
-    type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    ).bind(membership.userId, membership.orgId).first<StaffRow>()
-
-    if (!staffRow) return { success: false, error: 'FORBIDDEN' }
-
-    type InspRow = {
-      id: string; asset_id: string; inspector_staff_id: string
-      result: string; inspection_date: string
-    }
-    const insp = await env.DB.prepare(
-      `SELECT ai.id, ai.asset_id, ai.inspector_staff_id, ai.result, ai.inspection_date
-       FROM asset_inspection ai
-       JOIN asset a ON a.id = ai.asset_id
-       WHERE ai.id = ? AND ai.asset_id = ? AND a.org_id = ?`,
-    ).bind(data.inspectionId, data.assetId, membership.orgId).first<InspRow>()
-
-    if (!insp) return { success: false, error: 'NOT_FOUND' }
-
-    const canManage = canDo(membership.role, 'manage-assets')
-    if (!canManage && staffRow.id !== insp.inspector_staff_id) {
-      return { success: false, error: 'FORBIDDEN' }
-    }
-
-    await env.DB.prepare(`DELETE FROM asset_inspection WHERE id = ?`).bind(insp.id).run()
-
-    const now = isoNow()
-    type AssetIntervalRow = { inspection_interval_days: number | null; inspection_recurrence_rule: string | null }
-    const assetRow = await env.DB.prepare(
-      `SELECT inspection_interval_days, inspection_recurrence_rule FROM asset WHERE id = ?`,
-    ).bind(insp.asset_id).first<AssetIntervalRow>()
-
-    if (assetRow?.inspection_interval_days) {
-      const rule = assetRow.inspection_recurrence_rule
-        ? (JSON.parse(assetRow.inspection_recurrence_rule) as RecurrenceRule)
-        : null
-      const nextDue = await recomputeNextDueFromHistory(env, membership.orgId, insp.asset_id, assetRow.inspection_interval_days, rule)
-      await env.DB.prepare(`UPDATE asset SET next_inspection_due = ?, updated_at = ? WHERE id = ?`)
-        .bind(nextDue, now, insp.asset_id).run()
-    }
-
-    await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.inspection_deleted', insp.asset_id, {
-      inspection_id: insp.id,
-      inspection_date: insp.inspection_date,
-      result: insp.result,
-    })
-
-    return { success: true }
-  })

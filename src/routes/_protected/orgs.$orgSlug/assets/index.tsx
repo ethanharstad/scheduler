@@ -20,7 +20,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/assets/')({
       assets: assetsResult.success ? assetsResult.assets : [],
       total: assetsResult.success ? assetsResult.total : 0,
       expiringAssets: expiringResult.success ? expiringResult.assets : [],
-      overdueAssets: overdueResult.success ? overdueResult.assets : [],
+      overdueInspections: overdueResult.success ? overdueResult.overdueInspections : [],
     }
   },
   component: AssetsIndex,
@@ -118,7 +118,7 @@ function daysUntil(dateStr: string, scheduleDayStart: string): number {
 
 function AssetsIndex() {
   const { org } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { assets: initialAssets, total: initialTotal, expiringAssets, overdueAssets } = Route.useLoaderData()
+  const { assets: initialAssets, total: initialTotal, expiringAssets, overdueInspections } = Route.useLoaderData()
 
   const [assets, setAssets] = useState<AssetView[]>(initialAssets)
   const [total, setTotal] = useState(initialTotal)
@@ -178,7 +178,7 @@ function AssetsIndex() {
     }, 300)
   }
 
-  const hasAlerts = expiringAssets.length > 0 || overdueAssets.length > 0
+  const hasAlerts = expiringAssets.length > 0 || overdueInspections.length > 0
 
   return (
     <div className="space-y-6">
@@ -194,7 +194,7 @@ function AssetsIndex() {
               <span className="font-semibold text-gray-900">
                 Compliance Alerts
                 <span className="ml-2 inline-flex items-center justify-center w-5 h-5 rounded-full bg-danger text-white text-xs font-bold">
-                  {expiringAssets.length + overdueAssets.length}
+                  {expiringAssets.length + overdueInspections.length}
                 </span>
               </span>
             </div>
@@ -203,25 +203,25 @@ function AssetsIndex() {
 
           {alertsExpanded && (
             <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {overdueAssets.length > 0 && (
+              {overdueInspections.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Clock className="w-3.5 h-3.5 text-danger" />
                     <span className="text-xs font-semibold uppercase tracking-wide text-danger" style={{ fontFamily: 'var(--font-condensed)' }}>
-                      Inspection Alerts ({overdueAssets.length})
+                      Inspection Alerts ({overdueInspections.length})
                     </span>
                   </div>
                   <ul className="space-y-1">
-                    {overdueAssets.slice(0, 5).map((a) => {
-                      const days = a.nextInspectionDue ? daysUntil(a.nextInspectionDue, org.scheduleDayStart) : 0
+                    {overdueInspections.slice(0, 5).map((item) => {
+                      const days = item.schedule.nextInspectionDue ? daysUntil(item.schedule.nextInspectionDue, org.scheduleDayStart) : 0
                       return (
-                        <li key={a.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-200 last:border-0">
+                        <li key={item.schedule.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-200 last:border-0">
                           <Link
                             to="/orgs/$orgSlug/assets/$assetId"
-                            params={{ orgSlug: org.slug, assetId: a.id }}
+                            params={{ orgSlug: org.slug, assetId: item.assetId }}
                             className="text-navy-700 hover:underline font-medium"
                           >
-                            {a.name}
+                            {item.assetName} — {item.schedule.label}
                           </Link>
                           <span className={`text-xs font-semibold ${days < 0 ? 'text-danger' : 'text-warning'}`}>
                             {days < 0 ? `${Math.abs(days)}d overdue` : `Due in ${days}d`}

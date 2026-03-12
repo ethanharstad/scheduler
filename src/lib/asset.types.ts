@@ -115,7 +115,6 @@ export interface AssetView {
   assignedToApparatusId: string | null
   assignedToApparatusName: string | null
   expirationDate: string | null
-  nextInspectionDue: string | null
   createdAt: string
   updatedAt: string
 }
@@ -126,20 +125,21 @@ export interface AssetDetailView extends AssetView {
   purchasedDate: string | null
   inServiceDate: string | null
   warrantyExpirationDate: string | null
-  inspectionIntervalDays: number | null
-  inspectionRecurrenceRule: RecurrenceRule | null
   customFields: Record<string, string | number | boolean> | null
 }
 
-export interface InspectionView {
+export interface InspectionScheduleView {
   id: string
   assetId: string
-  inspectorStaffId: string
-  inspectorName: string
-  result: 'pass' | 'fail'
-  notes: string | null
-  inspectionDate: string
+  formTemplateId: string
+  formTemplateName: string
+  label: string
+  recurrenceRule: RecurrenceRule
+  intervalDays: number
+  nextInspectionDue: string | null
+  isActive: boolean
   createdAt: string
+  updatedAt: string
 }
 
 export interface AssetAuditEntry {
@@ -283,57 +283,46 @@ export type UnassignGearOutput =
   | { success: true; asset: AssetView }
   | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'NOT_ASSIGNED' }
 
-export interface LogInspectionInput {
+export interface AddInspectionScheduleInput {
   orgSlug: string
   assetId: string
-  result: 'pass' | 'fail'
-  notes?: string
-  inspectionDate?: string
+  formTemplateId: string
+  label: string
+  recurrenceRule: RecurrenceRule
 }
-export type LogInspectionOutput =
-  | { success: true; inspection: InspectionView }
-  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_INPUT' }
+export type AddInspectionScheduleOutput =
+  | { success: true; schedule: InspectionScheduleView }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'TEMPLATE_NOT_FOUND' | 'TEMPLATE_NOT_PUBLISHED' | 'INVALID_INPUT' }
 
-export interface GetInspectionHistoryInput {
+export interface UpdateInspectionScheduleInput {
   orgSlug: string
   assetId: string
-  limit?: number
-  offset?: number
+  scheduleId: string
+  label?: string
+  formTemplateId?: string
+  recurrenceRule?: RecurrenceRule
+  isActive?: boolean
 }
-export type GetInspectionHistoryOutput =
-  | { success: true; inspections: InspectionView[]; total: number }
-  | { success: false; error: 'UNAUTHORIZED' | 'NOT_FOUND' }
+export type UpdateInspectionScheduleOutput =
+  | { success: true; schedule: InspectionScheduleView }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'TEMPLATE_NOT_FOUND' | 'TEMPLATE_NOT_PUBLISHED' | 'INVALID_INPUT' }
 
-export interface EditInspectionInput {
+export interface DeleteInspectionScheduleInput {
   orgSlug: string
   assetId: string
-  inspectionId: string
-  result: 'pass' | 'fail'
-  notes: string | null
-  inspectionDate: string
+  scheduleId: string
 }
-export type EditInspectionOutput =
-  | { success: true; inspection: InspectionView }
-  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_INPUT' }
-
-export interface DeleteInspectionInput {
-  orgSlug: string
-  assetId: string
-  inspectionId: string
-}
-export type DeleteInspectionOutput =
+export type DeleteInspectionScheduleOutput =
   | { success: true }
   | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' }
 
-export interface SetInspectionIntervalInput {
+export interface GetInspectionSchedulesInput {
   orgSlug: string
   assetId: string
-  intervalDays: number | null
-  recurrenceRule: RecurrenceRule | null
 }
-export type SetInspectionIntervalOutput =
-  | { success: true; asset: AssetView }
-  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'INVALID_INPUT' }
+export type GetInspectionSchedulesOutput =
+  | { success: true; schedules: InspectionScheduleView[] }
+  | { success: false; error: 'UNAUTHORIZED' | 'NOT_FOUND' }
 
 export interface GetExpiringAssetsInput {
   orgSlug: string
@@ -343,12 +332,19 @@ export type GetExpiringAssetsOutput =
   | { success: true; assets: AssetView[] }
   | { success: false; error: 'UNAUTHORIZED' }
 
+export interface OverdueInspectionView {
+  schedule: InspectionScheduleView
+  assetName: string
+  assetId: string
+  assetType: AssetType
+}
+
 export interface GetOverdueInspectionsInput {
   orgSlug: string
   lookaheadDays?: number
 }
 export type GetOverdueInspectionsOutput =
-  | { success: true; assets: AssetView[] }
+  | { success: true; overdueInspections: OverdueInspectionView[] }
   | { success: false; error: 'UNAUTHORIZED' }
 
 export interface GetMyGearInput {

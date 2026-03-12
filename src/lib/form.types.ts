@@ -270,6 +270,7 @@ export interface SubmitFormInput {
   templateId: string
   linkedEntityType?: LinkedEntityType
   linkedEntityId?: string
+  scheduleId?: string
   values: Record<string, string | number | boolean | string[] | null>
 }
 export type SubmitFormOutput =

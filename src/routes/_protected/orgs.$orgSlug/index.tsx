@@ -10,7 +10,7 @@ import { canDo } from '@/lib/rbac'
 import type { TodayAssignment, UpcomingShift } from '@/server/schedule'
 import type { ExpiringCertView } from '@/lib/qualifications.types'
 import type { ConstraintView } from '@/lib/constraint.types'
-import type { AssetView } from '@/lib/asset.types'
+import type { AssetView, OverdueInspectionView } from '@/lib/asset.types'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
   head: () => ({
@@ -35,7 +35,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
     const expiringCerts = expiringResult.success ? expiringResult.certs : []
     const pendingTimeOff = pendingTimeOffResult && pendingTimeOffResult.success ? pendingTimeOffResult.constraints : []
     const expiringAssets = expiringAssetsResult?.success ? expiringAssetsResult.assets : []
-    const overdueInspections = overdueInspectionsResult?.success ? overdueInspectionsResult.assets : []
+    const overdueInspections = overdueInspectionsResult?.success ? overdueInspectionsResult.overdueInspections : []
     const myUpcomingShifts = myShiftsResult && myShiftsResult.success ? myShiftsResult.shifts : []
     const schedules = schedulesResult?.success ? schedulesResult.schedules : []
     const currentSchedule = schedules.find(
@@ -281,15 +281,15 @@ function AssetComplianceWidget({
   today,
 }: {
   expiringAssets: AssetView[]
-  overdueInspections: AssetView[]
+  overdueInspections: OverdueInspectionView[]
   orgSlug: string
   today: string
 }) {
   const actuallyOverdue = overdueInspections.filter(
-    (a) => a.nextInspectionDue && daysUntil(a.nextInspectionDue, today) < 0
+    (item) => item.schedule.nextInspectionDue && daysUntil(item.schedule.nextInspectionDue, today) < 0
   )
   const dueSoon = overdueInspections.filter(
-    (a) => !a.nextInspectionDue || daysUntil(a.nextInspectionDue, today) >= 0
+    (item) => !item.schedule.nextInspectionDue || daysUntil(item.schedule.nextInspectionDue, today) >= 0
   )
 
   const totalAlerts = actuallyOverdue.length + dueSoon.length + expiringAssets.length
@@ -338,16 +338,16 @@ function AssetComplianceWidget({
                 </span>
               </div>
               <ul className="divide-y divide-danger/10">
-                {actuallyOverdue.map((a) => {
-                  const days = a.nextInspectionDue ? daysUntil(a.nextInspectionDue, today) : null
+                {actuallyOverdue.map((item) => {
+                  const days = item.schedule.nextInspectionDue ? daysUntil(item.schedule.nextInspectionDue, today) : null
                   return (
-                    <li key={a.id} className="flex items-center justify-between py-2">
+                    <li key={item.schedule.id} className="flex items-center justify-between py-2">
                       <Link
-                        to="/orgs/$orgSlug/assets"
-                        params={{ orgSlug }}
+                        to="/orgs/$orgSlug/assets/$assetId"
+                        params={{ orgSlug, assetId: item.assetId }}
                         className="text-sm font-medium text-navy-700 hover:underline"
                       >
-                        {a.name}
+                        {item.assetName} — {item.schedule.label}
                       </Link>
                       <span className="text-xs text-danger font-semibold">
                         {days === null ? 'Overdue' : `${Math.abs(days)}d overdue`}
@@ -367,16 +367,16 @@ function AssetComplianceWidget({
                 </span>
               </div>
               <ul className="divide-y divide-warning/10">
-                {dueSoon.map((a) => {
-                  const days = a.nextInspectionDue ? daysUntil(a.nextInspectionDue, today) : null
+                {dueSoon.map((item) => {
+                  const days = item.schedule.nextInspectionDue ? daysUntil(item.schedule.nextInspectionDue, today) : null
                   return (
-                    <li key={a.id} className="flex items-center justify-between py-2">
+                    <li key={item.schedule.id} className="flex items-center justify-between py-2">
                       <Link
-                        to="/orgs/$orgSlug/assets"
-                        params={{ orgSlug }}
+                        to="/orgs/$orgSlug/assets/$assetId"
+                        params={{ orgSlug, assetId: item.assetId }}
                         className="text-sm font-medium text-navy-700 hover:underline"
                       >
-                        {a.name}
+                        {item.assetName} — {item.schedule.label}
                       </Link>
                       <span className="text-xs text-warning font-semibold">
                         {days === null ? 'Due soon' : days === 0 ? 'Due today' : `Due in ${days}d`}

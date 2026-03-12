@@ -40,6 +40,31 @@ function isoNow(): string {
   return new Date().toISOString()
 }
 
+function computeNextDueForSchedule(base: string, rule: { freq: string; dayOfWeek?: number; dayOfMonth?: number }): string {
+  const baseDate = new Date(base + 'T00:00:00Z')
+
+  if (rule.freq === 'daily') {
+    return new Date(baseDate.getTime() + 86400000).toISOString().slice(0, 10)
+  }
+
+  if (rule.freq === 'weekly') {
+    const dow = rule.dayOfWeek ?? 5
+    let diff = (dow - baseDate.getUTCDay() + 7) % 7
+    if (diff === 0) diff = 7
+    return new Date(baseDate.getTime() + diff * 86400000).toISOString().slice(0, 10)
+  }
+
+  const dom = Math.min(rule.dayOfMonth ?? baseDate.getUTCDate(), 28)
+  const monthStep =
+    rule.freq === 'monthly' ? 1 : rule.freq === 'quarterly' ? 3 : rule.freq === 'semi_annual' ? 6 : 12
+
+  let year = baseDate.getUTCFullYear()
+  let month = baseDate.getUTCMonth() + monthStep
+  year += Math.floor(month / 12)
+  month = ((month % 12) + 12) % 12
+  return new Date(Date.UTC(year, month, dom)).toISOString().slice(0, 10)
+}
+
 const VALID_CATEGORIES: FormCategory[] = [
   'equipment_inspection',
   'property_inspection',
@@ -555,8 +580,8 @@ export const submitFormServerFn = createServerFn({ method: 'POST' })
 
     const stmts: D1PreparedStatement[] = [
       env.DB.prepare(
-        `INSERT INTO form_submission (id, org_id, template_id, template_version_id, submitted_by, status, linked_entity_type, linked_entity_id, submitted_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'complete', ?, ?, ?, ?, ?)`,
+        `INSERT INTO form_submission (id, org_id, template_id, template_version_id, submitted_by, status, linked_entity_type, linked_entity_id, schedule_id, submitted_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'complete', ?, ?, ?, ?, ?, ?)`,
       ).bind(
         submissionId,
         membership.orgId,
@@ -565,6 +590,7 @@ export const submitFormServerFn = createServerFn({ method: 'POST' })
         staffRow.id,
         data.linkedEntityType ?? null,
         data.linkedEntityId ?? null,
+        data.scheduleId ?? null,
         now,
         now,
         now,
@@ -576,6 +602,23 @@ export const submitFormServerFn = createServerFn({ method: 'POST' })
     stmts.push(...valueStmts)
 
     await env.DB.batch(stmts)
+
+    // If linked to an inspection schedule, advance next_inspection_due
+    if (data.scheduleId) {
+      type SchedRow = { recurrence_rule: string }
+      const schedRow = await env.DB.prepare(
+        `SELECT recurrence_rule FROM asset_inspection_schedule WHERE id = ? AND org_id = ?`,
+      ).bind(data.scheduleId, membership.orgId).first<SchedRow>()
+
+      if (schedRow) {
+        const rule = JSON.parse(schedRow.recurrence_rule) as { freq: string; dayOfWeek?: number; dayOfMonth?: number }
+        const baseDate = now.slice(0, 10) // submission date
+        const nextDue = computeNextDueForSchedule(baseDate, rule)
+        await env.DB.prepare(
+          `UPDATE asset_inspection_schedule SET next_inspection_due = ?, updated_at = ? WHERE id = ?`,
+        ).bind(nextDue, now, data.scheduleId).run()
+      }
+    }
 
     const submission: FormSubmissionView = {
       id: submissionId,
