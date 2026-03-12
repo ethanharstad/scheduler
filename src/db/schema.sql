@@ -103,6 +103,27 @@ CREATE        INDEX IF NOT EXISTS idx_org_membership_user   ON org_membership(us
 CREATE        INDEX IF NOT EXISTS idx_org_membership_org    ON org_membership(org_id);
 
 -- ============================================================
+-- Stations (011-station-management)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS station (
+  id          TEXT NOT NULL PRIMARY KEY,              -- crypto.randomUUID()
+  org_id      TEXT NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,                          -- 2-100 chars; unique per org (case-insensitive)
+  code        TEXT,                                   -- optional short code e.g. "STA-1"; unique per org if set
+  address     TEXT,                                   -- optional free-text physical address
+  status      TEXT NOT NULL DEFAULT 'active',         -- 'active' | 'inactive'
+  sort_order  INTEGER NOT NULL DEFAULT 0,             -- explicit display ordering; lower = first
+  created_at  TEXT NOT NULL,                          -- ISO 8601
+  updated_at  TEXT NOT NULL,                          -- ISO 8601
+  CHECK (status IN ('active', 'inactive'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_station_org_name ON station(org_id, LOWER(name));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_station_org_code ON station(org_id, LOWER(code)) WHERE code IS NOT NULL;
+CREATE        INDEX IF NOT EXISTS idx_station_org      ON station(org_id);
+
+-- ============================================================
 -- Qualifications (008-qualifications)
 -- Must precede staff_member (rank FK) and position (rank FK)
 -- ============================================================

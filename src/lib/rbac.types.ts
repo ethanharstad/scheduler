@@ -19,6 +19,7 @@ export type Permission =
   | 'manage-assets'
   | 'manage-forms'
   | 'submit-forms'
+  | 'manage-stations'
 
 export interface OrgMemberView {
   memberId: string
