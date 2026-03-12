@@ -1,14 +1,16 @@
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Clock, Shield, Users } from 'lucide-react'
+import { AlertTriangle, Clock, Shield, Users, Wrench } from 'lucide-react'
 import { listStaffServerFn } from '@/server/staff'
 import { listPlatoonsServerFn } from '@/server/platoons'
 import { getTodayAssignmentsServerFn } from '@/server/schedule'
 import { getExpiringCertsServerFn } from '@/server/qualifications'
 import { listPendingTimeOffServerFn } from '@/server/constraints'
+import { getExpiringAssetsServerFn, getOverdueInspectionsServerFn } from '@/server/assets'
 import { canDo } from '@/lib/rbac'
 import type { TodayAssignment } from '@/server/schedule'
 import type { ExpiringCertView } from '@/lib/qualifications.types'
 import type { ConstraintView } from '@/lib/constraint.types'
+import type { AssetView } from '@/lib/asset.types'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
   head: () => ({
@@ -16,18 +18,22 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
   }),
   loader: async ({ params }) => {
     const today = new Date().toISOString().slice(0, 10)
-    const [staffResult, platoonsResult, todayResult, expiringResult, pendingTimeOffResult] = await Promise.all([
+    const [staffResult, platoonsResult, todayResult, expiringResult, pendingTimeOffResult, expiringAssetsResult, overdueInspectionsResult] = await Promise.all([
       listStaffServerFn({ data: { orgSlug: params.orgSlug } }),
       listPlatoonsServerFn({ data: { orgSlug: params.orgSlug } }),
       getTodayAssignmentsServerFn({ data: { orgSlug: params.orgSlug, date: today } }),
       getExpiringCertsServerFn({ data: { orgSlug: params.orgSlug } }),
       listPendingTimeOffServerFn({ data: { orgSlug: params.orgSlug } }).catch(() => null),
+      getExpiringAssetsServerFn({ data: { orgSlug: params.orgSlug, lookaheadDays: 30 } }).catch(() => null),
+      getOverdueInspectionsServerFn({ data: { orgSlug: params.orgSlug } }).catch(() => null),
     ])
     const members = staffResult.success ? staffResult.members : []
     const platoons = platoonsResult.success ? platoonsResult.platoons : []
     const todayAssignments = todayResult.success ? todayResult.assignments : []
     const expiringCerts = expiringResult.success ? expiringResult.certs : []
     const pendingTimeOff = pendingTimeOffResult && pendingTimeOffResult.success ? pendingTimeOffResult.constraints : []
+    const expiringAssets = expiringAssetsResult?.success ? expiringAssetsResult.assets : []
+    const overdueInspections = overdueInspectionsResult?.success ? overdueInspectionsResult.assets : []
     return {
       activeCount: members.filter((m) => m.status !== 'pending').length,
       totalCount: members.length,
@@ -35,6 +41,8 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
       todayAssignments,
       expiringCerts,
       pendingTimeOff,
+      expiringAssets,
+      overdueInspections,
       today,
     }
   },
@@ -177,11 +185,100 @@ function PendingTimeOffWidget({
   )
 }
 
+function daysUntil(dateStr: string, today: string): number {
+  return Math.ceil(
+    (new Date(dateStr + 'T00:00:00Z').getTime() - new Date(today + 'T00:00:00Z').getTime()) / 86400000
+  )
+}
+
+function AssetComplianceWidget({
+  expiringAssets,
+  overdueInspections,
+  orgSlug,
+  today,
+}: {
+  expiringAssets: AssetView[]
+  overdueInspections: AssetView[]
+  orgSlug: string
+  today: string
+}) {
+  if (expiringAssets.length === 0 && overdueInspections.length === 0) return null
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+      <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100">
+        <Wrench className="w-4 h-4 text-navy-600" />
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+          Asset Compliance Alerts
+        </h2>
+      </div>
+      {overdueInspections.length > 0 && (
+        <div className="px-6 py-4 bg-danger-bg border-b border-danger/20">
+          <div className="flex items-center gap-2 mb-2">
+            <Wrench className="w-3.5 h-3.5 text-danger" />
+            <span className="text-xs font-semibold text-danger uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+              Overdue Inspections
+            </span>
+          </div>
+          <ul className="divide-y divide-danger/10">
+            {overdueInspections.map((a) => {
+              const days = a.nextInspectionDue ? daysUntil(a.nextInspectionDue, today) : null
+              return (
+                <li key={a.id} className="flex items-center justify-between py-2">
+                  <Link
+                    to="/orgs/$orgSlug/assets"
+                    params={{ orgSlug }}
+                    className="text-sm font-medium text-navy-700 hover:underline"
+                  >
+                    {a.name}
+                  </Link>
+                  <span className="text-xs text-danger font-semibold">
+                    {days === null ? 'Overdue' : days === 0 ? 'Due today' : days < 0 ? `${Math.abs(days)}d overdue` : `Due in ${days}d`}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+      {expiringAssets.length > 0 && (
+        <div className="px-6 py-4 bg-warning-bg">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+            <span className="text-xs font-semibold text-warning uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+              Expiring Within 30 Days
+            </span>
+          </div>
+          <ul className="divide-y divide-warning/10">
+            {expiringAssets.map((a) => {
+              const days = a.expirationDate ? daysUntil(a.expirationDate, today) : null
+              return (
+                <li key={a.id} className="flex items-center justify-between py-2">
+                  <Link
+                    to="/orgs/$orgSlug/assets"
+                    params={{ orgSlug }}
+                    className="text-sm font-medium text-navy-700 hover:underline"
+                  >
+                    {a.name}
+                  </Link>
+                  <span className="text-xs text-warning font-semibold">
+                    {days === null ? 'Expiring' : days === 0 ? 'Today' : `${days}d`}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OrgDashboard() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { activeCount, totalCount, platoonCount, todayAssignments, expiringCerts, pendingTimeOff, today } = Route.useLoaderData()
+  const { activeCount, totalCount, platoonCount, todayAssignments, expiringCerts, pendingTimeOff, expiringAssets, overdueInspections, today } = Route.useLoaderData()
   const canViewCerts = canDo(userRole, 'view-certifications')
   const canApproveTimeOff = canDo(userRole, 'approve-time-off')
+  const canManageAssets = canDo(userRole, 'manage-assets')
 
   const createdDate = new Date(org.createdAt).toLocaleDateString(undefined, {
     year: 'numeric',
@@ -198,6 +295,14 @@ function OrgDashboard() {
 
       {canViewCerts && <ExpiringCertsWidget certs={expiringCerts} orgSlug={org.slug} />}
       {canApproveTimeOff && <PendingTimeOffWidget requests={pendingTimeOff} orgSlug={org.slug} />}
+      {canManageAssets && (
+        <AssetComplianceWidget
+          expiringAssets={expiringAssets}
+          overdueInspections={overdueInspections}
+          orgSlug={org.slug}
+          today={today}
+        />
+      )}
       <OnShiftToday assignments={todayAssignments} today={today} />
 
       <div className="grid grid-cols-2 gap-4">
@@ -226,7 +331,7 @@ function OrgDashboard() {
         </Link>
 
         <Link
-          to="/orgs/$orgSlug/platoons"
+          to="/orgs/$orgSlug/schedules/platoons"
           params={{ orgSlug: org.slug }}
           className="block rounded-lg border border-gray-200 bg-white p-6 hover:border-navy-300 hover:shadow-sm transition-all group"
         >
