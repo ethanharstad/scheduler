@@ -342,7 +342,7 @@ function AssetDetailPage() {
     setInspErrors({})
     setInspSubmitError(null)
 
-    const result = await getFormTemplateServerFn({ data: { orgSlug: org.slug, templateId: schedule.formTemplateId } })
+    const result = await getFormTemplateServerFn({ data: { orgSlug: org.slug, templateId: schedule.formTemplateId, publishedOnly: true } })
     setInspFormLoading(false)
     if (result.success) {
       setInspFields(result.currentVersion.fields)
@@ -355,30 +355,35 @@ function AssetDetailPage() {
     setInspSubmitError(null)
     setInspErrors({})
 
-    const result = await submitFormServerFn({
-      data: {
-        orgSlug: org.slug,
-        templateId: activeInspSchedule.formTemplateId,
-        linkedEntityType: 'asset' as LinkedEntityType,
-        linkedEntityId: currentAsset.id,
-        scheduleId: activeInspSchedule.id,
-        values: inspValues,
-      },
-    })
+    try {
+      const result = await submitFormServerFn({
+        data: {
+          orgSlug: org.slug,
+          templateId: activeInspSchedule.formTemplateId,
+          linkedEntityType: 'asset' as LinkedEntityType,
+          linkedEntityId: currentAsset.id,
+          scheduleId: activeInspSchedule.id,
+          values: inspValues,
+        },
+      })
 
-    setInspSubmitting(false)
-    if (result.success) {
-      setActiveInspSchedule(null)
-      setInspFields([])
-      setInspValues({})
-      // Refresh schedules to update next due dates
-      await loadSchedules()
-      // Refresh submissions if loaded
-      if (submissionsLoaded) await loadSubmissions(0)
-    } else if (result.error === 'VALIDATION_ERROR' && result.validationErrors) {
-      setInspErrors(result.validationErrors)
-    } else {
-      setInspSubmitError('Failed to submit inspection.')
+      if (result.success) {
+        setActiveInspSchedule(null)
+        setInspFields([])
+        setInspValues({})
+        // Refresh schedules to update next due dates
+        await loadSchedules()
+        // Refresh submissions if loaded
+        if (submissionsLoaded) await loadSubmissions(0)
+      } else if (result.error === 'VALIDATION_ERROR' && result.validationErrors) {
+        setInspErrors(result.validationErrors)
+      } else {
+        setInspSubmitError('Failed to submit inspection.')
+      }
+    } catch {
+      setInspSubmitError('Failed to submit inspection. Please try again.')
+    } finally {
+      setInspSubmitting(false)
     }
   }
 

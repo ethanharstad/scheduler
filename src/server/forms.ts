@@ -211,11 +211,15 @@ export const getFormTemplateServerFn = createServerFn({ method: 'GET' })
 
     if (!templateRow) return { success: false, error: 'NOT_FOUND' }
 
-    const versionRow = await env.DB.prepare(
-      `SELECT * FROM form_template_version
-       WHERE template_id = ?
-       ORDER BY version_number DESC LIMIT 1`,
-    )
+    const versionQuery = data.publishedOnly
+      ? `SELECT * FROM form_template_version
+         WHERE template_id = ? AND published_at IS NOT NULL
+         ORDER BY version_number DESC LIMIT 1`
+      : `SELECT * FROM form_template_version
+         WHERE template_id = ?
+         ORDER BY version_number DESC LIMIT 1`
+
+    const versionRow = await env.DB.prepare(versionQuery)
       .bind(data.templateId)
       .first<VersionRow>()
 

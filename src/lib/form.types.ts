@@ -256,6 +256,7 @@ export type ListFormTemplatesOutput =
 export interface GetFormTemplateInput {
   orgSlug: string
   templateId: string
+  publishedOnly?: boolean
 }
 export type GetFormTemplateOutput =
   | {
