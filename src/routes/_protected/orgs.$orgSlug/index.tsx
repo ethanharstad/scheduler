@@ -1,13 +1,13 @@
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Clock, Shield, Users, Wrench } from 'lucide-react'
+import { AlertTriangle, Calendar, Clock, Shield, Users, Wrench } from 'lucide-react'
 import { listStaffServerFn } from '@/server/staff'
 import { listPlatoonsServerFn } from '@/server/platoons'
-import { getTodayAssignmentsServerFn } from '@/server/schedule'
+import { getTodayAssignmentsServerFn, getMyUpcomingShiftsServerFn } from '@/server/schedule'
 import { getExpiringCertsServerFn } from '@/server/qualifications'
 import { listPendingTimeOffServerFn } from '@/server/constraints'
 import { getExpiringAssetsServerFn, getOverdueInspectionsServerFn } from '@/server/assets'
 import { canDo } from '@/lib/rbac'
-import type { TodayAssignment } from '@/server/schedule'
+import type { TodayAssignment, UpcomingShift } from '@/server/schedule'
 import type { ExpiringCertView } from '@/lib/qualifications.types'
 import type { ConstraintView } from '@/lib/constraint.types'
 import type { AssetView } from '@/lib/asset.types'
@@ -18,7 +18,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
   }),
   loader: async ({ params }) => {
     const today = new Date().toISOString().slice(0, 10)
-    const [staffResult, platoonsResult, todayResult, expiringResult, pendingTimeOffResult, expiringAssetsResult, overdueInspectionsResult] = await Promise.all([
+    const [staffResult, platoonsResult, todayResult, expiringResult, pendingTimeOffResult, expiringAssetsResult, overdueInspectionsResult, myShiftsResult] = await Promise.all([
       listStaffServerFn({ data: { orgSlug: params.orgSlug } }),
       listPlatoonsServerFn({ data: { orgSlug: params.orgSlug } }),
       getTodayAssignmentsServerFn({ data: { orgSlug: params.orgSlug, date: today } }),
@@ -26,6 +26,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
       listPendingTimeOffServerFn({ data: { orgSlug: params.orgSlug } }).catch(() => null),
       getExpiringAssetsServerFn({ data: { orgSlug: params.orgSlug, lookaheadDays: 30 } }).catch(() => null),
       getOverdueInspectionsServerFn({ data: { orgSlug: params.orgSlug } }).catch(() => null),
+      getMyUpcomingShiftsServerFn({ data: { orgSlug: params.orgSlug } }).catch(() => null),
     ])
     const members = staffResult.success ? staffResult.members : []
     const platoons = platoonsResult.success ? platoonsResult.platoons : []
@@ -34,6 +35,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
     const pendingTimeOff = pendingTimeOffResult && pendingTimeOffResult.success ? pendingTimeOffResult.constraints : []
     const expiringAssets = expiringAssetsResult?.success ? expiringAssetsResult.assets : []
     const overdueInspections = overdueInspectionsResult?.success ? overdueInspectionsResult.assets : []
+    const myUpcomingShifts = myShiftsResult && myShiftsResult.success ? myShiftsResult.shifts : []
     return {
       activeCount: members.filter((m) => m.status !== 'pending').length,
       totalCount: members.length,
@@ -43,6 +45,7 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/')({
       pendingTimeOff,
       expiringAssets,
       overdueInspections,
+      myUpcomingShifts,
       today,
     }
   },
@@ -273,9 +276,56 @@ function AssetComplianceWidget({
   )
 }
 
+function MyUpcomingShiftsWidget({ shifts, orgSlug }: { shifts: UpcomingShift[]; orgSlug: string }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-navy-600" />
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+            My Upcoming Shifts
+          </h2>
+        </div>
+        <Link
+          to="/orgs/$orgSlug/schedules"
+          params={{ orgSlug }}
+          className="text-xs text-navy-600 hover:text-navy-800 font-medium"
+        >
+          View schedule &rarr;
+        </Link>
+      </div>
+      {shifts.length === 0 ? (
+        <p className="text-sm text-gray-400">No upcoming shifts scheduled.</p>
+      ) : (
+        <ul className="divide-y divide-gray-100">
+          {shifts.map((s, i) => {
+            const startDate = new Date(s.startDatetime)
+            const dateLabel = startDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+            return (
+              <li key={i} className="flex items-center justify-between py-2.5">
+                <div>
+                  <span className="text-sm font-medium text-navy-700">{dateLabel}</span>
+                  {s.position && (
+                    <span className="ml-2 px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium" style={{ fontFamily: 'var(--font-condensed)' }}>
+                      {s.position}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-gray-500 whitespace-nowrap ml-3">
+                  {formatTime(s.startDatetime)} – {formatTime(s.endDatetime)}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function OrgDashboard() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const { activeCount, totalCount, platoonCount, todayAssignments, expiringCerts, pendingTimeOff, expiringAssets, overdueInspections, today } = Route.useLoaderData()
+  const { activeCount, totalCount, platoonCount, todayAssignments, expiringCerts, pendingTimeOff, expiringAssets, overdueInspections, myUpcomingShifts, today } = Route.useLoaderData()
   const canViewCerts = canDo(userRole, 'view-certifications')
   const canApproveTimeOff = canDo(userRole, 'approve-time-off')
   const canManageAssets = canDo(userRole, 'manage-assets')
@@ -303,6 +353,7 @@ function OrgDashboard() {
           today={today}
         />
       )}
+      <MyUpcomingShiftsWidget shifts={myUpcomingShifts} orgSlug={org.slug} />
       <OnShiftToday assignments={todayAssignments} today={today} />
 
       <div className="grid grid-cols-2 gap-4">

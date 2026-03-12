@@ -284,6 +284,71 @@ export const getTodayAssignmentsServerFn = createServerFn({ method: 'GET' })
   })
 
 // ---------------------------------------------------------------------------
+// getMyUpcomingShiftsServerFn
+// ---------------------------------------------------------------------------
+
+export type UpcomingShift = {
+  startDatetime: string
+  endDatetime: string
+  position: string | null
+  scheduleName: string
+}
+
+type GetMyUpcomingShiftsOutput =
+  | { success: true; shifts: UpcomingShift[] }
+  | { success: false; error: 'UNAUTHORIZED' | 'NO_STAFF_RECORD' }
+
+export const getMyUpcomingShiftsServerFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { orgSlug: string }) => d)
+  .handler(async (ctx): Promise<GetMyUpcomingShiftsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+
+    type StaffRow = { id: string }
+    const staffRow = await env.DB.prepare(
+      `SELECT id FROM staff_member WHERE org_id = ? AND user_id = ? AND status = 'active' LIMIT 1`,
+    )
+      .bind(membership.orgId, membership.userId)
+      .first<StaffRow>()
+
+    if (!staffRow) return { success: false, error: 'NO_STAFF_RECORD' }
+
+    const now = new Date().toISOString()
+
+    type Row = {
+      start_datetime: string
+      end_datetime: string
+      position: string | null
+      schedule_name: string
+    }
+
+    const rows = await env.DB.prepare(
+      `SELECT sa.start_datetime, sa.end_datetime, sa.position, s.name AS schedule_name
+       FROM shift_assignment sa
+       JOIN schedule s ON s.id = sa.schedule_id
+       WHERE s.org_id = ? AND s.status = 'published'
+         AND sa.staff_member_id = ?
+         AND sa.start_datetime > ?
+       ORDER BY sa.start_datetime ASC
+       LIMIT 5`,
+    )
+      .bind(membership.orgId, staffRow.id, now)
+      .all<Row>()
+
+    const shifts: UpcomingShift[] = (rows.results ?? []).map((r) => ({
+      startDatetime: r.start_datetime,
+      endDatetime: r.end_datetime,
+      position: r.position,
+      scheduleName: r.schedule_name,
+    }))
+
+    return { success: true, shifts }
+  })
+
+// ---------------------------------------------------------------------------
 // createScheduleServerFn
 // ---------------------------------------------------------------------------
 
