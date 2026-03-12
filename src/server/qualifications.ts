@@ -1406,7 +1406,7 @@ export const checkPositionEligibilityServerFn = createServerFn({ method: 'GET' }
 
       // Build certs summary
       const certNames: string[] = []
-      for (const [typeId, certInfo] of staffCerts) {
+      for (const [typeId] of staffCerts) {
         // Only include certs relevant to this position
         if (requirements.length > 0 && !requirements.some((r) => r.cert_type_id === typeId)) {
           continue
