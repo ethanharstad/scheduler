@@ -539,107 +539,112 @@ export const submitFormServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'submit-forms')) return { success: false, error: 'FORBIDDEN' }
 
-    // Fetch the template
-    const templateRow = await env.DB.prepare(
-      `SELECT * FROM form_template WHERE id = ? AND (org_id = ? OR is_system = 1)`,
-    )
-      .bind(data.templateId, membership.orgId)
-      .first<TemplateRow>()
+    try {
+      // Fetch the template
+      const templateRow = await env.DB.prepare(
+        `SELECT * FROM form_template WHERE id = ? AND (org_id = ? OR is_system = 1)`,
+      )
+        .bind(data.templateId, membership.orgId)
+        .first<TemplateRow>()
 
-    if (!templateRow) return { success: false, error: 'NOT_FOUND' }
-    if (templateRow.status !== 'published') return { success: false, error: 'NOT_PUBLISHED' }
+      if (!templateRow) return { success: false, error: 'NOT_FOUND' }
+      if (templateRow.status !== 'published') return { success: false, error: 'NOT_PUBLISHED' }
 
-    // Get the latest published version
-    const versionRow = await env.DB.prepare(
-      `SELECT * FROM form_template_version
-       WHERE template_id = ? AND published_at IS NOT NULL
-       ORDER BY version_number DESC LIMIT 1`,
-    )
-      .bind(data.templateId)
-      .first<VersionRow>()
+      // Get the latest published version
+      const versionRow = await env.DB.prepare(
+        `SELECT * FROM form_template_version
+         WHERE template_id = ? AND published_at IS NOT NULL
+         ORDER BY version_number DESC LIMIT 1`,
+      )
+        .bind(data.templateId)
+        .first<VersionRow>()
 
-    if (!versionRow) return { success: false, error: 'NOT_PUBLISHED' }
+      if (!versionRow) return { success: false, error: 'NOT_PUBLISHED' }
 
-    const fields = JSON.parse(versionRow.fields_json) as FormFieldDefinition[]
+      const fields = JSON.parse(versionRow.fields_json) as FormFieldDefinition[]
 
-    // Validate required fields
-    const validationErrors: Record<string, string> = {}
-    validateFields(fields, data.values, '', validationErrors)
-    if (Object.keys(validationErrors).length > 0) {
-      return { success: false, error: 'VALIDATION_ERROR', validationErrors }
-    }
-
-    // Find the submitter's staff record
-    type StaffRow = { id: string; name: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id, name FROM staff_member WHERE org_id = ? AND user_id = ? AND status != 'removed' LIMIT 1`,
-    )
-      .bind(membership.orgId, membership.userId)
-      .first<StaffRow>()
-
-    if (!staffRow) return { success: false, error: 'UNAUTHORIZED' }
-
-    const now = isoNow()
-    const submissionId = crypto.randomUUID()
-
-    const stmts: D1PreparedStatement[] = [
-      env.DB.prepare(
-        `INSERT INTO form_submission (id, org_id, template_id, template_version_id, submitted_by, status, linked_entity_type, linked_entity_id, schedule_id, submitted_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'complete', ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        submissionId,
-        membership.orgId,
-        data.templateId,
-        versionRow.id,
-        staffRow.id,
-        data.linkedEntityType ?? null,
-        data.linkedEntityId ?? null,
-        data.scheduleId ?? null,
-        now,
-        now,
-        now,
-      ),
-    ]
-
-    // Insert response values
-    const valueStmts = buildValueInserts(env, submissionId, fields, data.values, '')
-    stmts.push(...valueStmts)
-
-    await env.DB.batch(stmts)
-
-    // If linked to an inspection schedule, advance next_inspection_due
-    if (data.scheduleId) {
-      type SchedRow = { recurrence_rule: string }
-      const schedRow = await env.DB.prepare(
-        `SELECT recurrence_rule FROM asset_inspection_schedule WHERE id = ? AND org_id = ?`,
-      ).bind(data.scheduleId, membership.orgId).first<SchedRow>()
-
-      if (schedRow) {
-        const rule = JSON.parse(schedRow.recurrence_rule) as { freq: string; dayOfWeek?: number; dayOfMonth?: number }
-        const baseDate = now.slice(0, 10) // submission date
-        const nextDue = computeNextDueForSchedule(baseDate, rule)
-        await env.DB.prepare(
-          `UPDATE asset_inspection_schedule SET next_inspection_due = ?, updated_at = ? WHERE id = ?`,
-        ).bind(nextDue, now, data.scheduleId).run()
+      // Validate required fields
+      const validationErrors: Record<string, string> = {}
+      validateFields(fields, data.values, '', validationErrors)
+      if (Object.keys(validationErrors).length > 0) {
+        return { success: false, error: 'VALIDATION_ERROR', validationErrors }
       }
-    }
 
-    const submission: FormSubmissionView = {
-      id: submissionId,
-      templateId: data.templateId,
-      templateName: templateRow.name,
-      templateVersionId: versionRow.id,
-      versionNumber: versionRow.version_number,
-      submittedById: staffRow.id,
-      submittedByName: staffRow.name,
-      status: 'complete',
-      linkedEntityType: (data.linkedEntityType as FormSubmissionView['linkedEntityType']) ?? null,
-      linkedEntityId: data.linkedEntityId ?? null,
-      linkedEntityName: null,
-      submittedAt: now,
-    }
+      // Find the submitter's staff record
+      type StaffRow = { id: string; name: string }
+      const staffRow = await env.DB.prepare(
+        `SELECT id, name FROM staff_member WHERE org_id = ? AND user_id = ? AND status != 'removed' LIMIT 1`,
+      )
+        .bind(membership.orgId, membership.userId)
+        .first<StaffRow>()
 
-    return { success: true, submission }
+      if (!staffRow) return { success: false, error: 'UNAUTHORIZED' }
+
+      const now = isoNow()
+      const submissionId = crypto.randomUUID()
+
+      const stmts: D1PreparedStatement[] = [
+        env.DB.prepare(
+          `INSERT INTO form_submission (id, org_id, template_id, template_version_id, submitted_by, status, linked_entity_type, linked_entity_id, schedule_id, submitted_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'complete', ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          submissionId,
+          membership.orgId,
+          data.templateId,
+          versionRow.id,
+          staffRow.id,
+          data.linkedEntityType ?? null,
+          data.linkedEntityId ?? null,
+          data.scheduleId ?? null,
+          now,
+          now,
+          now,
+        ),
+      ]
+
+      // Insert response values
+      const valueStmts = buildValueInserts(env, submissionId, fields, data.values, '')
+      stmts.push(...valueStmts)
+
+      await env.DB.batch(stmts)
+
+      // If linked to an inspection schedule, advance next_inspection_due
+      if (data.scheduleId) {
+        type SchedRow = { recurrence_rule: string }
+        const schedRow = await env.DB.prepare(
+          `SELECT recurrence_rule FROM asset_inspection_schedule WHERE id = ? AND org_id = ?`,
+        ).bind(data.scheduleId, membership.orgId).first<SchedRow>()
+
+        if (schedRow) {
+          const rule = JSON.parse(schedRow.recurrence_rule) as { freq: string; dayOfWeek?: number; dayOfMonth?: number }
+          const baseDate = now.slice(0, 10) // submission date
+          const nextDue = computeNextDueForSchedule(baseDate, rule)
+          await env.DB.prepare(
+            `UPDATE asset_inspection_schedule SET next_inspection_due = ?, updated_at = ? WHERE id = ?`,
+          ).bind(nextDue, now, data.scheduleId).run()
+        }
+      }
+
+      const submission: FormSubmissionView = {
+        id: submissionId,
+        templateId: data.templateId,
+        templateName: templateRow.name,
+        templateVersionId: versionRow.id,
+        versionNumber: versionRow.version_number,
+        submittedById: staffRow.id,
+        submittedByName: staffRow.name,
+        status: 'complete',
+        linkedEntityType: (data.linkedEntityType as FormSubmissionView['linkedEntityType']) ?? null,
+        linkedEntityId: data.linkedEntityId ?? null,
+        linkedEntityName: null,
+        submittedAt: now,
+      }
+
+      return { success: true, submission }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      return { success: false, error: 'SERVER_ERROR', message }
+    }
   })
 
 function validateFields(

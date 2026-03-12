@@ -389,7 +389,7 @@ function AssetDetailPage() {
       } else if (result.error === 'VALIDATION_ERROR' && result.validationErrors) {
         setInspErrors(result.validationErrors)
       } else {
-        setInspSubmitError('Failed to submit inspection.')
+        setInspSubmitError(result.message ?? 'Failed to submit inspection.')
       }
     } catch {
       setInspSubmitError('Failed to submit inspection. Please try again.')

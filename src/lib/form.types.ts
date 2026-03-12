@@ -278,8 +278,9 @@ export type SubmitFormOutput =
   | { success: true; submission: FormSubmissionView }
   | {
       success: false
-      error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'NOT_PUBLISHED' | 'VALIDATION_ERROR'
+      error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'NOT_PUBLISHED' | 'VALIDATION_ERROR' | 'SERVER_ERROR'
       validationErrors?: Record<string, string>
+      message?: string
     }
 
 export interface ListSubmissionsInput {
