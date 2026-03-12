@@ -49,11 +49,12 @@ import { Route as ProtectedOrgsOrgSlugAssetsNewRouteImport } from './routes/_pro
 import { Route as ProtectedOrgsOrgSlugAssetsMyGearRouteImport } from './routes/_protected/orgs.$orgSlug/assets/my-gear'
 import { Route as ProtectedOrgsOrgSlugAssetsAssetIdRouteImport } from './routes/_protected/orgs.$orgSlug/assets/$assetId'
 import { Route as ProtectedOrgsOrgSlugSchedulesPlatoonsIndexRouteImport } from './routes/_protected/orgs.$orgSlug/schedules.platoons.index'
+import { Route as ProtectedOrgsOrgSlugFormsSubmissionsIndexRouteImport } from './routes/_protected/orgs.$orgSlug/forms/submissions/index'
 import { Route as ProtectedOrgsOrgSlugSchedulesPlatoonsPlatoonIdRouteImport } from './routes/_protected/orgs.$orgSlug/schedules.platoons.$platoonId'
 import { Route as ProtectedOrgsOrgSlugQualificationsPositionsPositionIdRouteImport } from './routes/_protected/orgs.$orgSlug/qualifications.positions.$positionId'
 import { Route as ProtectedOrgsOrgSlugFormsTemplatesNewRouteImport } from './routes/_protected/orgs.$orgSlug/forms/templates.new'
 import { Route as ProtectedOrgsOrgSlugFormsTemplatesTemplateIdRouteImport } from './routes/_protected/orgs.$orgSlug/forms/templates.$templateId'
-import { Route as ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRouteImport } from './routes/_protected/orgs.$orgSlug/forms/submissions.$submissionId'
+import { Route as ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRouteImport } from './routes/_protected/orgs.$orgSlug/forms/submissions/$submissionId'
 import { Route as ProtectedOrgsOrgSlugFormsFillTemplateIdRouteImport } from './routes/_protected/orgs.$orgSlug/forms/fill.$templateId'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -279,6 +280,12 @@ const ProtectedOrgsOrgSlugSchedulesPlatoonsIndexRoute =
     path: '/',
     getParentRoute: () => ProtectedOrgsOrgSlugSchedulesPlatoonsRoute,
   } as any)
+const ProtectedOrgsOrgSlugFormsSubmissionsIndexRoute =
+  ProtectedOrgsOrgSlugFormsSubmissionsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ProtectedOrgsOrgSlugFormsSubmissionsRoute,
+  } as any)
 const ProtectedOrgsOrgSlugSchedulesPlatoonsPlatoonIdRoute =
   ProtectedOrgsOrgSlugSchedulesPlatoonsPlatoonIdRouteImport.update({
     id: '/$platoonId',
@@ -360,6 +367,7 @@ export interface FileRoutesByFullPath {
   '/orgs/$orgSlug/forms/templates/new': typeof ProtectedOrgsOrgSlugFormsTemplatesNewRoute
   '/orgs/$orgSlug/qualifications/positions/$positionId': typeof ProtectedOrgsOrgSlugQualificationsPositionsPositionIdRoute
   '/orgs/$orgSlug/schedules/platoons/$platoonId': typeof ProtectedOrgsOrgSlugSchedulesPlatoonsPlatoonIdRoute
+  '/orgs/$orgSlug/forms/submissions/': typeof ProtectedOrgsOrgSlugFormsSubmissionsIndexRoute
   '/orgs/$orgSlug/schedules/platoons/': typeof ProtectedOrgsOrgSlugSchedulesPlatoonsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -383,7 +391,6 @@ export interface FileRoutesByTo {
   '/orgs/$orgSlug/assets/$assetId': typeof ProtectedOrgsOrgSlugAssetsAssetIdRoute
   '/orgs/$orgSlug/assets/my-gear': typeof ProtectedOrgsOrgSlugAssetsMyGearRoute
   '/orgs/$orgSlug/assets/new': typeof ProtectedOrgsOrgSlugAssetsNewRoute
-  '/orgs/$orgSlug/forms/submissions': typeof ProtectedOrgsOrgSlugFormsSubmissionsRouteWithChildren
   '/orgs/$orgSlug/schedules/$scheduleId': typeof ProtectedOrgsOrgSlugSchedulesScheduleIdRoute
   '/orgs/$orgSlug/schedules/requirements': typeof ProtectedOrgsOrgSlugSchedulesRequirementsRoute
   '/orgs/$orgSlug/staff/$staffMemberId': typeof ProtectedOrgsOrgSlugStaffStaffMemberIdRoute
@@ -399,6 +406,7 @@ export interface FileRoutesByTo {
   '/orgs/$orgSlug/forms/templates/new': typeof ProtectedOrgsOrgSlugFormsTemplatesNewRoute
   '/orgs/$orgSlug/qualifications/positions/$positionId': typeof ProtectedOrgsOrgSlugQualificationsPositionsPositionIdRoute
   '/orgs/$orgSlug/schedules/platoons/$platoonId': typeof ProtectedOrgsOrgSlugSchedulesPlatoonsPlatoonIdRoute
+  '/orgs/$orgSlug/forms/submissions': typeof ProtectedOrgsOrgSlugFormsSubmissionsIndexRoute
   '/orgs/$orgSlug/schedules/platoons': typeof ProtectedOrgsOrgSlugSchedulesPlatoonsIndexRoute
 }
 export interface FileRoutesById {
@@ -448,6 +456,7 @@ export interface FileRoutesById {
   '/_protected/orgs/$orgSlug/forms/templates/new': typeof ProtectedOrgsOrgSlugFormsTemplatesNewRoute
   '/_protected/orgs/$orgSlug/qualifications/positions/$positionId': typeof ProtectedOrgsOrgSlugQualificationsPositionsPositionIdRoute
   '/_protected/orgs/$orgSlug/schedules/platoons/$platoonId': typeof ProtectedOrgsOrgSlugSchedulesPlatoonsPlatoonIdRoute
+  '/_protected/orgs/$orgSlug/forms/submissions/': typeof ProtectedOrgsOrgSlugFormsSubmissionsIndexRoute
   '/_protected/orgs/$orgSlug/schedules/platoons/': typeof ProtectedOrgsOrgSlugSchedulesPlatoonsIndexRoute
 }
 export interface FileRouteTypes {
@@ -496,6 +505,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/forms/templates/new'
     | '/orgs/$orgSlug/qualifications/positions/$positionId'
     | '/orgs/$orgSlug/schedules/platoons/$platoonId'
+    | '/orgs/$orgSlug/forms/submissions/'
     | '/orgs/$orgSlug/schedules/platoons/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -519,7 +529,6 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/assets/$assetId'
     | '/orgs/$orgSlug/assets/my-gear'
     | '/orgs/$orgSlug/assets/new'
-    | '/orgs/$orgSlug/forms/submissions'
     | '/orgs/$orgSlug/schedules/$scheduleId'
     | '/orgs/$orgSlug/schedules/requirements'
     | '/orgs/$orgSlug/staff/$staffMemberId'
@@ -535,6 +544,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/forms/templates/new'
     | '/orgs/$orgSlug/qualifications/positions/$positionId'
     | '/orgs/$orgSlug/schedules/platoons/$platoonId'
+    | '/orgs/$orgSlug/forms/submissions'
     | '/orgs/$orgSlug/schedules/platoons'
   id:
     | '__root__'
@@ -583,6 +593,7 @@ export interface FileRouteTypes {
     | '/_protected/orgs/$orgSlug/forms/templates/new'
     | '/_protected/orgs/$orgSlug/qualifications/positions/$positionId'
     | '/_protected/orgs/$orgSlug/schedules/platoons/$platoonId'
+    | '/_protected/orgs/$orgSlug/forms/submissions/'
     | '/_protected/orgs/$orgSlug/schedules/platoons/'
   fileRoutesById: FileRoutesById
 }
@@ -879,6 +890,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedOrgsOrgSlugSchedulesPlatoonsIndexRouteImport
       parentRoute: typeof ProtectedOrgsOrgSlugSchedulesPlatoonsRoute
     }
+    '/_protected/orgs/$orgSlug/forms/submissions/': {
+      id: '/_protected/orgs/$orgSlug/forms/submissions/'
+      path: '/'
+      fullPath: '/orgs/$orgSlug/forms/submissions/'
+      preLoaderRoute: typeof ProtectedOrgsOrgSlugFormsSubmissionsIndexRouteImport
+      parentRoute: typeof ProtectedOrgsOrgSlugFormsSubmissionsRoute
+    }
     '/_protected/orgs/$orgSlug/schedules/platoons/$platoonId': {
       id: '/_protected/orgs/$orgSlug/schedules/platoons/$platoonId'
       path: '/$platoonId'
@@ -964,12 +982,15 @@ const ProtectedOrgsOrgSlugAssetsRouteWithChildren =
 
 interface ProtectedOrgsOrgSlugFormsSubmissionsRouteChildren {
   ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRoute: typeof ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRoute
+  ProtectedOrgsOrgSlugFormsSubmissionsIndexRoute: typeof ProtectedOrgsOrgSlugFormsSubmissionsIndexRoute
 }
 
 const ProtectedOrgsOrgSlugFormsSubmissionsRouteChildren: ProtectedOrgsOrgSlugFormsSubmissionsRouteChildren =
   {
     ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRoute:
       ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRoute,
+    ProtectedOrgsOrgSlugFormsSubmissionsIndexRoute:
+      ProtectedOrgsOrgSlugFormsSubmissionsIndexRoute,
   }
 
 const ProtectedOrgsOrgSlugFormsSubmissionsRouteWithChildren =
