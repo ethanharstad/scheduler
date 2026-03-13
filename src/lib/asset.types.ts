@@ -4,14 +4,6 @@
 
 export type AssetType = 'apparatus' | 'gear'
 
-export type RecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual'
-
-export interface RecurrenceRule {
-  freq: RecurrenceFreq
-  dayOfWeek?: number  // 0=Sun..6=Sat, used when freq='weekly'
-  dayOfMonth?: number // 1-28, used when freq='monthly'|'quarterly'|'semi_annual'|'annual'
-}
-
 export type ApparatusCategory =
   | 'engine'
   | 'ladder_truck'
@@ -148,7 +140,7 @@ export interface InspectionScheduleView {
   formTemplateId: string
   formTemplateName: string
   label: string
-  recurrenceRule: RecurrenceRule
+  recurrenceRule: string  // RRULE string e.g. "FREQ=WEEKLY;INTERVAL=1;BYDAY=FR"
   intervalDays: number
   nextInspectionDue: string | null
   isActive: boolean
@@ -303,11 +295,11 @@ export interface AddInspectionScheduleInput {
   assetId: string
   formTemplateId: string
   label: string
-  recurrenceRule: RecurrenceRule
+  recurrenceRule: string  // RRULE string
 }
 export type AddInspectionScheduleOutput =
   | { success: true; schedule: InspectionScheduleView }
-  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'TEMPLATE_NOT_FOUND' | 'TEMPLATE_NOT_PUBLISHED' | 'INVALID_INPUT' }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'TEMPLATE_NOT_FOUND' | 'TEMPLATE_NOT_PUBLISHED' | 'INVALID_INPUT' | 'INVALID_RECURRENCE_RULE' }
 
 export interface UpdateInspectionScheduleInput {
   orgSlug: string
@@ -315,12 +307,12 @@ export interface UpdateInspectionScheduleInput {
   scheduleId: string
   label?: string
   formTemplateId?: string
-  recurrenceRule?: RecurrenceRule
+  recurrenceRule?: string  // RRULE string
   isActive?: boolean
 }
 export type UpdateInspectionScheduleOutput =
   | { success: true; schedule: InspectionScheduleView }
-  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'TEMPLATE_NOT_FOUND' | 'TEMPLATE_NOT_PUBLISHED' | 'INVALID_INPUT' }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'TEMPLATE_NOT_FOUND' | 'TEMPLATE_NOT_PUBLISHED' | 'INVALID_INPUT' | 'INVALID_RECURRENCE_RULE' }
 
 export interface DeleteInspectionScheduleInput {
   orgSlug: string

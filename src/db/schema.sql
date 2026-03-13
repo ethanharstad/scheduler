@@ -479,7 +479,7 @@ CREATE TABLE IF NOT EXISTS asset_inspection_schedule (
   asset_id                  TEXT NOT NULL REFERENCES asset(id) ON DELETE CASCADE,
   form_template_id          TEXT NOT NULL REFERENCES form_template(id) ON DELETE CASCADE,
   label                     TEXT NOT NULL,
-  recurrence_rule           TEXT NOT NULL,                -- JSON: {"freq":"weekly","dayOfWeek":5}
+  recurrence_rule           TEXT NOT NULL,                -- RRULE string e.g. "FREQ=WEEKLY;INTERVAL=1;BYDAY=FR"
   interval_days             INTEGER NOT NULL,             -- derived from freq for simpler queries
   next_inspection_due       TEXT,                         -- ISO date, recalculated after each submission
   is_active                 INTEGER NOT NULL DEFAULT 1,   -- soft-disable without deleting

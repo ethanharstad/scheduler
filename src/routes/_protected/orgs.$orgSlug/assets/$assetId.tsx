@@ -7,9 +7,8 @@ import type {
   AssetLocationView,
   AssetAuditEntry,
   AssetView,
-  RecurrenceFreq,
-  RecurrenceRule,
 } from '@/lib/asset.types'
+import { describeRRule } from '@/lib/rrule'
 import {
   APPARATUS_STATUSES,
   GEAR_STATUSES,
@@ -81,32 +80,35 @@ function orgToday(scheduleDayStart: string): string {
   return effectiveDate.toISOString().slice(0, 10)
 }
 
-const FREQ_OPTIONS: { label: string; value: RecurrenceFreq }[] = [
-  { label: 'Daily', value: 'daily' },
-  { label: 'Weekly', value: 'weekly' },
-  { label: 'Monthly', value: 'monthly' },
-  { label: 'Quarterly', value: 'quarterly' },
-  { label: 'Semi-Annual', value: 'semi_annual' },
-  { label: 'Annual', value: 'annual' },
+type AddUnit = 'days' | 'weeks' | 'months' | 'years'
+type MonthlyMode = 'date' | 'weekday'
+
+const DAY_ABBREVS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const ORDINAL_OPTIONS = [
+  { value: '1', label: '1st' },
+  { value: '2', label: '2nd' },
+  { value: '3', label: '3rd' },
+  { value: '4', label: '4th' },
+  { value: '-1', label: 'Last' },
 ]
 
-const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-function describeRule(rule: RecurrenceRule): string {
-  const dow = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const ordinal = (n: number) => {
-    const s = ['th', 'st', 'nd', 'rd']
-    const v = n % 100
-    return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
+function buildRRule(
+  unit: AddUnit,
+  interval: number,
+  byDay: string,
+  byMonthDay: number,
+  monthlyMode: MonthlyMode,
+  ordinal: string,
+): string {
+  if (unit === 'days') return `FREQ=DAILY;INTERVAL=${interval}`
+  if (unit === 'weeks') return `FREQ=WEEKLY;INTERVAL=${interval};BYDAY=${byDay}`
+  if (unit === 'months') {
+    if (monthlyMode === 'date') return `FREQ=MONTHLY;INTERVAL=${interval};BYMONTHDAY=${byMonthDay}`
+    return `FREQ=MONTHLY;INTERVAL=${interval};BYDAY=${ordinal}${byDay}`
   }
-  switch (rule.freq) {
-    case 'daily': return 'Daily'
-    case 'weekly': return `Weekly on ${dow[rule.dayOfWeek ?? 5]}`
-    case 'monthly': return rule.dayOfMonth ? `Monthly on the ${ordinal(rule.dayOfMonth)}` : 'Monthly'
-    case 'quarterly': return rule.dayOfMonth ? `Quarterly on the ${ordinal(rule.dayOfMonth)}` : 'Quarterly'
-    case 'semi_annual': return rule.dayOfMonth ? `Semi-annually on the ${ordinal(rule.dayOfMonth)}` : 'Semi-annually'
-    case 'annual': return rule.dayOfMonth ? `Annually on the ${ordinal(rule.dayOfMonth)}` : 'Annually'
-  }
+  // years — simple "every N years" interval; month/day anchored to last inspection
+  return `FREQ=YEARLY;INTERVAL=${interval}`
 }
 
 function statusBadge(status: string) {
@@ -161,9 +163,12 @@ function AssetDetailPage() {
   const [showAddSchedule, setShowAddSchedule] = useState(false)
   const [addLabel, setAddLabel] = useState('')
   const [addTemplateId, setAddTemplateId] = useState('')
-  const [addFreq, setAddFreq] = useState<RecurrenceFreq>('weekly')
-  const [addDow, setAddDow] = useState(5)
-  const [addDom, setAddDom] = useState(1)
+  const [addUnit, setAddUnit] = useState<AddUnit>('weeks')
+  const [addInterval, setAddInterval] = useState(1)
+  const [addByDay, setAddByDay] = useState('FR')
+  const [addByMonthDay, setAddByMonthDay] = useState(1)
+  const [addMonthlyMode, setAddMonthlyMode] = useState<MonthlyMode>('date')
+  const [addOrdinal, setAddOrdinal] = useState('1')
   const [addBusy, setAddBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [formTemplates, setFormTemplates] = useState<{ id: string; name: string }[]>([])
@@ -299,21 +304,17 @@ function AssetDetailPage() {
     if (!addLabel.trim() || !addTemplateId) return
     setAddBusy(true)
     setAddError(null)
-    const rule: RecurrenceRule = addFreq === 'weekly'
-      ? { freq: 'weekly', dayOfWeek: addDow }
-      : addFreq === 'daily'
-        ? { freq: 'daily' }
-        : { freq: addFreq, dayOfMonth: addDom }
+    const rrule = buildRRule(addUnit, addInterval, addByDay, addByMonthDay, addMonthlyMode, addOrdinal)
     try {
       const result = await addInspectionScheduleServerFn({
-        data: { orgSlug: org.slug, assetId: currentAsset.id, formTemplateId: addTemplateId, label: addLabel.trim(), recurrenceRule: rule },
+        data: { orgSlug: org.slug, assetId: currentAsset.id, formTemplateId: addTemplateId, label: addLabel.trim(), recurrenceRule: rrule },
       })
       if (!result.success) { setAddError(result.error); return }
       setSchedules((prev) => [...prev, result.schedule])
       setShowAddSchedule(false)
       setAddLabel('')
       setAddTemplateId('')
-      setAddFreq('weekly')
+      setAddUnit('weeks')
     } catch {
       setAddError('Failed to add schedule. Please try again.')
     } finally {
@@ -620,7 +621,7 @@ function AssetDetailPage() {
                             {!sched.isActive && <span className="text-xs text-gray-400">(inactive)</span>}
                           </div>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            {sched.formTemplateName} · {describeRule(sched.recurrenceRule)}
+                            {sched.formTemplateName} · {describeRRule(sched.recurrenceRule)}
                           </p>
                           {sched.nextInspectionDue && sched.isActive && (
                             <p className={`text-xs mt-1 ${isOverdue ? 'text-danger font-semibold' : isDueToday ? 'text-warning font-semibold' : 'text-gray-500'}`}>
@@ -683,36 +684,85 @@ function AssetDetailPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {FREQ_OPTIONS.map((f) => (
-                      <button key={f.value} onClick={() => setAddFreq(f.value)}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${addFreq === f.value ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-                        {f.label}
-                      </button>
-                    ))}
+                  <div className="space-y-2">
+                    {/* Row 1: Every [N] [unit] */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-gray-600">Every</span>
+                      <input
+                        type="number" min={1} max={999} value={addInterval}
+                        onChange={(e) => setAddInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-16 text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700"
+                      />
+                      {(['days', 'weeks', 'months', 'years'] as AddUnit[]).map((u) => (
+                        <button key={u} onClick={() => setAddUnit(u)}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${addUnit === u ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                          {u}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Row 2: Day picker for weeks */}
+                    {addUnit === 'weeks' && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-gray-500">on</span>
+                        {DAY_LABELS.map((day, i) => (
+                          <button key={i} onClick={() => setAddByDay(DAY_ABBREVS[i] ?? 'FR')}
+                            className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${addByDay === DAY_ABBREVS[i] ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                            {day}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Row 2: Date/weekday toggle for months */}
+                    {addUnit === 'months' && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setAddMonthlyMode('date')}
+                            className={`px-3 py-1 text-xs font-medium rounded-lg border transition-colors ${addMonthlyMode === 'date' ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                            On the Nth
+                          </button>
+                          <button onClick={() => setAddMonthlyMode('weekday')}
+                            className={`px-3 py-1 text-xs font-medium rounded-lg border transition-colors ${addMonthlyMode === 'weekday' ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                            On the Nth weekday
+                          </button>
+                        </div>
+                        {addMonthlyMode === 'date' && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-600">Day</span>
+                            <select value={addByMonthDay} onChange={(e) => setAddByMonthDay(Number(e.target.value))}
+                              className="text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700">
+                              {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                            <span className="text-sm text-gray-600">of the {addUnit === 'months' ? 'month' : 'year'}</span>
+                          </div>
+                        )}
+                        {addMonthlyMode === 'weekday' && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <select value={addOrdinal} onChange={(e) => setAddOrdinal(e.target.value)}
+                              className="text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700">
+                              {ORDINAL_OPTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                              ))}
+                            </select>
+                            <div className="flex gap-1 flex-wrap">
+                              {DAY_LABELS.map((day, i) => (
+                                <button key={i} onClick={() => setAddByDay(DAY_ABBREVS[i] ?? 'FR')}
+                                  className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${addByDay === DAY_ABBREVS[i] ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                                  {day}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* Preview */}
+                    <p className="text-xs text-gray-500 italic">
+                      {describeRRule(buildRRule(addUnit, addInterval, addByDay, addByMonthDay, addMonthlyMode, addOrdinal))}
+                    </p>
                   </div>
                 </div>
-                {addFreq === 'weekly' && (
-                  <div className="flex gap-1 flex-wrap">
-                    {DAYS_OF_WEEK.map((day, i) => (
-                      <button key={i} onClick={() => setAddDow(i)}
-                        className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${addDow === i ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-                        {day}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {addFreq !== 'daily' && addFreq !== 'weekly' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">On the</span>
-                    <select value={addDom} onChange={(e) => setAddDom(Number(e.target.value))} className="text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-navy-700">
-                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                    <span className="text-sm text-gray-600">of the {FREQ_OPTIONS.find(f => f.value === addFreq)?.label.toLowerCase()}</span>
-                  </div>
-                )}
                 {addError && <p className="text-xs text-danger">{addError}</p>}
                 <div className="flex gap-2">
                   <button onClick={() => void handleAddSchedule()} disabled={addBusy || !addLabel.trim() || !addTemplateId}

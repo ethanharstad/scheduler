@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getCookie } from '@tanstack/react-start/server'
 import { canDo } from '@/lib/rbac'
+import { isValidRRuleString } from '@/lib/rrule'
 import type { OrgRole } from '@/lib/org.types'
 import type {
   ListPlatoonsInput,
@@ -104,16 +105,6 @@ function isValidTime(time: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(time)
 }
 
-// ---------------------------------------------------------------------------
-// Internal helper: syntactic RRULE validation
-// ---------------------------------------------------------------------------
-
-function isValidRRuleString(rule: string): boolean {
-  const stripped = rule.replace(/^RRULE:/i, '').trim()
-  if (!/\bFREQ=(SECONDLY|MINUTELY|HOURLY|DAILY|WEEKLY|MONTHLY|YEARLY)\b/.test(stripped)) return false
-  if (!/^[A-Z]+=[^\s;]+(;[A-Z]+=[^\s;]+)*$/.test(stripped)) return false
-  return true
-}
 
 function isValidRRules(entries: RRuleEntry[]): boolean {
   if (!Array.isArray(entries) || entries.length === 0) return false

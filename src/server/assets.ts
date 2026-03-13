@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { requireOrgMembership } from '@/server/_helpers'
 import { canDo } from '@/lib/rbac'
+import { validateInspectionRRule, rruleToIntervalDays, computeNextDue } from '@/lib/rrule'
 import type {
   AssetView,
   AssetDetailView,
@@ -48,7 +49,6 @@ import type {
   DeleteAssetLocationOutput,
   ListAssetLocationsInput,
   ListAssetLocationsOutput,
-  RecurrenceRule,
 } from '@/lib/asset.types'
 import {
   APPARATUS_CATEGORIES,
@@ -85,51 +85,11 @@ async function getScheduleDayStart(env: Cloudflare.Env, orgId: string): Promise<
   return row?.schedule_day_start ?? '00:00'
 }
 
-// Compute the next inspection due date from a base date and recurrence rule.
-// When advance=true (post-inspection), always goes one full period forward.
-// When advance=false (initial setup), finds the soonest upcoming occurrence.
-function computeNextDue(base: string, rule: RecurrenceRule, advance: boolean): string {
-  const baseDate = new Date(base + 'T00:00:00Z')
-
-  if (rule.freq === 'daily') {
-    return new Date(baseDate.getTime() + 86400000).toISOString().slice(0, 10)
-  }
-
-  if (rule.freq === 'weekly') {
-    const dow = rule.dayOfWeek ?? 5 // default Friday
-    let diff = (dow - baseDate.getUTCDay() + 7) % 7
-    if (diff === 0) diff = 7 // strictly after base
-    return new Date(baseDate.getTime() + diff * 86400000).toISOString().slice(0, 10)
-  }
-
-  // monthly, quarterly, semi_annual, annual
-  const dom = Math.min(rule.dayOfMonth ?? baseDate.getUTCDate(), 28)
-  const monthStep =
-    rule.freq === 'monthly' ? 1 : rule.freq === 'quarterly' ? 3 : rule.freq === 'semi_annual' ? 6 : 12
-
-  let year = baseDate.getUTCFullYear()
-  let month = baseDate.getUTCMonth()
-
-  if (!advance) {
-    // Try current month first — use it if the day hasn't passed yet
-    const candidate = new Date(Date.UTC(year, month, dom))
-    if (candidate > baseDate) {
-      return candidate.toISOString().slice(0, 10)
-    }
-  }
-
-  // Advance one period forward
-  month += monthStep
-  year += Math.floor(month / 12)
-  month = ((month % 12) + 12) % 12
-  return new Date(Date.UTC(year, month, dom)).toISOString().slice(0, 10)
-}
-
 async function recomputeScheduleNextDue(
   env: Cloudflare.Env,
   orgId: string,
   scheduleId: string,
-  rule: RecurrenceRule,
+  rrule: string,
 ): Promise<string> {
   type SubRow = { submitted_at: string }
   const lastSub = await env.DB.prepare(
@@ -140,7 +100,7 @@ async function recomputeScheduleNextDue(
 
   const dayStart = await getScheduleDayStart(env, orgId)
   const base = lastSub ? lastSub.submitted_at.slice(0, 10) : orgToday(dayStart)
-  return computeNextDue(base, rule, !!lastSub)
+  return computeNextDue(base, rrule, !!lastSub)
 }
 
 function validateCategory(assetType: 'apparatus' | 'gear', category: string): boolean {
@@ -830,10 +790,6 @@ export const unassignGearServerFn = createServerFn({ method: 'POST' })
 // D. Inspection Schedules
 // ---------------------------------------------------------------------------
 
-const FREQ_TO_DAYS: Record<string, number> = {
-  daily: 1, weekly: 7, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365,
-}
-
 type ScheduleRow = {
   id: string
   asset_id: string
@@ -855,7 +811,7 @@ function rowToScheduleView(r: ScheduleRow): InspectionScheduleView {
     formTemplateId: r.form_template_id,
     formTemplateName: r.form_template_name,
     label: r.label,
-    recurrenceRule: JSON.parse(r.recurrence_rule) as RecurrenceRule,
+    recurrenceRule: r.recurrence_rule,
     intervalDays: r.interval_days,
     nextInspectionDue: r.next_inspection_due,
     isActive: r.is_active === 1,
@@ -903,20 +859,21 @@ export const addInspectionScheduleServerFn = createServerFn({ method: 'POST' })
     }
     if (tpl.status !== 'published') return { success: false, error: 'TEMPLATE_NOT_PUBLISHED' }
 
-    const rule = data.recurrenceRule
-    const intervalDays = FREQ_TO_DAYS[rule.freq] ?? 30
+    const rrule = data.recurrenceRule
+    if (!validateInspectionRRule(rrule)) return { success: false, error: 'INVALID_RECURRENCE_RULE' }
+
+    const intervalDays = rruleToIntervalDays(rrule)
 
     const dayStart = await getScheduleDayStart(env, membership.orgId)
-    const nextDue = computeNextDue(orgToday(dayStart), rule, false)
+    const nextDue = computeNextDue(orgToday(dayStart), rrule, false)
 
     const id = crypto.randomUUID()
     const now = isoNow()
-    const ruleJson = JSON.stringify(rule)
 
     await env.DB.prepare(
       `INSERT INTO asset_inspection_schedule (id, org_id, asset_id, form_template_id, label, recurrence_rule, interval_days, next_inspection_due, is_active, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-    ).bind(id, membership.orgId, data.assetId, data.formTemplateId, label, ruleJson, intervalDays, nextDue, now, now).run()
+    ).bind(id, membership.orgId, data.assetId, data.formTemplateId, label, rrule, intervalDays, nextDue, now, now).run()
 
     type StaffRow = { id: string }
     const staffRow = await env.DB.prepare(
@@ -928,7 +885,7 @@ export const addInspectionScheduleServerFn = createServerFn({ method: 'POST' })
         schedule_id: id,
         label,
         form_template_id: data.formTemplateId,
-        freq: rule.freq,
+        rrule,
       })
     }
 
@@ -977,17 +934,21 @@ export const updateInspectionScheduleServerFn = createServerFn({ method: 'POST' 
     if (!newLabel || newLabel.length > 200) return { success: false, error: 'INVALID_INPUT' }
 
     const newTemplateId = data.formTemplateId ?? existing.form_template_id
-    const newRule = data.recurrenceRule ?? (JSON.parse(existing.recurrence_rule) as RecurrenceRule)
-    const newIntervalDays = data.recurrenceRule ? (FREQ_TO_DAYS[data.recurrenceRule.freq] ?? 30) : existing.interval_days
+    const newRRule = data.recurrenceRule ?? existing.recurrence_rule
+
+    if (data.recurrenceRule && !validateInspectionRRule(data.recurrenceRule)) {
+      return { success: false, error: 'INVALID_RECURRENCE_RULE' }
+    }
+
+    const newIntervalDays = data.recurrenceRule ? rruleToIntervalDays(data.recurrenceRule) : existing.interval_days
     const newIsActive = data.isActive !== undefined ? (data.isActive ? 1 : 0) : existing.is_active
 
     const now = isoNow()
-    const ruleJson = JSON.stringify(newRule)
 
     // Recompute next due if recurrence changed
     let nextDue: string | null = null
     if (newIsActive) {
-      nextDue = await recomputeScheduleNextDue(env, membership.orgId, data.scheduleId, newRule)
+      nextDue = await recomputeScheduleNextDue(env, membership.orgId, data.scheduleId, newRRule)
     }
 
     await env.DB.prepare(
@@ -995,7 +956,7 @@ export const updateInspectionScheduleServerFn = createServerFn({ method: 'POST' 
         form_template_id = ?, label = ?, recurrence_rule = ?, interval_days = ?,
         next_inspection_due = ?, is_active = ?, updated_at = ?
        WHERE id = ?`,
-    ).bind(newTemplateId, newLabel, ruleJson, newIntervalDays, nextDue, newIsActive, now, data.scheduleId).run()
+    ).bind(newTemplateId, newLabel, newRRule, newIntervalDays, nextDue, newIsActive, now, data.scheduleId).run()
 
     type StaffRow = { id: string }
     const staffRow = await env.DB.prepare(
