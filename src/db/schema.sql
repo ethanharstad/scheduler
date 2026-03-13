@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS staff_member (
   created_at   TEXT NOT NULL,                           -- ISO 8601
   updated_at   TEXT NOT NULL,                           -- ISO 8601
   rank_id      TEXT REFERENCES rank(id)     ON DELETE SET NULL,
-  position_id  TEXT REFERENCES position(id) ON DELETE SET NULL,
+  position_id  TEXT REFERENCES position(id) ON DELETE SET NULL, -- DEPRECATION CANDIDATE: unused in app code; position is tracked via platoon_membership.position_id instead
 
   CHECK (email IS NOT NULL OR phone IS NOT NULL)
 );
