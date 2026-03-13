@@ -5,12 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev        # Start dev server on port 3000
-npm run build      # Build for production
-npm run preview    # Build and preview production version
-npm run test       # Run tests with Vitest
-npm run deploy     # Build and deploy to Cloudflare Workers
-npm run cf-typegen # Regenerate Cloudflare Worker binding types
+npm run dev             # Start dev server on port 3000
+npm run build           # Build for production
+npm run preview         # Build and preview production version
+npm run test            # Run tests with Vitest
+npm run deploy          # Build and deploy to Cloudflare Workers
+npm run cf-typegen      # Regenerate Cloudflare Worker binding types
+npm run migrate:local   # Apply unapplied D1 migrations to local DB
+npm run migrate:remote  # Apply unapplied D1 migrations to production DB
 ```
 
 ## Architecture
@@ -86,6 +88,29 @@ useRouteContext({ from: '/_protected/orgs/$orgSlug' })
 ```
 
 **Public routes** (outside `_protected`): landing page, login, register, forgot/reset password, verify-email, join (staff invitation acceptance).
+
+## Database Migrations
+
+Schema changes are managed via Wrangler D1's built-in migration system, which tracks applied migrations in a `d1_migrations` table.
+
+**Dual-file convention:**
+- `migrations/` — wrangler-managed incremental migration files (source of truth for applying changes). Applied in order; each file is recorded once.
+- `src/db/schema.sql` — full schema reference snapshot. Must be kept in sync with every new migration. Not the apply target — for reference and local bootstrapping only.
+
+**To apply migrations:**
+```bash
+npm run migrate:local   # test locally
+npm run migrate:remote  # apply to production
+```
+
+**To add a new schema change:**
+```bash
+wrangler d1 migrations create scheduler-auth <description>
+# Edit the generated migrations/NNNN_<description>.sql
+# ALSO update src/db/schema.sql to reflect the final cumulative schema
+npm run migrate:local
+npm run migrate:remote
+```
 
 ## Database Schema
 

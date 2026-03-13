@@ -1,10 +1,5 @@
--- Scheduler — D1 Schema (reference snapshot)
--- This file reflects the current cumulative schema for reference and local bootstrapping.
--- It is NOT the apply target. Schema changes are applied via wrangler-managed migrations:
---   migrations/  — incremental migration files (source of truth for applying changes)
---   npm run migrate:local   — apply unapplied migrations to local D1
---   npm run migrate:remote  — apply unapplied migrations to production D1
--- When adding a new migration, ALSO update this file to reflect the final schema state.
+-- Scheduler — Initial Schema
+-- Wrangler-managed migration. Applied by: npm run migrate:local / npm run migrate:remote
 -- All datetimes: ISO 8601 TEXT. Booleans: INTEGER 0/1. PKs: crypto.randomUUID().
 -- Tables are dependency-ordered: referenced tables are created before referencing tables.
 

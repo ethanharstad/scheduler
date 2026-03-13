@@ -11,7 +11,9 @@
 		"preview": "npm run build && vite preview",
 		"test": "vitest run",
 		"deploy": "npm run build && wrangler deploy",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"migrate:local": "wrangler d1 migrations apply scheduler-auth --local",
+		"migrate:remote": "wrangler d1 migrations apply scheduler-auth"
 	},
 	"dependencies": {
 		"@cloudflare/vite-plugin": "^1.13.8",
