@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Award, Star, Briefcase, X, Check } from 'lucide-react'
+import { Plus, Pencil, Trash2, ChevronDown, Award, Star, Briefcase, X, Check, GraduationCap, Shield } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { RankView, CertTypeView, PositionView } from '@/lib/qualifications.types'
 import {
@@ -39,6 +39,43 @@ export const Route = createFileRoute('/_protected/orgs/$orgSlug/qualifications/'
 })
 
 type Tab = 'ranks' | 'certTypes' | 'positions'
+
+// ---------------------------------------------------------------------------
+// Shared helper components
+// ---------------------------------------------------------------------------
+
+function RankBadge({ order }: { order: number }) {
+  return (
+    <span
+      className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-navy-700 text-white text-sm font-bold shrink-0"
+      style={{ fontFamily: 'var(--font-mono)' }}
+    >
+      {order}
+    </span>
+  )
+}
+
+function PriorityBadge({ priority }: { priority: number }) {
+  return (
+    <span
+      className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-700 text-white text-xs font-bold shrink-0"
+      style={{ fontFamily: 'var(--font-mono)' }}
+    >
+      {priority}
+    </span>
+  )
+}
+
+function CertChip({ label }: { label: string }) {
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full bg-navy-50 text-navy-700 text-xs font-semibold border border-navy-100"
+      style={{ fontFamily: 'var(--font-condensed)' }}
+    >
+      {label}
+    </span>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Ranks tab
@@ -190,80 +227,62 @@ function RanksTab({
           <p className="text-xs text-gray-400 mt-1">Add a rank to define your organization's hierarchy.</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide w-32" style={{ fontFamily: 'var(--font-condensed)' }}>Sort Order</th>
-                {canManage && <th className="w-24" />}
-              </tr>
-            </thead>
-            <tbody>
-              {ranks.map((r) => (
-                <tr key={r.id} className="group border-b border-gray-200 last:border-0 hover:bg-gray-50">
-                  {editingId === r.id ? (
-                    <>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          className="w-full px-2 py-1 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          min={1}
-                          value={editSortOrder}
-                          onChange={(e) => setEditSortOrder(parseInt(e.target.value) || 1)}
-                          className="w-24 px-2 py-1 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 justify-end">
-                          <button onClick={() => void handleEdit(r.id)} disabled={editBusy} className="p-1 text-success hover:bg-success-bg rounded">
-                            <Check className="w-4 h-4" />
+        <div className="space-y-2">
+          {ranks.map((r) => (
+            <div key={r.id} className="group flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 bg-white hover:border-navy-100">
+              {editingId === r.id ? (
+                <>
+                  <RankBadge order={r.sortOrder} />
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={editSortOrder}
+                    onChange={(e) => setEditSortOrder(parseInt(e.target.value) || 1)}
+                    className="w-20 px-2 py-1 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+                  />
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => void handleEdit(r.id)} disabled={editBusy} className="p-1 text-success hover:bg-success-bg rounded">
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <RankBadge order={r.sortOrder} />
+                  <span className="flex-1 font-semibold text-navy-700">{r.name}</span>
+                  {canManage && (
+                    <div className={`flex items-center gap-1.5 transition-opacity ${confirmDelete === r.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                      <button onClick={() => startEdit(r)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="w-px h-3.5 bg-gray-200 shrink-0" />
+                      {confirmDelete === r.id ? (
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => void handleDelete(r.id)} disabled={deleteBusy === r.id} className="px-2 py-0.5 bg-danger text-white rounded text-xs">
+                            {deleteBusy === r.id ? '…' : 'Yes'}
                           </button>
-                          <button onClick={() => setEditingId(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
-                            <X className="w-4 h-4" />
-                          </button>
+                          <button onClick={() => setConfirmDelete(null)} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">No</button>
                         </div>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-4 py-3 font-medium text-navy-700">{r.name}</td>
-                      <td className="px-4 py-3 text-gray-500">{r.sortOrder}</td>
-                      {canManage && (
-                        <td className="px-4 py-3">
-                          <div className={`flex items-center gap-1.5 justify-end transition-opacity ${confirmDelete === r.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                            <button onClick={() => startEdit(r)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <div className="w-px h-3.5 bg-gray-200 shrink-0" />
-                            {confirmDelete === r.id ? (
-                              <div className="flex items-center gap-1">
-                                <button onClick={() => void handleDelete(r.id)} disabled={deleteBusy === r.id} className="px-2 py-0.5 bg-danger text-white rounded text-xs">
-                                  {deleteBusy === r.id ? '…' : 'Yes'}
-                                </button>
-                                <button onClick={() => setConfirmDelete(null)} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">No</button>
-                              </div>
-                            ) : (
-                              <button onClick={() => setConfirmDelete(r.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded transition-colors">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
+                      ) : (
+                        <button onClick={() => setConfirmDelete(r.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       )}
-                    </>
+                    </div>
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -480,7 +499,7 @@ function CertTypesTab({
       ) : (
         <div className="space-y-2">
           {certTypes.map((ct) => (
-            <div key={ct.id} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div key={ct.id} className="rounded-lg border border-gray-200 bg-white overflow-hidden border-l-4 border-l-navy-500">
               {editingId === ct.id ? (
                 <div className="p-5 flex items-end gap-3">
                   <div className="flex-1">
@@ -508,7 +527,7 @@ function CertTypesTab({
                   <div className="flex items-center gap-3">
                     {ct.isLeveled ? <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expandedId === ct.id ? '' : '-rotate-90'}`} /> : <span className="w-4" />}
                     <div>
-                      <span className="font-medium text-navy-700">{ct.name}</span>
+                      <span className="font-semibold text-navy-700">{ct.name}</span>
                       {ct.description && <span className="ml-2 text-sm text-gray-500">{ct.description}</span>}
                     </div>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide ${ct.isLeveled ? 'bg-navy-50 text-navy-700' : 'bg-gray-100 text-gray-600'}`} style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -583,11 +602,20 @@ function CertTypesTab({
                       {ct.levels.length === 0 ? (
                         <p className="text-xs text-gray-400 italic">No levels defined.</p>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {ct.levels.map((l) => (
-                            <span key={l.id} className="px-2 py-0.5 rounded-full bg-white border border-gray-200 text-xs text-gray-700 font-medium">
-                              {l.levelOrder}. {l.name}
-                            </span>
+                        <div className="flex items-center gap-0 flex-wrap">
+                          {ct.levels.map((l, i) => (
+                            <div key={l.id} className="flex items-center">
+                              <div className="flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 first:rounded-l-full last:rounded-r-full text-xs">
+                                <span
+                                  className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-navy-700 text-white font-bold shrink-0"
+                                  style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}
+                                >
+                                  {l.levelOrder}
+                                </span>
+                                <span className="text-gray-700 font-medium">{l.name}</span>
+                              </div>
+                              {i < ct.levels.length - 1 && <div className="w-3 h-px bg-gray-300 shrink-0" />}
+                            </div>
                           ))}
                         </div>
                       )}
@@ -885,97 +913,83 @@ function PositionsTab({
           <p className="text-xs text-gray-400 mt-1">Add a position to define shift roles with rank and cert requirements.</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide w-20" style={{ fontFamily: 'var(--font-condensed)' }}>Priority</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Min Rank</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Cert Requirements</th>
-                <th className="w-32" />
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((p) => (
-                <tr key={p.id} className="group border-b border-gray-200 last:border-0 hover:bg-gray-50 align-top">
-                  {editingId === p.id ? (
-                    <td colSpan={5} className="px-4 py-3">
-                      <PositionForm
-                        name={editName} setName={setEditName}
-                        description={editDescription} setDescription={setEditDescription}
-                        minRankId={editMinRankId} setMinRankId={setEditMinRankId}
-                        sortOrder={editSortOrder} setSortOrder={setEditSortOrder}
-                        reqs={editRequirements} setReqs={setEditRequirements}
-                        onSubmit={(e) => { e.preventDefault(); void handleEdit(p.id) }}
-                        busy={editBusy} error={editError}
-                        onCancel={() => { setEditingId(null); setEditError(null) }}
-                        submitLabel="Save"
-                        ranks={ranks} certTypes={certTypes}
-                      />
-                    </td>
-                  ) : (
-                    <>
-                      <td className="px-4 py-3">
-                        <div>
-                          <span className="font-medium text-navy-700">{p.name}</span>
-                          {p.description && <p className="text-xs text-gray-500 mt-0.5">{p.description}</p>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 tabular-nums">{p.sortOrder}</td>
-                      <td className="px-4 py-3 text-gray-600">{p.minRankName ?? <span className="text-gray-400">—</span>}</td>
-                      <td className="px-4 py-3">
-                        {p.requirements.length === 0 ? (
-                          <span className="text-gray-400">—</span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {p.requirements.map((r, i) => (
-                              <span key={i} className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
-                                {r.certTypeName}{r.minCertLevelName ? ` (≥${r.minCertLevelName})` : ''}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className={`flex items-center gap-1.5 justify-end transition-opacity ${confirmDelete === p.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                          <Link
-                            to="/orgs/$orgSlug/qualifications/positions/$positionId"
-                            params={{ orgSlug, positionId: p.id }}
-                            className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors"
-                            title="View eligibility"
+        <div className="space-y-3">
+          {positions.map((p) => (
+            <div key={p.id} className="group rounded-lg border border-gray-200 bg-white">
+              {editingId === p.id ? (
+                <div className="p-4">
+                  <PositionForm
+                    name={editName} setName={setEditName}
+                    description={editDescription} setDescription={setEditDescription}
+                    minRankId={editMinRankId} setMinRankId={setEditMinRankId}
+                    sortOrder={editSortOrder} setSortOrder={setEditSortOrder}
+                    reqs={editRequirements} setReqs={setEditRequirements}
+                    onSubmit={(e) => { e.preventDefault(); void handleEdit(p.id) }}
+                    busy={editBusy} error={editError}
+                    onCancel={() => { setEditingId(null); setEditError(null) }}
+                    submitLabel="Save"
+                    ranks={ranks} certTypes={certTypes}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 px-4 py-4">
+                  <PriorityBadge priority={p.sortOrder} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-navy-700 text-base">{p.name}</div>
+                    {p.description && <p className="text-xs text-gray-500 mt-0.5">{p.description}</p>}
+                    {(p.minRankName || p.requirements.length > 0) && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                        {p.minRankName && (
+                          <span
+                            className="inline-flex items-center px-2 py-0.5 rounded-full bg-navy-50 text-navy-700 text-xs font-semibold border border-navy-100"
+                            style={{ fontFamily: 'var(--font-condensed)' }}
                           >
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </Link>
-                          {canManage && (
-                            <>
-                              <div className="w-px h-3.5 bg-gray-200 shrink-0" />
-                              <button onClick={() => startEdit(p)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors">
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <div className="w-px h-3.5 bg-gray-200 shrink-0" />
-                              {confirmDelete === p.id ? (
-                                <div className="flex items-center gap-1">
-                                  <button onClick={() => void handleDelete(p.id)} disabled={deleteBusy === p.id} className="px-2 py-0.5 bg-danger text-white rounded text-xs">
-                                    {deleteBusy === p.id ? '…' : 'Yes'}
-                                  </button>
-                                  <button onClick={() => setConfirmDelete(null)} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">No</button>
-                                </div>
-                              ) : (
-                                <button onClick={() => setConfirmDelete(p.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded transition-colors">
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                            {p.minRankName}+
+                          </span>
+                        )}
+                        {p.requirements.map((r, i) => (
+                          <CertChip
+                            key={i}
+                            label={`${r.certTypeName}${r.minCertLevelName ? ` ≥${r.minCertLevelName}` : ''}`}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className={`flex items-center gap-1.5 transition-opacity ${confirmDelete === p.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                    <Link
+                      to="/orgs/$orgSlug/qualifications/positions/$positionId"
+                      params={{ orgSlug, positionId: p.id }}
+                      className="px-2.5 py-1 bg-navy-50 hover:bg-navy-100 text-navy-700 border border-navy-100 rounded-md text-xs font-semibold transition-colors"
+                    >
+                      Eligibility
+                    </Link>
+                    {canManage && (
+                      <>
+                        <div className="w-px h-3.5 bg-gray-200 shrink-0" />
+                        <button onClick={() => startEdit(p)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <div className="w-px h-3.5 bg-gray-200 shrink-0" />
+                        {confirmDelete === p.id ? (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => void handleDelete(p.id)} disabled={deleteBusy === p.id} className="px-2 py-0.5 bg-danger text-white rounded text-xs">
+                              {deleteBusy === p.id ? '…' : 'Yes'}
+                            </button>
+                            <button onClick={() => setConfirmDelete(null)} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">No</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setConfirmDelete(p.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -999,41 +1013,47 @@ function QualificationsPage() {
   ]
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <div className="mb-6">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-navy-700 mb-1">Qualifications</h1>
-            <p className="text-gray-500 text-sm">Manage ranks, certifications, and named shift positions for {org.name}.</p>
+          <div className="flex items-center gap-3">
+            <GraduationCap className="w-7 h-7 text-navy-700 shrink-0" />
+            <div>
+              <h1 className="text-2xl font-bold text-navy-700 mb-1">Qualifications</h1>
+              <p className="text-gray-500 text-sm">Manage ranks, certifications, and named shift positions for {org.name}.</p>
+            </div>
           </div>
           {canDo(userRole, 'view-certifications') && (
             <Link
               to="/orgs/$orgSlug/qualifications/certifications"
               params={{ orgSlug: org.slug }}
-              className="shrink-0 text-sm text-navy-600 hover:text-navy-800 font-medium"
+              className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-navy-50 hover:bg-navy-100 text-navy-700 border border-navy-100 rounded-md text-sm font-semibold transition-colors"
             >
-              View Certification Status →
+              <Shield className="w-4 h-4" />
+              Certification Status
             </Link>
           )}
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 mb-6">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              activeTab === tab.id
-                ? 'border-red-700 text-red-700'
-                : 'border-transparent text-gray-500 hover:text-navy-700'
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
+      <div className="mb-6">
+        <div className="inline-flex items-center gap-0.5 p-1 rounded-lg bg-gray-100">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-white text-navy-700 shadow-sm'
+                  : 'text-gray-500 hover:text-navy-700'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {activeTab === 'ranks' && (

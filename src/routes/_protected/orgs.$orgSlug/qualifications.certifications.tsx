@@ -54,24 +54,26 @@ function formatDate(dateStr: string): string {
   })
 }
 
-function certStatusBadge(status: OrgCertView['status'], isExpiringSoon: boolean) {
+function certStatusBadge(status: OrgCertView['status'], isExpiringSoon: boolean, expiresAt: string | null, today: string) {
   if (isExpiringSoon) {
+    const days = expiresAt ? daysUntil(expiresAt, today) : null
     return (
       <span
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-warning-bg text-warning"
+        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-warning-bg text-warning"
         style={{ fontFamily: 'var(--font-condensed)' }}
       >
-        <AlertTriangle className="w-3 h-3" />
-        Expiring Soon
+        <span className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
+        {days !== null ? `${days}d left` : 'Expiring Soon'}
       </span>
     )
   }
   if (status === 'active') {
     return (
       <span
-        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-success-bg text-success"
+        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-success-bg text-success"
         style={{ fontFamily: 'var(--font-condensed)' }}
       >
+        <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
         Active
       </span>
     )
@@ -79,18 +81,20 @@ function certStatusBadge(status: OrgCertView['status'], isExpiringSoon: boolean)
   if (status === 'expired') {
     return (
       <span
-        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-danger-bg text-danger"
+        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-danger text-white"
         style={{ fontFamily: 'var(--font-condensed)' }}
       >
+        <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
         Expired
       </span>
     )
   }
   return (
     <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-gray-100 text-gray-500"
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-gray-100 text-gray-500"
       style={{ fontFamily: 'var(--font-condensed)' }}
     >
+      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0" />
       Revoked
     </span>
   )
@@ -185,6 +189,14 @@ function SortTh({
         )}
       </button>
     </th>
+  )
+}
+
+function InitialAvatar({ name }: { name: string }) {
+  return (
+    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-navy-50 text-navy-700 text-xs font-bold shrink-0">
+      {name.charAt(0).toUpperCase()}
+    </span>
   )
 }
 
@@ -428,33 +440,25 @@ function CertificationsPage() {
       </div>
 
       {/* Alert widgets */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+      <div className="flex flex-col gap-2 mb-6">
         {/* Expired */}
-        <div
-          className={`border rounded-lg p-4 ${
-            expired.length > 0 ? 'border-danger bg-danger-bg' : 'border-success bg-success-bg'
-          }`}
-        >
-          <div className="flex items-center gap-2 mb-3">
-            {expired.length > 0 ? (
-              <>
-                <AlertTriangle className="w-5 h-5 text-danger" />
-                <h2 className="font-semibold text-danger">Expired Certifications</h2>
-                <span
-                  className="ml-auto px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger border border-danger"
-                  style={{ fontFamily: 'var(--font-condensed)' }}
-                >
-                  {expired.length}
-                </span>
-              </>
-            ) : (
-              <>
-                <CheckCircle className="w-5 h-5 text-success" />
-                <h2 className="font-semibold text-success">No Expired Certifications</h2>
-              </>
-            )}
+        {expired.length === 0 ? (
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-success-bg border border-success text-success text-sm font-medium">
+            <CheckCircle className="w-4 h-4 shrink-0" />
+            <span>All certifications current — no expired records</span>
           </div>
-          {expired.length > 0 ? (
+        ) : (
+          <div className="border rounded-lg p-4 border-danger bg-danger-bg">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="w-5 h-5 text-danger" />
+              <h2 className="font-semibold text-danger">Expired Certifications</h2>
+              <span
+                className="ml-auto px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger border border-danger"
+                style={{ fontFamily: 'var(--font-condensed)' }}
+              >
+                {expired.length}
+              </span>
+            </div>
             <ul className="space-y-1">
               {expired.map((c) => (
                 <li key={c.id} className="text-sm text-danger">
@@ -472,39 +476,27 @@ function CertificationsPage() {
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="text-sm text-success">All certifications are current.</p>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Expiring Soon */}
-        <div
-          className={`border rounded-lg p-4 ${
-            expiringSoon.length > 0
-              ? 'border-warning bg-warning-bg'
-              : 'border-success bg-success-bg'
-          }`}
-        >
-          <div className="flex items-center gap-2 mb-3">
-            {expiringSoon.length > 0 ? (
-              <>
-                <AlertTriangle className="w-5 h-5 text-warning" />
-                <h2 className="font-semibold text-warning">Expiring Within 30 Days</h2>
-                <span
-                  className="ml-auto px-2 py-0.5 rounded-full text-xs font-bold bg-warning-bg text-warning border border-warning"
-                  style={{ fontFamily: 'var(--font-condensed)' }}
-                >
-                  {expiringSoon.length}
-                </span>
-              </>
-            ) : (
-              <>
-                <CheckCircle className="w-5 h-5 text-success" />
-                <h2 className="font-semibold text-success">No Upcoming Expirations</h2>
-              </>
-            )}
+        {expiringSoon.length === 0 ? (
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-success-bg border border-success text-success text-sm font-medium">
+            <CheckCircle className="w-4 h-4 shrink-0" />
+            <span>No upcoming expirations within 30 days</span>
           </div>
-          {expiringSoon.length > 0 ? (
+        ) : (
+          <div className="border rounded-lg p-4 border-warning bg-warning-bg">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="w-5 h-5 text-warning" />
+              <h2 className="font-semibold text-warning">Expiring Within 30 Days</h2>
+              <span
+                className="ml-auto px-2 py-0.5 rounded-full text-xs font-bold bg-warning-bg text-warning border border-warning"
+                style={{ fontFamily: 'var(--font-condensed)' }}
+              >
+                {expiringSoon.length}
+              </span>
+            </div>
             <ul className="space-y-1">
               {expiringSoon.map((c) => (
                 <li key={c.id} className="text-sm text-warning">
@@ -522,21 +514,22 @@ function CertificationsPage() {
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="text-sm text-success">No certifications expiring in the next 30 days.</p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Full table */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {/* Table toolbar */}
         <div className="px-4 py-3 border-b border-gray-200 flex flex-wrap items-center gap-3">
-          <h2 className="font-semibold text-navy-700 mr-auto">All Certifications</h2>
+          <div className="flex items-center gap-2 mr-auto">
+            <h2 className="font-semibold text-navy-700">All Certifications</h2>
+            <span className="bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 text-xs font-semibold">{certs.length}</span>
+          </div>
           {/* Name search */}
           <input
             type="search"
-            placeholder="Search by name…"
+            placeholder="Search staff…"
             value={nameFilter}
             onChange={(e) => setNameFilter(e.target.value)}
             className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500 w-44"
@@ -608,27 +601,30 @@ function CertificationsPage() {
                 const certType = certTypes.find((ct: CertTypeView) => ct.id === c.certTypeId)
                 return (
                   <>
-                    <tr key={c.id} className={isEditing ? 'bg-blue-50' : 'hover:bg-gray-50'}>
-                      <td className="px-4 py-2.5">
-                        <Link
-                          to="/orgs/$orgSlug/staff/$staffMemberId"
-                          params={{ orgSlug: org.slug, staffMemberId: c.staffMemberId }}
-                          className="font-medium text-navy-700 hover:underline"
-                        >
-                          {c.staffMemberName}
-                        </Link>
+                    <tr key={c.id} className={isEditing ? 'bg-navy-50' : 'hover:bg-gray-50'}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <InitialAvatar name={c.staffMemberName} />
+                          <Link
+                            to="/orgs/$orgSlug/staff/$staffMemberId"
+                            params={{ orgSlug: org.slug, staffMemberId: c.staffMemberId }}
+                            className="font-medium text-navy-700 hover:underline"
+                          >
+                            {c.staffMemberName}
+                          </Link>
+                        </div>
                       </td>
-                      <td className="px-4 py-2.5 text-gray-700">{c.certTypeName}</td>
-                      <td className="px-4 py-2.5 text-gray-500">{c.certLevelName ?? '—'}</td>
-                      <td className="px-4 py-2.5 text-gray-500">
+                      <td className="px-4 py-3 text-gray-700">{c.certTypeName}</td>
+                      <td className="px-4 py-3 text-gray-500">{c.certLevelName ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-500">
                         {c.issuedAt ? formatDate(c.issuedAt) : '—'}
                       </td>
-                      <td className="px-4 py-2.5 text-gray-500">
+                      <td className="px-4 py-3 text-gray-500">
                         {c.expiresAt ? formatDate(c.expiresAt) : '—'}
                       </td>
-                      <td className="px-4 py-2.5">{certStatusBadge(c.status, c.isExpiringSoon)}</td>
+                      <td className="px-4 py-3">{certStatusBadge(c.status, c.isExpiringSoon, c.expiresAt, today)}</td>
                       {canManage && (
-                        <td className="px-4 py-2.5">
+                        <td className="px-4 py-3">
                           {c.status !== 'revoked' && !isEditing && (
                             <div className="flex items-center gap-1 justify-end">
                               <button

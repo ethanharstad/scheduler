@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { ArrowLeft, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, Calendar, UserCheck } from 'lucide-react'
 import { checkPositionEligibilityServerFn } from '@/server/qualifications'
 import type { EligibleStaffMember } from '@/lib/qualifications.types'
 
@@ -24,6 +24,36 @@ export const Route = createFileRoute(
   }),
   component: EligibilityPage,
 })
+
+// ---------------------------------------------------------------------------
+// Helper components
+// ---------------------------------------------------------------------------
+
+function RankChip({ name }: { name: string }) {
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full bg-navy-700 text-white text-xs font-semibold"
+      style={{ fontFamily: 'var(--font-condensed)' }}
+    >
+      {name}
+    </span>
+  )
+}
+
+function CertChip({ label }: { label: string }) {
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full bg-navy-50 text-navy-700 text-xs font-semibold border border-navy-100"
+      style={{ fontFamily: 'var(--font-condensed)' }}
+    >
+      {label}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 function EligibilityPage() {
   const { org } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
@@ -49,7 +79,7 @@ function EligibilityPage() {
 
   if (error === 'NOT_FOUND') {
     return (
-      <div className="max-w-3xl">
+      <div>
         <p className="text-gray-500">Position not found.</p>
         <Link to="/orgs/$orgSlug/qualifications" params={{ orgSlug: org.slug }} className="text-navy-700 hover:underline text-sm mt-2 inline-block">
           Back to Qualifications
@@ -59,7 +89,7 @@ function EligibilityPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <Link
         to="/orgs/$orgSlug/qualifications"
         params={{ orgSlug: org.slug }}
@@ -74,67 +104,66 @@ function EligibilityPage() {
         <p className="text-sm text-gray-500">Eligible staff members who meet all rank and cert requirements.</p>
       </div>
 
-      <div className="flex items-center gap-3 mb-6">
-        <label className="text-sm font-medium text-gray-600">As of date</label>
+      <div className="mb-6 inline-flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 bg-white">
+        <Calendar className="w-4 h-4 text-navy-500 shrink-0" />
+        <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Check eligibility as of</span>
         <input
           type="date"
           value={asOfDate}
           onChange={(e) => void handleDateChange(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+          className="px-3 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-navy-500 bg-gray-50"
         />
-        {loading && <span className="text-sm text-gray-400">Loading…</span>}
+        {loading && <span className="text-sm text-gray-400 ml-1">Loading…</span>}
       </div>
 
       {eligible.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
-          <p className="text-gray-500">No eligible staff members found for this date.</p>
-          <p className="text-sm text-gray-400 mt-1">Check that staff have the required rank and certifications.</p>
+        <div className="rounded-lg border border-gray-200 bg-white p-12 text-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gray-100 mb-4">
+            <UserCheck className="w-7 h-7 text-gray-400" />
+          </div>
+          <p className="font-semibold text-gray-600">No eligible staff members</p>
+          <p className="text-sm text-gray-400 mt-1 max-w-xs mx-auto">
+            No one meets all requirements as of this date. Try a different date or review position requirements.
+          </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
+        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden divide-y divide-gray-100">
           <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
               {eligible.length} eligible staff member{eligible.length !== 1 ? 's' : ''}
             </span>
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
-                <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Rank</th>
-                <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Certs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {eligible.map((s) => (
-                <tr key={s.staffMemberId} className="border-b border-gray-200 last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <Link
-                      to="/orgs/$orgSlug/staff/$staffMemberId"
-                      params={{ orgSlug: org.slug, staffMemberId: s.staffMemberId }}
-                      className="font-medium text-navy-700 hover:underline"
+          {eligible.map((s) => (
+            <div key={s.staffMemberId} className="flex items-start gap-4 px-4 py-3 hover:bg-gray-50">
+              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-navy-50 text-navy-700 text-sm font-bold shrink-0 mt-0.5">
+                {s.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <Link
+                  to="/orgs/$orgSlug/staff/$staffMemberId"
+                  params={{ orgSlug: org.slug, staffMemberId: s.staffMemberId }}
+                  className="font-semibold text-navy-700 hover:underline text-sm"
+                >
+                  {s.name}
+                </Link>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  {s.rankName && <RankChip name={s.rankName} />}
+                  {s.certsSummary && s.certsSummary.split(', ').map((cert, i) => (
+                    <CertChip key={i} label={cert} />
+                  ))}
+                  {s.hasExpiringCerts && (
+                    <span
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-warning-bg text-warning text-xs font-semibold"
+                      style={{ fontFamily: 'var(--font-condensed)' }}
                     >
-                      {s.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {s.rankName ?? <span className="text-gray-400">—</span>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-600">{s.certsSummary}</span>
-                      {s.hasExpiringCerts && (
-                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-warning-bg text-warning text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
-                          <AlertTriangle className="w-3 h-3" />
-                          Expiring soon
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <AlertTriangle className="w-3 h-3" />
+                      Expiring soon
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
