@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "scheduler",
+	"name": "scene-ready",
 	"compatibility_date": "2025-09-02",
 	"compatibility_flags": [
 		"nodejs_compat"
@@ -13,20 +13,84 @@
 	"observability": {
 		"enabled": true
 	},
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_name": "scheduler-auth",
-			"database_id": "f080e35b-100a-413b-8cab-792206a70c50",
-			"migrations_dir": "migrations"
+	"env": {
+		"dev": {
+			"routes": [
+				{
+					"pattern": "dev.sceneready.app",
+					"custom_domain": true
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "scene-ready-dev",
+					"database_id": "373d1e8d-fca2-4623-af5a-9b3c119b8b66",
+					"migrations_dir": "migrations"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "PROFILE_PHOTOS",
+					"bucket_name": "scene-ready-dev"
+				}
+			],
+			"durable_objects": {
+				"bindings": [
+					{
+						"name": "ORG_DO",
+						"class_name": "OrgDurableObject"
+					}
+				]
+			},
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": [
+						"OrgDurableObject"
+					]
+				}
+			]
+		},
+		"prod": {
+			"routes": [
+				{
+					"pattern": "sceneready.app",
+					"custom_domain": true
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "scene-ready-prod",
+					"database_id": "d43e59ce-f02f-475b-8c7e-789659dd2b89",
+					"migrations_dir": "migrations"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "PROFILE_PHOTOS",
+					"bucket_name": "scene-ready-prod"
+				}
+			],
+			"durable_objects": {
+				"bindings": [
+					{
+						"name": "ORG_DO",
+						"class_name": "OrgDurableObject"
+					}
+				]
+			},
+			"migrations": [
+				{
+					"tag": "v1",
+					"new_sqlite_classes": [
+						"OrgDurableObject"
+					]
+				}
+			]
 		}
-	],
-	"r2_buckets": [
-		{
-			"binding": "PROFILE_PHOTOS",
-			"bucket_name": "scheduler-profile-photos"
-		}
-	]
+	},
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

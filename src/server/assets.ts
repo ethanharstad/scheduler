@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { requireOrgMembership } from '@/server/_helpers'
+import { getOrgStub } from '@/server/_do-helpers'
 import { canDo } from '@/lib/rbac'
 import { validateInspectionRRule, rruleToIntervalDays, computeNextDue } from '@/lib/rrule'
 import type {
@@ -79,10 +80,11 @@ function orgToday(scheduleDayStart: string): string {
 }
 
 async function getScheduleDayStart(env: Cloudflare.Env, orgId: string): Promise<string> {
-  const row = await env.DB.prepare(`SELECT schedule_day_start FROM organization WHERE id = ?`)
-    .bind(orgId)
-    .first<{ schedule_day_start: string }>()
-  return row?.schedule_day_start ?? '00:00'
+  const stub = getOrgStub(env, orgId)
+  const rows = await stub.query(
+    `SELECT schedule_day_start FROM org_settings WHERE id = 'settings'`,
+  ) as { schedule_day_start: string }[]
+  return rows[0]?.schedule_day_start ?? '00:00'
 }
 
 async function recomputeScheduleNextDue(
@@ -92,11 +94,14 @@ async function recomputeScheduleNextDue(
   rrule: string,
 ): Promise<string> {
   type SubRow = { submitted_at: string }
-  const lastSub = await env.DB.prepare(
+  const stub = getOrgStub(env, orgId)
+  const subRows = await stub.query(
     `SELECT submitted_at FROM form_submission
-     WHERE schedule_id = ? AND org_id = ? AND status = 'complete'
+     WHERE schedule_id = ? AND status = 'complete'
      ORDER BY submitted_at DESC LIMIT 1`,
-  ).bind(scheduleId, orgId).first<SubRow>()
+    scheduleId,
+  ) as SubRow[]
+  const lastSub = subRows[0] ?? null
 
   const dayStart = await getScheduleDayStart(env, orgId)
   const base = lastSub ? lastSub.submitted_at.slice(0, 10) : orgToday(dayStart)
@@ -135,12 +140,12 @@ async function writeAssetAuditLog(
     const id = crypto.randomUUID()
     const now = isoNow()
     const detailJson = detail ? JSON.stringify(detail) : null
-    await env.DB.prepare(
-      `INSERT INTO asset_audit_log (id, org_id, actor_staff_id, action, asset_id, detail_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    const stub = getOrgStub(env, orgId)
+    await stub.execute(
+      `INSERT INTO asset_audit_log (id, actor_staff_id, action, asset_id, detail_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      id, actorStaffId, action, assetId, detailJson, now,
     )
-      .bind(id, orgId, actorStaffId, action, assetId, detailJson, now)
-      .run()
   } catch {
     // Audit logging must never break the primary operation
   }
@@ -152,7 +157,6 @@ async function writeAssetAuditLog(
 
 type AssetRow = {
   id: string
-  org_id: string
   asset_type: string
   name: string
   category: string
@@ -181,10 +185,10 @@ type AssetDetailRow = AssetRow & {
   custom_fields: string | null
 }
 
-function rowToAssetView(r: AssetRow): AssetView {
+function rowToAssetView(r: AssetRow, orgId: string): AssetView {
   return {
     id: r.id,
-    orgId: r.org_id,
+    orgId,
     assetType: r.asset_type as 'apparatus' | 'gear',
     name: r.name,
     category: r.category,
@@ -205,9 +209,9 @@ function rowToAssetView(r: AssetRow): AssetView {
   }
 }
 
-function rowToAssetDetailView(r: AssetDetailRow): AssetDetailView {
+function rowToAssetDetailView(r: AssetDetailRow, orgId: string): AssetDetailView {
   return {
-    ...rowToAssetView(r),
+    ...rowToAssetView(r, orgId),
     notes: r.notes,
     manufactureDate: r.manufacture_date,
     purchasedDate: r.purchased_date,
@@ -218,7 +222,7 @@ function rowToAssetDetailView(r: AssetDetailRow): AssetDetailView {
 }
 
 const ASSET_LIST_SELECT = `
-  a.id, a.org_id, a.asset_type, a.name, a.category, a.status,
+  a.id, a.asset_type, a.name, a.category, a.status,
   a.serial_number, a.make, a.model, a.unit_number,
   a.assigned_to_staff_id,
   sm.name AS assigned_to_staff_name,
@@ -230,7 +234,7 @@ const ASSET_LIST_SELECT = `
   a.created_at, a.updated_at`
 
 const ASSET_DETAIL_SELECT = `
-  a.id, a.org_id, a.asset_type, a.name, a.category, a.status,
+  a.id, a.asset_type, a.name, a.category, a.status,
   a.serial_number, a.make, a.model, a.unit_number,
   a.assigned_to_staff_id,
   sm.name AS assigned_to_staff_name,
@@ -281,52 +285,49 @@ export const createAssetServerFn = createServerFn({ method: 'POST' })
     }
 
     // Get staff member id for actor
+    const stub = getOrgStub(env, membership.orgId)
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    )
-      .bind(membership.userId, membership.orgId)
-      .first<StaffRow>()
+    const staffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const staffRow = staffRows[0] ?? null
 
     const id = crypto.randomUUID()
     const now = isoNow()
     const customFieldsJson = data.customFields ? JSON.stringify(data.customFields) : null
 
     try {
-      await env.DB.prepare(
+      await stub.execute(
         `INSERT INTO asset (
-          id, org_id, asset_type, name, category, status,
+          id, asset_type, name, category, status,
           serial_number, make, model, notes,
           manufacture_date, purchased_date, in_service_date, expiration_date, warranty_expiration_date,
           custom_fields, unit_number, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id,
+        data.assetType,
+        name,
+        data.category,
+        status,
+        data.serialNumber?.trim() || null,
+        data.make?.trim() || null,
+        data.model?.trim() || null,
+        data.notes?.trim() || null,
+        data.manufactureDate || null,
+        data.purchasedDate || null,
+        data.inServiceDate || null,
+        data.expirationDate || null,
+        data.warrantyExpirationDate || null,
+        customFieldsJson,
+        data.assetType === 'apparatus' ? data.unitNumber!.trim() : null,
+        now,
+        now,
       )
-        .bind(
-          id,
-          membership.orgId,
-          data.assetType,
-          name,
-          data.category,
-          status,
-          data.serialNumber?.trim() || null,
-          data.make?.trim() || null,
-          data.model?.trim() || null,
-          data.notes?.trim() || null,
-          data.manufactureDate || null,
-          data.purchasedDate || null,
-          data.inServiceDate || null,
-          data.expirationDate || null,
-          data.warrantyExpirationDate || null,
-          customFieldsJson,
-          data.assetType === 'apparatus' ? data.unitNumber!.trim() : null,
-          now,
-          now,
-        )
-        .run()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      if (msg.includes('idx_asset_org_unit')) return { success: false, error: 'DUPLICATE_UNIT_NUMBER' }
-      if (msg.includes('idx_asset_org_serial')) return { success: false, error: 'DUPLICATE_SERIAL_NUMBER' }
+      if (msg.includes('idx_asset_unit')) return { success: false, error: 'DUPLICATE_UNIT_NUMBER' }
+      if (msg.includes('idx_asset_serial')) return { success: false, error: 'DUPLICATE_SERIAL_NUMBER' }
       throw e
     }
 
@@ -334,13 +335,12 @@ export const createAssetServerFn = createServerFn({ method: 'POST' })
       await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.created', id)
     }
 
-    const row = await env.DB.prepare(
+    const rows = await stub.query(
       `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS} WHERE a.id = ?`,
-    )
-      .bind(id)
-      .first<AssetRow>()
+      id,
+    ) as AssetRow[]
 
-    return { success: true, asset: rowToAssetView(row!) }
+    return { success: true, asset: rowToAssetView(rows[0]!, membership.orgId) }
   })
 
 export const updateAssetServerFn = createServerFn({ method: 'POST' })
@@ -353,12 +353,13 @@ export const updateAssetServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
-    type AssetBasicRow = { id: string; org_id: string; asset_type: string; status: string; name: string; category: string; serial_number: string | null; make: string | null; model: string | null; unit_number: string | null; notes: string | null; manufacture_date: string | null; purchased_date: string | null; in_service_date: string | null; expiration_date: string | null; warranty_expiration_date: string | null; custom_fields: string | null }
-    const existing = await env.DB.prepare(
-      `SELECT id, org_id, asset_type, status, name, category, serial_number, make, model, unit_number, notes, manufacture_date, purchased_date, in_service_date, expiration_date, warranty_expiration_date, custom_fields FROM asset WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.assetId, membership.orgId)
-      .first<AssetBasicRow>()
+    const stub = getOrgStub(env, membership.orgId)
+    type AssetBasicRow = { id: string; asset_type: string; status: string; name: string; category: string; serial_number: string | null; make: string | null; model: string | null; unit_number: string | null; notes: string | null; manufacture_date: string | null; purchased_date: string | null; in_service_date: string | null; expiration_date: string | null; warranty_expiration_date: string | null; custom_fields: string | null }
+    const existingRows = await stub.query(
+      `SELECT id, asset_type, status, name, category, serial_number, make, model, unit_number, notes, manufacture_date, purchased_date, in_service_date, expiration_date, warranty_expiration_date, custom_fields FROM asset WHERE id = ?`,
+      data.assetId,
+    ) as AssetBasicRow[]
+    const existing = existingRows[0] ?? null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
     if (existing.status === 'decommissioned') return { success: false, error: 'DECOMMISSIONED' }
@@ -386,7 +387,7 @@ export const updateAssetServerFn = createServerFn({ method: 'POST' })
       : existing.custom_fields
 
     try {
-      await env.DB.prepare(
+      await stub.execute(
         `UPDATE asset SET
           name = ?,
           category = ?,
@@ -402,52 +403,47 @@ export const updateAssetServerFn = createServerFn({ method: 'POST' })
           custom_fields = ?,
           unit_number = ?,
           updated_at = ?
-        WHERE id = ? AND org_id = ?`,
+        WHERE id = ?`,
+        newName,
+        newCategory,
+        'serialNumber' in data ? (data.serialNumber?.trim() || null) : existing.serial_number,
+        'make' in data ? (data.make?.trim() || null) : existing.make,
+        'model' in data ? (data.model?.trim() || null) : existing.model,
+        'notes' in data ? (data.notes?.trim() || null) : existing.notes,
+        'manufactureDate' in data ? (data.manufactureDate || null) : existing.manufacture_date,
+        'purchasedDate' in data ? (data.purchasedDate || null) : existing.purchased_date,
+        'inServiceDate' in data ? (data.inServiceDate || null) : existing.in_service_date,
+        'expirationDate' in data ? (data.expirationDate || null) : existing.expiration_date,
+        'warrantyExpirationDate' in data ? (data.warrantyExpirationDate || null) : existing.warranty_expiration_date,
+        customFieldsJson,
+        existing.asset_type === 'apparatus' ? (data.unitNumber?.trim() || existing.unit_number) : null,
+        now,
+        data.assetId,
       )
-        .bind(
-          newName,
-          newCategory,
-          'serialNumber' in data ? (data.serialNumber?.trim() || null) : existing.serial_number,
-          'make' in data ? (data.make?.trim() || null) : existing.make,
-          'model' in data ? (data.model?.trim() || null) : existing.model,
-          'notes' in data ? (data.notes?.trim() || null) : existing.notes,
-          'manufactureDate' in data ? (data.manufactureDate || null) : existing.manufacture_date,
-          'purchasedDate' in data ? (data.purchasedDate || null) : existing.purchased_date,
-          'inServiceDate' in data ? (data.inServiceDate || null) : existing.in_service_date,
-          'expirationDate' in data ? (data.expirationDate || null) : existing.expiration_date,
-          'warrantyExpirationDate' in data ? (data.warrantyExpirationDate || null) : existing.warranty_expiration_date,
-          customFieldsJson,
-          existing.asset_type === 'apparatus' ? (data.unitNumber?.trim() || existing.unit_number) : null,
-          now,
-          data.assetId,
-          membership.orgId,
-        )
-        .run()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      if (msg.includes('idx_asset_org_unit')) return { success: false, error: 'DUPLICATE_UNIT_NUMBER' }
-      if (msg.includes('idx_asset_org_serial')) return { success: false, error: 'DUPLICATE_SERIAL_NUMBER' }
+      if (msg.includes('idx_asset_unit')) return { success: false, error: 'DUPLICATE_UNIT_NUMBER' }
+      if (msg.includes('idx_asset_serial')) return { success: false, error: 'DUPLICATE_SERIAL_NUMBER' }
       throw e
     }
 
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    )
-      .bind(membership.userId, membership.orgId)
-      .first<StaffRow>()
+    const staffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const staffRow = staffRows[0] ?? null
 
     if (staffRow) {
       await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.updated', data.assetId, changes)
     }
 
-    const row = await env.DB.prepare(
+    const readbackRows = await stub.query(
       `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS} WHERE a.id = ?`,
-    )
-      .bind(data.assetId)
-      .first<AssetRow>()
+      data.assetId,
+    ) as AssetRow[]
 
-    return { success: true, asset: rowToAssetView(row!) }
+    return { success: true, asset: rowToAssetView(readbackRows[0]!, membership.orgId) }
   })
 
 export const getAssetServerFn = createServerFn({ method: 'POST' })
@@ -459,14 +455,15 @@ export const getAssetServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    const row = await env.DB.prepare(
-      `SELECT ${ASSET_DETAIL_SELECT} FROM asset a ${ASSET_JOINS} WHERE a.id = ? AND a.org_id = ?`,
-    )
-      .bind(data.assetId, membership.orgId)
-      .first<AssetDetailRow>()
-
-    if (!row) return { success: false, error: 'NOT_FOUND' }
-    return { success: true, asset: rowToAssetDetailView(row) }
+    const stub = getOrgStub(env, membership.orgId)
+    const rows = await stub.query(
+      `SELECT ${ASSET_DETAIL_SELECT}
+       FROM asset a ${ASSET_JOINS}
+       WHERE a.id = ?`,
+      data.assetId,
+    ) as AssetDetailRow[]
+    if (rows.length === 0) return { success: false, error: 'NOT_FOUND' }
+    return { success: true, asset: rowToAssetDetailView(rows[0]!, membership.orgId) }
   })
 
 export const listAssetsServerFn = createServerFn({ method: 'POST' })
@@ -481,8 +478,10 @@ export const listAssetsServerFn = createServerFn({ method: 'POST' })
     const limit = Math.min(data.limit ?? 50, 200)
     const offset = data.offset ?? 0
 
-    const conditions: string[] = ['a.org_id = ?']
-    const bindings: unknown[] = [membership.orgId]
+    const stub = getOrgStub(env, membership.orgId)
+
+    const conditions: string[] = []
+    const bindings: unknown[] = []
 
     if (data.assetType) {
       conditions.push('a.asset_type = ?')
@@ -510,22 +509,22 @@ export const listAssetsServerFn = createServerFn({ method: 'POST' })
       bindings.push(term, term, term)
     }
 
-    const where = conditions.join(' AND ')
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    const countRow = await env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM asset a WHERE ${where}`,
-    )
-      .bind(...bindings)
-      .first<{ cnt: number }>()
-    const total = countRow?.cnt ?? 0
+    const countRows = await stub.query(
+      `SELECT COUNT(*) as cnt FROM asset a ${where}`,
+      ...bindings,
+    ) as { cnt: number }[]
+    const total = countRows[0]?.cnt ?? 0
 
-    const rows = await env.DB.prepare(
-      `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS} WHERE ${where} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`,
-    )
-      .bind(...bindings, limit, offset)
-      .all<AssetRow>()
+    const rows = await stub.query(
+      `SELECT ${ASSET_LIST_SELECT}
+       FROM asset a ${ASSET_JOINS}
+       ${where} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`,
+      ...bindings, limit, offset,
+    ) as AssetRow[]
 
-    return { success: true, assets: (rows.results ?? []).map(rowToAssetView), total }
+    return { success: true, assets: rows.map((r) => rowToAssetView(r, membership.orgId)), total }
   })
 
 // ---------------------------------------------------------------------------
@@ -542,12 +541,13 @@ export const changeAssetStatusServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
-    type AssetBasicRow = { id: string; org_id: string; asset_type: string; status: string; assigned_to_staff_id: string | null; assigned_to_apparatus_id: string | null }
-    const asset = await env.DB.prepare(
-      `SELECT id, org_id, asset_type, status, assigned_to_staff_id, assigned_to_apparatus_id FROM asset WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.assetId, membership.orgId)
-      .first<AssetBasicRow>()
+    const stub = getOrgStub(env, membership.orgId)
+    type AssetBasicRow = { id: string; asset_type: string; status: string; assigned_to_staff_id: string | null; assigned_to_apparatus_id: string | null }
+    const assetRows = await stub.query(
+      `SELECT id, asset_type, status, assigned_to_staff_id, assigned_to_apparatus_id FROM asset WHERE id = ?`,
+      data.assetId,
+    ) as AssetBasicRow[]
+    const asset = assetRows[0] ?? null
 
     if (!asset) return { success: false, error: 'NOT_FOUND' }
     if (asset.status === 'decommissioned') return { success: false, error: 'DECOMMISSIONED' }
@@ -556,11 +556,11 @@ export const changeAssetStatusServerFn = createServerFn({ method: 'POST' })
     }
 
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    )
-      .bind(membership.userId, membership.orgId)
-      .first<StaffRow>()
+    const staffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const staffRow = staffRows[0] ?? null
 
     const now = isoNow()
     const oldStatus = asset.status
@@ -568,33 +568,28 @@ export const changeAssetStatusServerFn = createServerFn({ method: 'POST' })
     if (data.newStatus === 'decommissioned' && asset.asset_type === 'apparatus') {
       // Unassign all gear from this apparatus
       type GearRow = { id: string }
-      const gearRows = await env.DB.prepare(
-        `SELECT id FROM asset WHERE assigned_to_apparatus_id = ? AND org_id = ?`,
-      )
-        .bind(asset.id, membership.orgId)
-        .all<GearRow>()
+      const gearRows = await stub.query(
+        `SELECT id FROM asset WHERE assigned_to_apparatus_id = ?`,
+        asset.id,
+      ) as GearRow[]
 
-      const stmts = [
-        env.DB.prepare(`UPDATE asset SET assigned_to_apparatus_id = NULL, assigned_to_location_id = NULL, status = 'available', updated_at = ? WHERE assigned_to_apparatus_id = ? AND org_id = ?`)
-          .bind(now, asset.id, membership.orgId),
-        env.DB.prepare(`UPDATE asset SET status = ?, updated_at = ? WHERE id = ? AND org_id = ?`)
-          .bind(data.newStatus, now, asset.id, membership.orgId),
-      ]
-      await env.DB.batch(stmts)
+      await stub.executeBatch([
+        { sql: `UPDATE asset SET assigned_to_apparatus_id = NULL, assigned_to_location_id = NULL, status = 'available', updated_at = ? WHERE assigned_to_apparatus_id = ?`, params: [now, asset.id] },
+        { sql: `UPDATE asset SET status = ?, updated_at = ? WHERE id = ?`, params: [data.newStatus, now, asset.id] },
+      ])
 
       if (staffRow) {
         await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.status_changed', asset.id, { from: oldStatus, to: data.newStatus })
-        for (const gear of gearRows.results ?? []) {
+        for (const gear of gearRows) {
           await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.unassigned', gear.id, { reason: 'apparatus_decommissioned' })
         }
       }
     } else if (data.newStatus === 'decommissioned' && asset.asset_type === 'gear') {
       // Clear assignment if exists
-      await env.DB.prepare(
-        `UPDATE asset SET status = ?, assigned_to_staff_id = NULL, assigned_to_apparatus_id = NULL, assigned_to_location_id = NULL, updated_at = ? WHERE id = ? AND org_id = ?`,
+      await stub.execute(
+        `UPDATE asset SET status = ?, assigned_to_staff_id = NULL, assigned_to_apparatus_id = NULL, assigned_to_location_id = NULL, updated_at = ? WHERE id = ?`,
+        data.newStatus, now, asset.id,
       )
-        .bind(data.newStatus, now, asset.id, membership.orgId)
-        .run()
 
       if (staffRow) {
         if (asset.assigned_to_staff_id || asset.assigned_to_apparatus_id) {
@@ -603,22 +598,22 @@ export const changeAssetStatusServerFn = createServerFn({ method: 'POST' })
         await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.status_changed', asset.id, { from: oldStatus, to: data.newStatus })
       }
     } else {
-      await env.DB.prepare(`UPDATE asset SET status = ?, updated_at = ? WHERE id = ? AND org_id = ?`)
-        .bind(data.newStatus, now, asset.id, membership.orgId)
-        .run()
+      await stub.execute(
+        `UPDATE asset SET status = ?, updated_at = ? WHERE id = ?`,
+        data.newStatus, now, asset.id,
+      )
 
       if (staffRow) {
         await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.status_changed', asset.id, { from: oldStatus, to: data.newStatus })
       }
     }
 
-    const row = await env.DB.prepare(
+    const readbackRows = await stub.query(
       `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS} WHERE a.id = ?`,
-    )
-      .bind(data.assetId)
-      .first<AssetRow>()
+      data.assetId,
+    ) as AssetRow[]
 
-    return { success: true, asset: rowToAssetView(row!) }
+    return { success: true, asset: rowToAssetView(readbackRows[0]!, membership.orgId) }
   })
 
 // ---------------------------------------------------------------------------
@@ -638,12 +633,13 @@ export const assignGearServerFn = createServerFn({ method: 'POST' })
     if (!data.assignToStaffId && !data.assignToApparatusId) return { success: false, error: 'INVALID_INPUT' }
     if (data.assignToStaffId && data.assignToApparatusId) return { success: false, error: 'INVALID_INPUT' }
 
-    type AssetBasicRow = { id: string; org_id: string; asset_type: string; status: string; assigned_to_staff_id: string | null; assigned_to_apparatus_id: string | null }
-    const asset = await env.DB.prepare(
-      `SELECT id, org_id, asset_type, status, assigned_to_staff_id, assigned_to_apparatus_id FROM asset WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.assetId, membership.orgId)
-      .first<AssetBasicRow>()
+    const stub = getOrgStub(env, membership.orgId)
+    type AssetBasicRow = { id: string; asset_type: string; status: string; assigned_to_staff_id: string | null; assigned_to_apparatus_id: string | null }
+    const assetRows = await stub.query(
+      `SELECT id, asset_type, status, assigned_to_staff_id, assigned_to_apparatus_id FROM asset WHERE id = ?`,
+      data.assetId,
+    ) as AssetBasicRow[]
+    const asset = assetRows[0] ?? null
 
     if (!asset) return { success: false, error: 'NOT_FOUND' }
     if (asset.asset_type !== 'gear') return { success: false, error: 'NOT_GEAR' }
@@ -651,29 +647,27 @@ export const assignGearServerFn = createServerFn({ method: 'POST' })
     if (asset.status === 'expired') return { success: false, error: 'EXPIRED' }
 
     type StaffRow = { id: string }
-    const actorStaffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    )
-      .bind(membership.userId, membership.orgId)
-      .first<StaffRow>()
+    const actorStaffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const actorStaffRow = actorStaffRows[0] ?? null
 
     // Validate target exists
     if (data.assignToStaffId) {
-      const targetStaff = await env.DB.prepare(
-        `SELECT id FROM staff_member WHERE id = ? AND org_id = ? AND status != 'removed'`,
-      )
-        .bind(data.assignToStaffId, membership.orgId)
-        .first<{ id: string }>()
-      if (!targetStaff) return { success: false, error: 'INVALID_TARGET' }
+      const targetStaffRows = await stub.query(
+        `SELECT id FROM staff_member WHERE id = ? AND status != 'removed'`,
+        data.assignToStaffId,
+      ) as { id: string }[]
+      if (targetStaffRows.length === 0) return { success: false, error: 'INVALID_TARGET' }
     }
 
     if (data.assignToApparatusId) {
-      const targetApp = await env.DB.prepare(
-        `SELECT id FROM asset WHERE id = ? AND org_id = ? AND asset_type = 'apparatus'`,
-      )
-        .bind(data.assignToApparatusId, membership.orgId)
-        .first<{ id: string }>()
-      if (!targetApp) return { success: false, error: 'INVALID_TARGET' }
+      const targetAppRows = await stub.query(
+        `SELECT id FROM asset WHERE id = ? AND asset_type = 'apparatus'`,
+        data.assignToApparatusId,
+      ) as { id: string }[]
+      if (targetAppRows.length === 0) return { success: false, error: 'INVALID_TARGET' }
     }
 
     // Validate optional location belongs to the target asset
@@ -683,28 +677,24 @@ export const assignGearServerFn = createServerFn({ method: 'POST' })
       if (!targetAssetId) return { success: false, error: 'INVALID_INPUT' }
       // Location must belong to the apparatus being assigned to
       if (!data.assignToApparatusId) return { success: false, error: 'INVALID_INPUT' }
-      const loc = await env.DB.prepare(
+      const locRows = await stub.query(
         `SELECT id FROM asset_location WHERE id = ? AND asset_id = ?`,
-      )
-        .bind(locationId, data.assignToApparatusId)
-        .first<{ id: string }>()
-      if (!loc) return { success: false, error: 'INVALID_TARGET' }
+        locationId, data.assignToApparatusId,
+      ) as { id: string }[]
+      if (locRows.length === 0) return { success: false, error: 'INVALID_TARGET' }
     }
 
     const now = isoNow()
     const wasPreviouslyAssigned = asset.assigned_to_staff_id || asset.assigned_to_apparatus_id
 
-    await env.DB.prepare(
+    await stub.execute(
       `UPDATE asset SET assigned_to_staff_id = ?, assigned_to_apparatus_id = ?, assigned_to_location_id = ?, status = 'assigned', updated_at = ? WHERE id = ?`,
+      data.assignToStaffId || null,
+      data.assignToApparatusId || null,
+      locationId,
+      now,
+      asset.id,
     )
-      .bind(
-        data.assignToStaffId || null,
-        data.assignToApparatusId || null,
-        locationId,
-        now,
-        asset.id,
-      )
-      .run()
 
     if (actorStaffRow) {
       if (wasPreviouslyAssigned) {
@@ -720,13 +710,12 @@ export const assignGearServerFn = createServerFn({ method: 'POST' })
       })
     }
 
-    const row = await env.DB.prepare(
+    const readbackRows = await stub.query(
       `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS} WHERE a.id = ?`,
-    )
-      .bind(data.assetId)
-      .first<AssetRow>()
+      data.assetId,
+    ) as AssetRow[]
 
-    return { success: true, asset: rowToAssetView(row!) }
+    return { success: true, asset: rowToAssetView(readbackRows[0]!, membership.orgId) }
   })
 
 export const unassignGearServerFn = createServerFn({ method: 'POST' })
@@ -739,12 +728,13 @@ export const unassignGearServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
+    const stub = getOrgStub(env, membership.orgId)
     type AssetBasicRow = { id: string; asset_type: string; status: string; assigned_to_staff_id: string | null; assigned_to_apparatus_id: string | null }
-    const asset = await env.DB.prepare(
-      `SELECT id, asset_type, status, assigned_to_staff_id, assigned_to_apparatus_id FROM asset WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.assetId, membership.orgId)
-      .first<AssetBasicRow>()
+    const assetRows = await stub.query(
+      `SELECT id, asset_type, status, assigned_to_staff_id, assigned_to_apparatus_id FROM asset WHERE id = ?`,
+      data.assetId,
+    ) as AssetBasicRow[]
+    const asset = assetRows[0] ?? null
 
     if (!asset) return { success: false, error: 'NOT_FOUND' }
 
@@ -757,18 +747,17 @@ export const unassignGearServerFn = createServerFn({ method: 'POST' })
       : 'available'
 
     const now = isoNow()
-    await env.DB.prepare(
+    await stub.execute(
       `UPDATE asset SET assigned_to_staff_id = NULL, assigned_to_apparatus_id = NULL, assigned_to_location_id = NULL, status = ?, updated_at = ? WHERE id = ?`,
+      newStatus, now, asset.id,
     )
-      .bind(newStatus, now, asset.id)
-      .run()
 
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    )
-      .bind(membership.userId, membership.orgId)
-      .first<StaffRow>()
+    const staffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const staffRow = staffRows[0] ?? null
 
     if (staffRow) {
       await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.unassigned', asset.id, {
@@ -777,13 +766,12 @@ export const unassignGearServerFn = createServerFn({ method: 'POST' })
       })
     }
 
-    const row = await env.DB.prepare(
+    const readbackRows = await stub.query(
       `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS} WHERE a.id = ?`,
-    )
-      .bind(data.assetId)
-      .first<AssetRow>()
+      data.assetId,
+    ) as AssetRow[]
 
-    return { success: true, asset: rowToAssetView(row!) }
+    return { success: true, asset: rowToAssetView(readbackRows[0]!, membership.orgId) }
   })
 
 // ---------------------------------------------------------------------------
@@ -842,16 +830,17 @@ export const addInspectionScheduleServerFn = createServerFn({ method: 'POST' })
     const label = data.label?.trim()
     if (!label || label.length > 200) return { success: false, error: 'INVALID_INPUT' }
 
-    const asset = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
-      .bind(data.assetId, membership.orgId)
-      .first<{ id: string }>()
-    if (!asset) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
+    const assetRows = await stub.query(`SELECT id FROM asset WHERE id = ?`, data.assetId) as { id: string }[]
+    if (assetRows.length === 0) return { success: false, error: 'NOT_FOUND' }
 
     // Validate form template exists, belongs to org (or is system), and is published
     type TplRow = { id: string; status: string; org_id: string | null; is_system: number }
-    const tpl = await env.DB.prepare(
+    const tplRows = await stub.query(
       `SELECT id, status, org_id, is_system FROM form_template WHERE id = ?`,
-    ).bind(data.formTemplateId).first<TplRow>()
+      data.formTemplateId,
+    ) as TplRow[]
+    const tpl = tplRows[0] ?? null
 
     if (!tpl) return { success: false, error: 'TEMPLATE_NOT_FOUND' }
     if (tpl.org_id !== null && tpl.org_id !== membership.orgId && tpl.is_system !== 1) {
@@ -870,15 +859,18 @@ export const addInspectionScheduleServerFn = createServerFn({ method: 'POST' })
     const id = crypto.randomUUID()
     const now = isoNow()
 
-    await env.DB.prepare(
-      `INSERT INTO asset_inspection_schedule (id, org_id, asset_id, form_template_id, label, recurrence_rule, interval_days, next_inspection_due, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-    ).bind(id, membership.orgId, data.assetId, data.formTemplateId, label, rrule, intervalDays, nextDue, now, now).run()
+    await stub.execute(
+      `INSERT INTO asset_inspection_schedule (id, asset_id, form_template_id, label, recurrence_rule, interval_days, next_inspection_due, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      id, data.assetId, data.formTemplateId, label, rrule, intervalDays, nextDue, now, now,
+    )
 
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    ).bind(membership.userId, membership.orgId).first<StaffRow>()
+    const staffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const staffRow = staffRows[0] ?? null
 
     if (staffRow) {
       await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.schedule_created', data.assetId, {
@@ -889,11 +881,12 @@ export const addInspectionScheduleServerFn = createServerFn({ method: 'POST' })
       })
     }
 
-    const row = await env.DB.prepare(
+    const scheduleRows = await stub.query(
       `SELECT ${SCHEDULE_SELECT} FROM asset_inspection_schedule ais ${SCHEDULE_JOIN} WHERE ais.id = ?`,
-    ).bind(id).first<ScheduleRow>()
+      id,
+    ) as ScheduleRow[]
 
-    return { success: true, schedule: rowToScheduleView(row!) }
+    return { success: true, schedule: rowToScheduleView(scheduleRows[0]!) }
   })
 
 export const updateInspectionScheduleServerFn = createServerFn({ method: 'POST' })
@@ -906,22 +899,26 @@ export const updateInspectionScheduleServerFn = createServerFn({ method: 'POST' 
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
+    const stub = getOrgStub(env, membership.orgId)
     type ExistingRow = { id: string; asset_id: string; form_template_id: string; label: string; recurrence_rule: string; interval_days: number; is_active: number }
-    const existing = await env.DB.prepare(
+    const existingRows = await stub.query(
       `SELECT ais.id, ais.asset_id, ais.form_template_id, ais.label, ais.recurrence_rule, ais.interval_days, ais.is_active
        FROM asset_inspection_schedule ais
-       JOIN asset a ON a.id = ais.asset_id
-       WHERE ais.id = ? AND ais.asset_id = ? AND a.org_id = ?`,
-    ).bind(data.scheduleId, data.assetId, membership.orgId).first<ExistingRow>()
+       WHERE ais.id = ? AND ais.asset_id = ?`,
+      data.scheduleId, data.assetId,
+    ) as ExistingRow[]
+    const existing = existingRows[0] ?? null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
     // Validate new template if changing
     if (data.formTemplateId && data.formTemplateId !== existing.form_template_id) {
       type TplRow = { id: string; status: string; org_id: string | null; is_system: number }
-      const tpl = await env.DB.prepare(
+      const tplRows = await stub.query(
         `SELECT id, status, org_id, is_system FROM form_template WHERE id = ?`,
-      ).bind(data.formTemplateId).first<TplRow>()
+        data.formTemplateId,
+      ) as TplRow[]
+      const tpl = tplRows[0] ?? null
 
       if (!tpl) return { success: false, error: 'TEMPLATE_NOT_FOUND' }
       if (tpl.org_id !== null && tpl.org_id !== membership.orgId && tpl.is_system !== 1) {
@@ -951,17 +948,20 @@ export const updateInspectionScheduleServerFn = createServerFn({ method: 'POST' 
       nextDue = await recomputeScheduleNextDue(env, membership.orgId, data.scheduleId, newRRule)
     }
 
-    await env.DB.prepare(
+    await stub.execute(
       `UPDATE asset_inspection_schedule SET
         form_template_id = ?, label = ?, recurrence_rule = ?, interval_days = ?,
         next_inspection_due = ?, is_active = ?, updated_at = ?
        WHERE id = ?`,
-    ).bind(newTemplateId, newLabel, newRRule, newIntervalDays, nextDue, newIsActive, now, data.scheduleId).run()
+      newTemplateId, newLabel, newRRule, newIntervalDays, nextDue, newIsActive, now, data.scheduleId,
+    )
 
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    ).bind(membership.userId, membership.orgId).first<StaffRow>()
+    const staffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const staffRow = staffRows[0] ?? null
 
     if (staffRow) {
       await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.schedule_updated', data.assetId, {
@@ -970,11 +970,12 @@ export const updateInspectionScheduleServerFn = createServerFn({ method: 'POST' 
       })
     }
 
-    const row = await env.DB.prepare(
+    const scheduleRows = await stub.query(
       `SELECT ${SCHEDULE_SELECT} FROM asset_inspection_schedule ais ${SCHEDULE_JOIN} WHERE ais.id = ?`,
-    ).bind(data.scheduleId).first<ScheduleRow>()
+      data.scheduleId,
+    ) as ScheduleRow[]
 
-    return { success: true, schedule: rowToScheduleView(row!) }
+    return { success: true, schedule: rowToScheduleView(scheduleRows[0]!) }
   })
 
 export const deleteInspectionScheduleServerFn = createServerFn({ method: 'POST' })
@@ -987,21 +988,25 @@ export const deleteInspectionScheduleServerFn = createServerFn({ method: 'POST' 
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
+    const stub = getOrgStub(env, membership.orgId)
     type ExistingRow = { id: string; label: string }
-    const existing = await env.DB.prepare(
+    const existingRows = await stub.query(
       `SELECT ais.id, ais.label FROM asset_inspection_schedule ais
-       JOIN asset a ON a.id = ais.asset_id
-       WHERE ais.id = ? AND ais.asset_id = ? AND a.org_id = ?`,
-    ).bind(data.scheduleId, data.assetId, membership.orgId).first<ExistingRow>()
+       WHERE ais.id = ? AND ais.asset_id = ?`,
+      data.scheduleId, data.assetId,
+    ) as ExistingRow[]
+    const existing = existingRows[0] ?? null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
-    await env.DB.prepare(`DELETE FROM asset_inspection_schedule WHERE id = ?`).bind(data.scheduleId).run()
+    await stub.execute(`DELETE FROM asset_inspection_schedule WHERE id = ?`, data.scheduleId)
 
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    ).bind(membership.userId, membership.orgId).first<StaffRow>()
+    const staffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const staffRow = staffRows[0] ?? null
 
     if (staffRow) {
       await writeAssetAuditLog(env, membership.orgId, staffRow.id, 'asset.schedule_deleted', data.assetId, {
@@ -1022,18 +1027,19 @@ export const getInspectionSchedulesServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    const assetCheck = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
-      .bind(data.assetId, membership.orgId)
-      .first<{ id: string }>()
-    if (!assetCheck) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
+    const assetCheckRows = await stub.query(`SELECT id FROM asset WHERE id = ?`, data.assetId) as { id: string }[]
+    if (assetCheckRows.length === 0) return { success: false, error: 'NOT_FOUND' }
 
-    const rows = await env.DB.prepare(
-      `SELECT ${SCHEDULE_SELECT} FROM asset_inspection_schedule ais ${SCHEDULE_JOIN}
-       WHERE ais.asset_id = ? AND ais.org_id = ?
+    const rows = await stub.query(
+      `SELECT ${SCHEDULE_SELECT}
+       FROM asset_inspection_schedule ais ${SCHEDULE_JOIN}
+       WHERE ais.asset_id = ?
        ORDER BY ais.created_at ASC`,
-    ).bind(data.assetId, membership.orgId).all<ScheduleRow>()
+      data.assetId,
+    ) as ScheduleRow[]
 
-    return { success: true, schedules: (rows.results ?? []).map(rowToScheduleView) }
+    return { success: true, schedules: rows.map(rowToScheduleView) }
   })
 
 // ---------------------------------------------------------------------------
@@ -1056,16 +1062,17 @@ export const getExpiringAssetsServerFn = createServerFn({ method: 'POST' })
     cutoff.setDate(cutoff.getDate() + lookaheadDays)
     const cutoffStr = cutoff.toISOString().slice(0, 10)
 
-    const rows = await env.DB.prepare(
-      `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS}
-       WHERE a.org_id = ? AND a.expiration_date IS NOT NULL AND a.expiration_date <= ?
+    const stub = getOrgStub(env, membership.orgId)
+    const rows = await stub.query(
+      `SELECT ${ASSET_LIST_SELECT}
+       FROM asset a ${ASSET_JOINS}
+       WHERE a.expiration_date IS NOT NULL AND a.expiration_date <= ?
          AND a.status != 'decommissioned'
        ORDER BY a.expiration_date ASC`,
-    )
-      .bind(membership.orgId, cutoffStr)
-      .all<AssetRow>()
+      cutoffStr,
+    ) as AssetRow[]
 
-    return { success: true, assets: (rows.results ?? []).map(rowToAssetView) }
+    return { success: true, assets: rows.map((r) => rowToAssetView(r, membership.orgId)) }
   })
 
 export const getOverdueInspectionsServerFn = createServerFn({ method: 'POST' })
@@ -1085,20 +1092,21 @@ export const getOverdueInspectionsServerFn = createServerFn({ method: 'POST' })
     const cutoffStr = cutoff.toISOString().slice(0, 10)
 
     type OverdueRow = ScheduleRow & { asset_name: string; asset_type: string }
-    const rows = await env.DB.prepare(
+
+    const stub = getOrgStub(env, membership.orgId)
+    const rows = await stub.query(
       `SELECT ${SCHEDULE_SELECT}, a.name AS asset_name, a.asset_type
        FROM asset_inspection_schedule ais
        ${SCHEDULE_JOIN}
        JOIN asset a ON a.id = ais.asset_id
-       WHERE ais.org_id = ? AND ais.is_active = 1
+       WHERE ais.is_active = 1
          AND ais.next_inspection_due IS NOT NULL AND ais.next_inspection_due <= ?
          AND a.status != 'decommissioned'
        ORDER BY ais.next_inspection_due ASC`,
-    )
-      .bind(membership.orgId, cutoffStr)
-      .all<OverdueRow>()
+      cutoffStr,
+    ) as OverdueRow[]
 
-    const overdueInspections: OverdueInspectionView[] = (rows.results ?? []).map((r) => ({
+    const overdueInspections: OverdueInspectionView[] = rows.map((r) => ({
       schedule: rowToScheduleView(r),
       assetName: r.asset_name,
       assetId: r.asset_id,
@@ -1117,24 +1125,25 @@ export const getMyGearServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
+    const stub = getOrgStub(env, membership.orgId)
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE user_id = ? AND org_id = ? AND status != 'removed' LIMIT 1`,
-    )
-      .bind(membership.userId, membership.orgId)
-      .first<StaffRow>()
+    const staffRows = await stub.query(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow[]
+    const staffRow = staffRows[0] ?? null
 
     if (!staffRow) return { success: false, error: 'NO_STAFF_RECORD' }
 
-    const rows = await env.DB.prepare(
-      `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS}
-       WHERE a.assigned_to_staff_id = ? AND a.org_id = ?
+    const rows = await stub.query(
+      `SELECT ${ASSET_LIST_SELECT}
+       FROM asset a ${ASSET_JOINS}
+       WHERE a.assigned_to_staff_id = ?
        ORDER BY a.name ASC`,
-    )
-      .bind(staffRow.id, membership.orgId)
-      .all<AssetRow>()
+      staffRow.id,
+    ) as AssetRow[]
 
-    return { success: true, assets: (rows.results ?? []).map(rowToAssetView) }
+    return { success: true, assets: rows.map((r) => rowToAssetView(r, membership.orgId)) }
   })
 
 export const getApparatusGearServerFn = createServerFn({ method: 'POST' })
@@ -1146,22 +1155,22 @@ export const getApparatusGearServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    const apparatus = await env.DB.prepare(
-      `SELECT id FROM asset WHERE id = ? AND org_id = ? AND asset_type = 'apparatus'`,
-    )
-      .bind(data.apparatusId, membership.orgId)
-      .first<{ id: string }>()
-    if (!apparatus) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
+    const apparatusRows = await stub.query(
+      `SELECT id FROM asset WHERE id = ? AND asset_type = 'apparatus'`,
+      data.apparatusId,
+    ) as { id: string }[]
+    if (apparatusRows.length === 0) return { success: false, error: 'NOT_FOUND' }
 
-    const rows = await env.DB.prepare(
-      `SELECT ${ASSET_LIST_SELECT} FROM asset a ${ASSET_JOINS}
-       WHERE a.assigned_to_apparatus_id = ? AND a.org_id = ?
+    const rows = await stub.query(
+      `SELECT ${ASSET_LIST_SELECT}
+       FROM asset a ${ASSET_JOINS}
+       WHERE a.assigned_to_apparatus_id = ?
        ORDER BY a.name ASC`,
-    )
-      .bind(data.apparatusId, membership.orgId)
-      .all<AssetRow>()
+      data.apparatusId,
+    ) as AssetRow[]
 
-    return { success: true, assets: (rows.results ?? []).map(rowToAssetView) }
+    return { success: true, assets: rows.map((r) => rowToAssetView(r, membership.orgId)) }
   })
 
 // ---------------------------------------------------------------------------
@@ -1177,35 +1186,33 @@ export const getAssetAuditLogServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    const assetCheck = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
-      .bind(data.assetId, membership.orgId)
-      .first<{ id: string }>()
-    if (!assetCheck) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
+    const assetCheckRows = await stub.query(`SELECT id FROM asset WHERE id = ?`, data.assetId) as { id: string }[]
+    if (assetCheckRows.length === 0) return { success: false, error: 'NOT_FOUND' }
 
     const limit = Math.min(data.limit ?? 50, 200)
     const offset = data.offset ?? 0
 
-    const countRow = await env.DB.prepare(
-      `SELECT COUNT(*) as cnt FROM asset_audit_log WHERE asset_id = ? AND org_id = ?`,
-    )
-      .bind(data.assetId, membership.orgId)
-      .first<{ cnt: number }>()
-    const total = countRow?.cnt ?? 0
-
     type AuditRow = { id: string; actor_staff_id: string; action: string; asset_id: string; detail_json: string | null; created_at: string; staff_name: string | null }
-    const rows = await env.DB.prepare(
+
+    const countRows = await stub.query(
+      `SELECT COUNT(*) as cnt FROM asset_audit_log WHERE asset_id = ?`,
+      data.assetId,
+    ) as { cnt: number }[]
+    const total = countRows[0]?.cnt ?? 0
+
+    const rows = await stub.query(
       `SELECT al.id, al.actor_staff_id, al.action, al.asset_id, al.detail_json, al.created_at,
               sm.name AS staff_name
        FROM asset_audit_log al
        LEFT JOIN staff_member sm ON sm.id = al.actor_staff_id
-       WHERE al.asset_id = ? AND al.org_id = ?
+       WHERE al.asset_id = ?
        ORDER BY al.created_at DESC
        LIMIT ? OFFSET ?`,
-    )
-      .bind(data.assetId, membership.orgId, limit, offset)
-      .all<AuditRow>()
+      data.assetId, limit, offset,
+    ) as AuditRow[]
 
-    const entries: AssetAuditEntry[] = (rows.results ?? []).map((r) => ({
+    const entries: AssetAuditEntry[] = rows.map((r) => ({
       id: r.id,
       actorStaffId: r.actor_staff_id,
       actorName: r.staff_name ?? null,
@@ -1249,18 +1256,16 @@ export const listAssetLocationsServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    const assetCheck = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
-      .bind(data.assetId, membership.orgId)
-      .first<{ id: string }>()
-    if (!assetCheck) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
+    const assetCheckRows = await stub.query(`SELECT id FROM asset WHERE id = ?`, data.assetId) as { id: string }[]
+    if (assetCheckRows.length === 0) return { success: false, error: 'NOT_FOUND' }
 
-    const rows = await env.DB.prepare(
-      `SELECT id, asset_id, name, description, sort_order FROM asset_location WHERE asset_id = ? AND org_id = ? ORDER BY sort_order ASC, name ASC`,
-    )
-      .bind(data.assetId, membership.orgId)
-      .all<AssetLocationRow>()
+    const rows = await stub.query(
+      `SELECT id, asset_id, name, description, sort_order FROM asset_location WHERE asset_id = ? ORDER BY sort_order ASC, name ASC`,
+      data.assetId,
+    ) as AssetLocationRow[]
 
-    return { success: true, locations: (rows.results ?? []).map(rowToAssetLocationView) }
+    return { success: true, locations: rows.map(rowToAssetLocationView) }
   })
 
 export const createAssetLocationServerFn = createServerFn({ method: 'POST' })
@@ -1273,31 +1278,28 @@ export const createAssetLocationServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
-    const assetCheck = await env.DB.prepare(`SELECT id FROM asset WHERE id = ? AND org_id = ?`)
-      .bind(data.assetId, membership.orgId)
-      .first<{ id: string }>()
-    if (!assetCheck) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
+    const assetCheckRows = await stub.query(`SELECT id FROM asset WHERE id = ?`, data.assetId) as { id: string }[]
+    if (assetCheckRows.length === 0) return { success: false, error: 'NOT_FOUND' }
 
     const trimmedName = data.name.trim()
     if (!trimmedName) return { success: false, error: 'DUPLICATE_NAME' }
 
     // Check for duplicate name on this asset
-    const dup = await env.DB.prepare(
+    const dupRows = await stub.query(
       `SELECT id FROM asset_location WHERE asset_id = ? AND name = ?`,
-    )
-      .bind(data.assetId, trimmedName)
-      .first<{ id: string }>()
-    if (dup) return { success: false, error: 'DUPLICATE_NAME' }
+      data.assetId, trimmedName,
+    ) as { id: string }[]
+    if (dupRows.length > 0) return { success: false, error: 'DUPLICATE_NAME' }
 
     const id = crypto.randomUUID()
     const now = isoNow()
     const sortOrder = data.sortOrder ?? 0
 
-    await env.DB.prepare(
-      `INSERT INTO asset_location (id, org_id, asset_id, name, description, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    await stub.execute(
+      `INSERT INTO asset_location (id, asset_id, name, description, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      id, data.assetId, trimmedName, data.description ?? null, sortOrder, now, now,
     )
-      .bind(id, membership.orgId, data.assetId, trimmedName, data.description ?? null, sortOrder, now, now)
-      .run()
 
     return {
       success: true,
@@ -1315,11 +1317,12 @@ export const updateAssetLocationServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
-    const existing = await env.DB.prepare(
-      `SELECT id, asset_id, name, description, sort_order FROM asset_location WHERE id = ? AND asset_id = ? AND org_id = ?`,
-    )
-      .bind(data.locationId, data.assetId, membership.orgId)
-      .first<AssetLocationRow>()
+    const stub = getOrgStub(env, membership.orgId)
+    const existingRows = await stub.query(
+      `SELECT id, asset_id, name, description, sort_order FROM asset_location WHERE id = ? AND asset_id = ?`,
+      data.locationId, data.assetId,
+    ) as AssetLocationRow[]
+    const existing = existingRows[0] ?? null
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
     const newName = data.name !== undefined ? data.name.trim() : existing.name
@@ -1327,23 +1330,21 @@ export const updateAssetLocationServerFn = createServerFn({ method: 'POST' })
 
     // Check for duplicate name (different record)
     if (newName !== existing.name) {
-      const dup = await env.DB.prepare(
+      const dupRows = await stub.query(
         `SELECT id FROM asset_location WHERE asset_id = ? AND name = ? AND id != ?`,
-      )
-        .bind(data.assetId, newName, data.locationId)
-        .first<{ id: string }>()
-      if (dup) return { success: false, error: 'DUPLICATE_NAME' }
+        data.assetId, newName, data.locationId,
+      ) as { id: string }[]
+      if (dupRows.length > 0) return { success: false, error: 'DUPLICATE_NAME' }
     }
 
     const newDesc = data.description !== undefined ? data.description : existing.description
     const newSort = data.sortOrder !== undefined ? data.sortOrder : existing.sort_order
     const now = isoNow()
 
-    await env.DB.prepare(
+    await stub.execute(
       `UPDATE asset_location SET name = ?, description = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
+      newName, newDesc, newSort, now, data.locationId,
     )
-      .bind(newName, newDesc, newSort, now, data.locationId)
-      .run()
 
     return {
       success: true,
@@ -1361,17 +1362,15 @@ export const deleteAssetLocationServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-assets')) return { success: false, error: 'FORBIDDEN' }
 
-    const existing = await env.DB.prepare(
-      `SELECT id FROM asset_location WHERE id = ? AND asset_id = ? AND org_id = ?`,
-    )
-      .bind(data.locationId, data.assetId, membership.orgId)
-      .first<{ id: string }>()
-    if (!existing) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
+    const existingRows = await stub.query(
+      `SELECT id FROM asset_location WHERE id = ? AND asset_id = ?`,
+      data.locationId, data.assetId,
+    ) as { id: string }[]
+    if (existingRows.length === 0) return { success: false, error: 'NOT_FOUND' }
 
     // Delete location — FK ON DELETE SET NULL clears assigned_to_location_id on gear
-    await env.DB.prepare(`DELETE FROM asset_location WHERE id = ?`)
-      .bind(data.locationId)
-      .run()
+    await stub.execute(`DELETE FROM asset_location WHERE id = ?`, data.locationId)
 
     return { success: true }
   })

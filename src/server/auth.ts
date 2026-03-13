@@ -31,10 +31,10 @@ type LoginInput = { email: string; password: string; from?: string }
 type LoginOutput =
   | { success: true; redirectTo: string }
   | {
-      success: false
-      error: 'INVALID_CREDENTIALS' | 'ACCOUNT_LOCKED' | 'EMAIL_UNVERIFIED'
-      lockedUntil?: string
-    }
+    success: false
+    error: 'INVALID_CREDENTIALS' | 'ACCOUNT_LOCKED' | 'EMAIL_UNVERIFIED'
+    lockedUntil?: string
+  }
 
 export const loginServerFn = createServerFn({ method: 'POST' })
   .inputValidator((d: LoginInput) => d)
@@ -147,10 +147,10 @@ type RegisterInput = { email: string; password: string }
 type RegisterOutput =
   | { success: true }
   | {
-      success: false
-      error: 'EMAIL_TAKEN' | 'INVALID_INPUT'
-      field?: 'email' | 'password'
-    }
+    success: false
+    error: 'EMAIL_TAKEN' | 'INVALID_INPUT'
+    field?: 'email' | 'password'
+  }
 
 export const registerServerFn = createServerFn({ method: 'POST' })
   .inputValidator((d: RegisterInput) => d)
@@ -245,10 +245,10 @@ type ResendVerificationInput = { email: string }
 type ResendVerificationOutput =
   | { success: true }
   | {
-      success: false
-      error: 'COOLDOWN' | 'ALREADY_VERIFIED'
-      retryAfter?: number
-    }
+    success: false
+    error: 'COOLDOWN' | 'ALREADY_VERIFIED'
+    retryAfter?: number
+  }
 
 export const resendVerificationServerFn = createServerFn({ method: 'POST' })
   .inputValidator((d: ResendVerificationInput) => d)
@@ -365,9 +365,9 @@ type ResetPasswordInput = { token: string; password: string }
 type ResetPasswordOutput =
   | { success: true }
   | {
-      success: false
-      error: 'INVALID_TOKEN' | 'EXPIRED_TOKEN' | 'ALREADY_USED' | 'INVALID_INPUT'
-    }
+    success: false
+    error: 'INVALID_TOKEN' | 'EXPIRED_TOKEN' | 'ALREADY_USED' | 'INVALID_INPUT'
+  }
 
 export const resetPasswordServerFn = createServerFn({ method: 'POST' })
   .inputValidator((d: ResetPasswordInput) => d)
@@ -469,7 +469,7 @@ async function sendEmail(payload: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'noreply@scheduler.tailboardapp.com',
+      from: 'noreply@sceneready.app',
       to: payload.to,
       subject: payload.subject,
       html: payload.html,

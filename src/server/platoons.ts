@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { getCookie } from '@tanstack/react-start/server'
 import { canDo } from '@/lib/rbac'
 import { isValidRRuleString } from '@/lib/rrule'
+import { getOrgStub } from '@/server/_do-helpers'
 import type { OrgRole } from '@/lib/org.types'
 import type {
   ListPlatoonsInput,
@@ -129,13 +130,6 @@ export const listPlatoonsServerFn = createServerFn({ method: 'GET' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    type OrgSettingsRow = { schedule_day_start: string }
-    const orgSettings = await env.DB.prepare(
-      `SELECT schedule_day_start FROM organization WHERE id = ?`,
-    )
-      .bind(membership.orgId)
-      .first<OrgSettingsRow>()
-
     type PlatoonRow = {
       id: string
       name: string
@@ -149,32 +143,39 @@ export const listPlatoonsServerFn = createServerFn({ method: 'GET' })
       member_count: number
     }
 
-    const rows = await env.DB.prepare(
-      `SELECT p.id, p.name, p.shift_label, p.rrules, p.start_date, p.shift_start_time, p.shift_end_time,
-              p.description, p.color, COUNT(pm.id) AS member_count
-       FROM platoon p
-       LEFT JOIN platoon_membership pm ON pm.platoon_id = p.id
-       WHERE p.org_id = ?
-       GROUP BY p.id
-       ORDER BY LOWER(p.name) ASC`,
-    )
-      .bind(membership.orgId)
-      .all<PlatoonRow>()
+    const mapPlatoons = (results: PlatoonRow[]): PlatoonView[] =>
+      results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        shiftLabel: r.shift_label,
+        rrules: JSON.parse(r.rrules) as RRuleEntry[],
+        startDate: r.start_date,
+        shiftStartTime: r.shift_start_time,
+        shiftEndTime: r.shift_end_time,
+        description: r.description,
+        color: r.color,
+        memberCount: r.member_count,
+      }))
 
-    const platoons: PlatoonView[] = (rows.results ?? []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      shiftLabel: r.shift_label,
-      rrules: JSON.parse(r.rrules) as RRuleEntry[],
-      startDate: r.start_date,
-      shiftStartTime: r.shift_start_time,
-      shiftEndTime: r.shift_end_time,
-      description: r.description,
-      color: r.color,
-      memberCount: r.member_count,
-    }))
-
-    return { success: true, platoons, scheduleDayStart: orgSettings?.schedule_day_start ?? '00:00' }
+    const stub = getOrgStub(env, membership.orgId)
+    const [settingsRows, platoonRows] = await Promise.all([
+      stub.query(
+        `SELECT schedule_day_start FROM org_settings WHERE id = 'settings'`,
+      ) as Promise<{ schedule_day_start: string }[]>,
+      stub.query(
+        `SELECT p.id, p.name, p.shift_label, p.rrules, p.start_date, p.shift_start_time, p.shift_end_time,
+                p.description, p.color, COUNT(pm.id) AS member_count
+         FROM platoon p
+         LEFT JOIN platoon_membership pm ON pm.platoon_id = p.id
+         GROUP BY p.id
+         ORDER BY LOWER(p.name) ASC`,
+      ) as Promise<PlatoonRow[]>,
+    ])
+    return {
+      success: true,
+      platoons: mapPlatoons(platoonRows),
+      scheduleDayStart: settingsRows[0]?.schedule_day_start ?? '00:00',
+    }
   })
 
 // ---------------------------------------------------------------------------
@@ -201,79 +202,63 @@ export const getPlatoonServerFn = createServerFn({ method: 'GET' })
       description: string | null
       color: string | null
     }
-    const platoonRow = await env.DB.prepare(
-      `SELECT id, name, shift_label, rrules, start_date, shift_start_time, shift_end_time, description, color
-       FROM platoon WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.platoonId, membership.orgId)
-      .first<PlatoonRow>()
-    if (!platoonRow) return { success: false, error: 'NOT_FOUND' }
-
     type MemberRow = { staff_member_id: string; name: string; position_id: string | null; position_name: string | null }
-    const memberRows = await env.DB.prepare(
-      `SELECT sm.id AS staff_member_id, sm.name, pm.position_id, pos.name AS position_name
-       FROM platoon_membership pm
-       JOIN staff_member sm ON sm.id = pm.staff_member_id
-       LEFT JOIN position pos ON pos.id = pm.position_id
-       WHERE pm.platoon_id = ?
-       ORDER BY COALESCE(pos.sort_order, -1) DESC, sm.name ASC`,
-    )
-      .bind(data.platoonId)
-      .all<MemberRow>()
-
     type StaffRow = { id: string; name: string; current_platoon_name: string | null }
-    const staffRows = await env.DB.prepare(
-      `SELECT sm.id, sm.name, p.name AS current_platoon_name
-       FROM staff_member sm
-       LEFT JOIN platoon_membership pm ON pm.staff_member_id = sm.id
-       LEFT JOIN platoon p ON p.id = pm.platoon_id
-       WHERE sm.org_id = ? AND sm.status != 'removed'
-       ORDER BY sm.name ASC`,
-    )
-      .bind(membership.orgId)
-      .all<StaffRow>()
-
     type PositionRow = { id: string; name: string }
-    const positionRows = await env.DB.prepare(
-      `SELECT id, name FROM position WHERE org_id = ? ORDER BY sort_order DESC, LOWER(name) ASC`,
-    )
-      .bind(membership.orgId)
-      .all<PositionRow>()
 
-    const members: PlatoonMemberView[] = (memberRows.results ?? []).map((r) => ({
-      staffMemberId: r.staff_member_id,
-      name: r.name,
-      positionId: r.position_id,
-      positionName: r.position_name,
-    }))
-
-    const allStaff: StaffOption[] = (staffRows.results ?? []).map((r) => ({
+    const mapMembers = (rows: MemberRow[]): PlatoonMemberView[] =>
+      rows.map((r) => ({ staffMemberId: r.staff_member_id, name: r.name, positionId: r.position_id, positionName: r.position_name }))
+    const mapStaff = (rows: StaffRow[]): StaffOption[] =>
+      rows.map((r) => ({ id: r.id, name: r.name, currentPlatoonName: r.current_platoon_name }))
+    const mapPositions = (rows: PositionRow[]): PositionOption[] =>
+      rows.map((r) => ({ id: r.id, name: r.name }))
+    const buildPlatoon = (r: PlatoonRow, members: PlatoonMemberView[]) => ({
       id: r.id,
       name: r.name,
-      currentPlatoonName: r.current_platoon_name,
-    }))
+      shiftLabel: r.shift_label,
+      rrules: JSON.parse(r.rrules) as RRuleEntry[],
+      startDate: r.start_date,
+      shiftStartTime: r.shift_start_time,
+      shiftEndTime: r.shift_end_time,
+      description: r.description,
+      color: r.color,
+      members,
+    })
 
-    const positions: PositionOption[] = (positionRows.results ?? []).map((r) => ({
-      id: r.id,
-      name: r.name,
-    }))
-
+    const stub = getOrgStub(env, membership.orgId)
+    const [doRow, doMembers, doStaff, doPositions] = await Promise.all([
+      stub.queryOne(
+        `SELECT id, name, shift_label, rrules, start_date, shift_start_time, shift_end_time, description, color
+         FROM platoon WHERE id = ?`,
+        data.platoonId,
+      ) as Promise<PlatoonRow | null>,
+      stub.query(
+        `SELECT sm.id AS staff_member_id, sm.name, pm.position_id, pos.name AS position_name
+         FROM platoon_membership pm
+         JOIN staff_member sm ON sm.id = pm.staff_member_id
+         LEFT JOIN position pos ON pos.id = pm.position_id
+         WHERE pm.platoon_id = ?
+         ORDER BY COALESCE(pos.sort_order, -1) DESC, sm.name ASC`,
+        data.platoonId,
+      ) as Promise<MemberRow[]>,
+      stub.query(
+        `SELECT sm.id, sm.name, p.name AS current_platoon_name
+         FROM staff_member sm
+         LEFT JOIN platoon_membership pm ON pm.staff_member_id = sm.id
+         LEFT JOIN platoon p ON p.id = pm.platoon_id
+         WHERE sm.status != 'removed'
+         ORDER BY sm.name ASC`,
+      ) as Promise<StaffRow[]>,
+      stub.query(
+        `SELECT id, name FROM position ORDER BY sort_order DESC, LOWER(name) ASC`,
+      ) as Promise<PositionRow[]>,
+    ])
+    if (!doRow) return { success: false, error: 'NOT_FOUND' }
     return {
       success: true,
-      platoon: {
-        id: platoonRow.id,
-        name: platoonRow.name,
-        shiftLabel: platoonRow.shift_label,
-        rrules: JSON.parse(platoonRow.rrules) as RRuleEntry[],
-        startDate: platoonRow.start_date,
-        shiftStartTime: platoonRow.shift_start_time,
-        shiftEndTime: platoonRow.shift_end_time,
-        description: platoonRow.description,
-        color: platoonRow.color,
-        members,
-      },
-      allStaff,
-      positions,
+      platoon: buildPlatoon(doRow, mapMembers(doMembers)),
+      allStaff: mapStaff(doStaff),
+      positions: mapPositions(doPositions),
     }
   })
 
@@ -304,36 +289,33 @@ export const createPlatoonServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'INVALID_RRULE' }
     }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type DupRow = { id: string }
-    const dupRow = await env.DB.prepare(
-      `SELECT id FROM platoon WHERE org_id = ? AND LOWER(name) = LOWER(?)`,
-    )
-      .bind(membership.orgId, data.name)
-      .first<DupRow>()
+    const dupRow = await stub.queryOne(
+      `SELECT id FROM platoon WHERE LOWER(name) = LOWER(?)`,
+      data.name,
+    ) as DupRow | null
     if (dupRow) return { success: false, error: 'DUPLICATE_NAME' }
 
     const platoonId = crypto.randomUUID()
     const now = new Date().toISOString()
 
-    await env.DB.prepare(
-      `INSERT INTO platoon(id, org_id, name, shift_label, rrules, start_date, shift_start_time, shift_end_time, description, color, created_at, updated_at)
-       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    await stub.execute(
+      `INSERT INTO platoon(id, name, shift_label, rrules, start_date, shift_start_time, shift_end_time, description, color, created_at, updated_at)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      platoonId,
+      data.name,
+      data.shiftLabel,
+      JSON.stringify(data.rrules),
+      data.startDate,
+      shiftStartTime,
+      shiftEndTime,
+      data.description ?? null,
+      data.color ?? null,
+      now,
+      now,
     )
-      .bind(
-        platoonId,
-        membership.orgId,
-        data.name,
-        data.shiftLabel,
-        JSON.stringify(data.rrules),
-        data.startDate,
-        shiftStartTime,
-        shiftEndTime,
-        data.description ?? null,
-        data.color ?? null,
-        now,
-        now,
-      )
-      .run()
 
     return { success: true, platoonId }
   })
@@ -355,12 +337,13 @@ export const updatePlatoonServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type PlatoonRow = { id: string }
-    const platoonRow = await env.DB.prepare(
-      `SELECT id FROM platoon WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.platoonId, membership.orgId)
-      .first<PlatoonRow>()
+    const platoonRow = await stub.queryOne(
+      `SELECT id FROM platoon WHERE id = ?`,
+      data.platoonId,
+    ) as PlatoonRow | null
     if (!platoonRow) return { success: false, error: 'NOT_FOUND' }
 
     if (!isValidRRules(data.rrules)) {
@@ -372,31 +355,29 @@ export const updatePlatoonServerFn = createServerFn({ method: 'POST' })
     }
 
     type DupRow = { id: string }
-    const dupRow = await env.DB.prepare(
-      `SELECT id FROM platoon WHERE org_id = ? AND LOWER(name) = LOWER(?) AND id != ?`,
-    )
-      .bind(membership.orgId, data.name, data.platoonId)
-      .first<DupRow>()
+    const dupRow = await stub.queryOne(
+      `SELECT id FROM platoon WHERE LOWER(name) = LOWER(?) AND id != ?`,
+      data.name,
+      data.platoonId,
+    ) as DupRow | null
     if (dupRow) return { success: false, error: 'DUPLICATE_NAME' }
 
-    await env.DB.prepare(
+    const updatedAt = new Date().toISOString()
+
+    await stub.execute(
       `UPDATE platoon SET name=?, shift_label=?, rrules=?, start_date=?, shift_start_time=?, shift_end_time=?, description=?, color=?, updated_at=?
-       WHERE id=? AND org_id=?`,
+       WHERE id=?`,
+      data.name,
+      data.shiftLabel,
+      JSON.stringify(data.rrules),
+      data.startDate,
+      data.shiftStartTime,
+      data.shiftEndTime,
+      data.description ?? null,
+      data.color ?? null,
+      updatedAt,
+      data.platoonId,
     )
-      .bind(
-        data.name,
-        data.shiftLabel,
-        JSON.stringify(data.rrules),
-        data.startDate,
-        data.shiftStartTime,
-        data.shiftEndTime,
-        data.description ?? null,
-        data.color ?? null,
-        new Date().toISOString(),
-        data.platoonId,
-        membership.orgId,
-      )
-      .run()
 
     return { success: true }
   })
@@ -418,17 +399,16 @@ export const deletePlatoonServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type PlatoonRow = { id: string }
-    const platoonRow = await env.DB.prepare(
-      `SELECT id FROM platoon WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.platoonId, membership.orgId)
-      .first<PlatoonRow>()
+    const platoonRow = await stub.queryOne(
+      `SELECT id FROM platoon WHERE id = ?`,
+      data.platoonId,
+    ) as PlatoonRow | null
     if (!platoonRow) return { success: false, error: 'NOT_FOUND' }
 
-    await env.DB.prepare(`DELETE FROM platoon WHERE id = ? AND org_id = ?`)
-      .bind(data.platoonId, membership.orgId)
-      .run()
+    await stub.execute(`DELETE FROM platoon WHERE id = ?`, data.platoonId)
 
     return { success: true }
   })
@@ -450,41 +430,42 @@ export const assignMemberServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type PlatoonRow = { id: string }
-    const platoonRow = await env.DB.prepare(
-      `SELECT id FROM platoon WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.platoonId, membership.orgId)
-      .first<PlatoonRow>()
+    const platoonRow = await stub.queryOne(
+      `SELECT id FROM platoon WHERE id = ?`,
+      data.platoonId,
+    ) as PlatoonRow | null
     if (!platoonRow) return { success: false, error: 'PLATOON_NOT_FOUND' }
 
     type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE id = ? AND org_id = ? AND status != 'removed'`,
-    )
-      .bind(data.staffMemberId, membership.orgId)
-      .first<StaffRow>()
+    const staffRow = await stub.queryOne(
+      `SELECT id FROM staff_member WHERE id = ? AND status != 'removed'`,
+      data.staffMemberId,
+    ) as StaffRow | null
     if (!staffRow) return { success: false, error: 'MEMBER_NOT_FOUND' }
 
     // Check for existing membership to determine movedFrom
     type ExistingRow = { platoon_name: string }
-    const existingRow = await env.DB.prepare(
+    const existingRow = await stub.queryOne(
       `SELECT p.name AS platoon_name
        FROM platoon_membership pm
        JOIN platoon p ON p.id = pm.platoon_id
        WHERE pm.staff_member_id = ?`,
-    )
-      .bind(data.staffMemberId)
-      .first<ExistingRow>()
+      data.staffMemberId,
+    ) as ExistingRow | null
 
     const movedFrom = existingRow ? existingRow.platoon_name : null
 
-    await env.DB.prepare(
+    const membershipId = crypto.randomUUID()
+    const assignedAt = new Date().toISOString()
+
+    await stub.execute(
       `INSERT OR REPLACE INTO platoon_membership(id, platoon_id, staff_member_id, position_id, assigned_at)
        VALUES(?, ?, ?, ?, ?)`,
+      membershipId, data.platoonId, data.staffMemberId, data.positionId ?? null, assignedAt,
     )
-      .bind(crypto.randomUUID(), data.platoonId, data.staffMemberId, data.positionId ?? null, new Date().toISOString())
-      .run()
 
     return { success: true, movedFrom }
   })
@@ -506,13 +487,20 @@ export const removeMemberFromPlatoonServerFn = createServerFn({ method: 'POST' }
       return { success: false, error: 'FORBIDDEN' }
     }
 
-    const result = await env.DB.prepare(
-      `DELETE FROM platoon_membership WHERE platoon_id = ? AND staff_member_id = ?`,
-    )
-      .bind(data.platoonId, data.staffMemberId)
-      .run()
+    const stub = getOrgStub(env, membership.orgId)
 
-    if (result.meta.changes === 0) return { success: false, error: 'NOT_FOUND' }
+    // Check existence before deleting
+    type ExistingRow = { id: string }
+    const existing = await stub.queryOne(
+      `SELECT id FROM platoon_membership WHERE platoon_id = ? AND staff_member_id = ?`,
+      data.platoonId, data.staffMemberId,
+    ) as ExistingRow | null
+    if (!existing) return { success: false, error: 'NOT_FOUND' }
+
+    await stub.execute(
+      `DELETE FROM platoon_membership WHERE platoon_id = ? AND staff_member_id = ?`,
+      data.platoonId, data.staffMemberId,
+    )
 
     return { success: true }
   })
@@ -530,31 +518,30 @@ export const getStaffPlatoonServerFn = createServerFn({ method: 'GET' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
     type Row = { platoon_id: string; platoon_name: string; position_id: string | null; position_name: string | null }
-    const [row, positionRows] = await Promise.all([
-      env.DB.prepare(
-        `SELECT pm.platoon_id, p.name AS platoon_name, pm.position_id, pos.name AS position_name
-         FROM platoon_membership pm
-         JOIN platoon p ON p.id = pm.platoon_id
-         LEFT JOIN position pos ON pos.id = pm.position_id
-         WHERE pm.staff_member_id = ?
-           AND p.org_id = ?`,
-      )
-        .bind(data.staffMemberId, membership.orgId)
-        .first<Row>(),
-      env.DB.prepare(
-        `SELECT id, name FROM position WHERE org_id = ? ORDER BY sort_order DESC, LOWER(name) ASC`,
-      )
-        .bind(membership.orgId)
-        .all<{ id: string; name: string }>(),
-    ])
+    type PosRow = { id: string; name: string }
 
-    const positions: PositionOption[] = (positionRows.results ?? []).map((r) => ({ id: r.id, name: r.name }))
-    return {
+    const buildResult = (row: Row | null, positions: PosRow[]): GetStaffPlatoonOutput => ({
       success: true,
       platoonId: row?.platoon_id ?? null,
       platoonName: row?.platoon_name ?? null,
       positionId: row?.position_id ?? null,
       positionName: row?.position_name ?? null,
-      positions,
-    }
+      positions: positions.map((r) => ({ id: r.id, name: r.name })),
+    })
+
+    const stub = getOrgStub(env, membership.orgId)
+    const [doRows, doPositions] = await Promise.all([
+      stub.query(
+        `SELECT pm.platoon_id, p.name AS platoon_name, pm.position_id, pos.name AS position_name
+         FROM platoon_membership pm
+         JOIN platoon p ON p.id = pm.platoon_id
+         LEFT JOIN position pos ON pos.id = pm.position_id
+         WHERE pm.staff_member_id = ?`,
+        data.staffMemberId,
+      ) as Promise<Row[]>,
+      stub.query(
+        `SELECT id, name FROM position ORDER BY sort_order DESC, LOWER(name) ASC`,
+      ) as Promise<PosRow[]>,
+    ])
+    return buildResult(doRows[0] ?? null, doPositions)
   })

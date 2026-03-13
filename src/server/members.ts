@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { getCookie } from '@tanstack/react-start/server'
 import type { OrgRole } from '@/lib/org.types'
 import { canDo, getPermissions } from '@/lib/rbac'
+import { getOrgStub } from '@/server/_do-helpers'
 import type {
   ChangeMemberRoleInput,
   ChangeMemberRoleOutput,
@@ -100,35 +101,43 @@ export const listMembersServerFn = createServerFn({ method: 'GET' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    type MemberRow = {
-      membership_id: string
-      user_id: string
-      email: string
-      display_name: string | null
-      role: string
-      joined_at: string
+    // Read memberships from DO (sole source of truth), enrich with D1 user details
+    const stub = getOrgStub(env, membership.orgId)
+    const doMembers = await stub.listMemberships()
+
+    if (doMembers.length === 0) {
+      return { success: true, members: [] }
     }
 
-    const rows = await env.DB.prepare(
-      `SELECT m.id AS membership_id, m.user_id, u.email,
-              p.display_name, m.role, m.joined_at
-       FROM org_membership m
-       JOIN user u ON u.id = m.user_id
-       LEFT JOIN user_profile p ON p.user_id = m.user_id
-       WHERE m.org_id = ? AND m.status = 'active'
-       ORDER BY m.joined_at ASC`,
+    // Batch lookup user details from D1
+    const userIds = doMembers.map((m) => m.userId)
+    const ph = userIds.map(() => '?').join(',')
+    type UserRow = { id: string; email: string; display_name: string | null }
+    const userRows = await env.DB.prepare(
+      `SELECT u.id, u.email, p.display_name
+       FROM user u
+       LEFT JOIN user_profile p ON p.user_id = u.id
+       WHERE u.id IN (${ph})`,
     )
-      .bind(membership.orgId)
-      .all<MemberRow>()
+      .bind(...userIds)
+      .all<UserRow>()
 
-    const members: OrgMemberView[] = (rows.results ?? []).map((r) => ({
-      memberId: r.membership_id,
-      userId: r.user_id,
-      email: r.email,
-      displayName: r.display_name ?? r.email.split('@')[0],
-      role: r.role as OrgRole,
-      joinedAt: r.joined_at,
-    }))
+    const userMap = new Map<string, UserRow>()
+    for (const u of userRows.results ?? []) {
+      userMap.set(u.id, u)
+    }
+
+    const members: OrgMemberView[] = doMembers.map((m) => {
+      const user = userMap.get(m.userId)
+      return {
+        memberId: m.id,
+        userId: m.userId,
+        email: user?.email ?? '',
+        displayName: user?.display_name ?? user?.email?.split('@')[0] ?? '',
+        role: m.role,
+        joinedAt: m.joinedAt,
+      }
+    })
 
     return { success: true, members }
   })
@@ -181,6 +190,18 @@ export const changeMemberRoleServerFn = createServerFn({ method: 'POST' })
       .bind(data.newRole, data.memberId, membership.orgId)
       .run()
 
+    // Update membership role in DO
+    type UserIdRow = { user_id: string }
+    const userIdRow = await env.DB.prepare(
+      `SELECT user_id FROM org_membership WHERE id = ? AND org_id = ?`,
+    )
+      .bind(data.memberId, membership.orgId)
+      .first<UserIdRow>()
+    if (userIdRow) {
+      const stub = getOrgStub(env, membership.orgId)
+      await stub.updateMembershipRole(userIdRow.user_id, data.newRole)
+    }
+
     return { success: true }
   })
 
@@ -232,6 +253,18 @@ export const removeMemberServerFn = createServerFn({ method: 'POST' })
       .bind(data.memberId, membership.orgId)
       .run()
 
+    // Deactivate membership in DO
+    type UserIdRow = { user_id: string }
+    const userIdRow = await env.DB.prepare(
+      `SELECT user_id FROM org_membership WHERE id = ? AND org_id = ?`,
+    )
+      .bind(data.memberId, membership.orgId)
+      .first<UserIdRow>()
+    if (userIdRow) {
+      const stub = getOrgStub(env, membership.orgId)
+      await stub.deactivateMembership(userIdRow.user_id)
+    }
+
     return { success: true }
   })
 
@@ -272,6 +305,19 @@ export const transferOwnershipServerFn = createServerFn({ method: 'POST' })
         `UPDATE org_membership SET role = 'admin' WHERE id = ? AND org_id = ?`,
       ).bind(membership.membershipId, membership.orgId),
     ])
+
+    // Transfer ownership in DO
+    type UserIdRow = { user_id: string }
+    const newOwnerRow = await env.DB.prepare(
+      `SELECT user_id FROM org_membership WHERE id = ? AND org_id = ?`,
+    )
+      .bind(data.newOwnerMemberId, membership.orgId)
+      .first<UserIdRow>()
+    if (newOwnerRow) {
+      const stub = getOrgStub(env, membership.orgId)
+      await stub.updateMembershipRole(newOwnerRow.user_id, 'owner')
+      await stub.updateMembershipRole(membership.userId, 'admin')
+    }
 
     return { success: true }
   })

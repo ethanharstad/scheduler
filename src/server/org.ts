@@ -9,6 +9,7 @@ import {
   type UpdateOrgSettingsOutput,
 } from '@/lib/org.types'
 import { canDo } from '@/lib/rbac'
+import { getOrgStub } from '@/server/_do-helpers'
 
 // ---------------------------------------------------------------------------
 // Internal: session helper
@@ -97,6 +98,21 @@ export const createOrgServerFn = createServerFn({ method: 'POST' })
       throw err
     }
 
+    // Initialize DO with org settings and owner membership
+    const stub = getOrgStub(env, orgId)
+    await stub.initSettings({
+      orgId,
+      slug,
+      name,
+      createdAt: now,
+    })
+    await stub.upsertMembership({
+      id: membershipId,
+      userId,
+      role: 'owner',
+      joinedAt: now,
+    })
+
     return { success: true, orgSlug: slug }
   })
 
@@ -156,44 +172,63 @@ export const getOrgServerFn = createServerFn({ method: 'GET' })
     if (!auth) return { success: false, error: 'UNAUTHORIZED' }
     const userId = auth.userId
 
-    type OrgRow = {
-      id: string
-      slug: string
-      name: string
-      plan: string
-      schedule_day_start: string
-      created_at: string
-    }
-    const orgRow = await env.DB.prepare(
-      `SELECT id, slug, name, plan, schedule_day_start, created_at
-       FROM organization WHERE slug = ? AND status = 'active'`,
+    // Look up org ID + membership from D1 (auth index)
+    type OrgIdRow = { id: string }
+    const orgIdRow = await env.DB.prepare(
+      `SELECT id FROM organization WHERE slug = ? AND status = 'active'`,
     )
       .bind(data.slug)
-      .first<OrgRow>()
+      .first<OrgIdRow>()
 
-    if (!orgRow) return { success: false, error: 'NOT_FOUND' }
+    if (!orgIdRow) return { success: false, error: 'NOT_FOUND' }
 
     type MemberRow = { role: string }
     const memberRow = await env.DB.prepare(
       `SELECT role FROM org_membership
        WHERE org_id = ? AND user_id = ? AND status = 'active'`,
     )
-      .bind(orgRow.id, userId)
+      .bind(orgIdRow.id, userId)
       .first<MemberRow>()
 
     if (!memberRow && !auth.isSystemAdmin) return { success: false, error: 'UNAUTHORIZED' }
 
+    const userRole = memberRow ? (memberRow.role as OrgRole) : ('owner' as OrgRole)
+
+    // Read org settings from DO (sole source of truth)
+    const stub = getOrgStub(env, orgIdRow.id)
+    let settings = await stub.getSettings()
+
+    // Lazy migration: if DO has no settings yet, seed from D1
+    if (!settings) {
+      type D1OrgRow = { name: string; plan: string; created_at: string }
+      const d1Row = await env.DB.prepare(
+        `SELECT name, plan, created_at FROM organization WHERE id = ?`,
+      )
+        .bind(orgIdRow.id)
+        .first<D1OrgRow>()
+      if (!d1Row) return { success: false, error: 'NOT_FOUND' }
+      await stub.initSettings({
+        orgId: orgIdRow.id,
+        slug: data.slug,
+        name: d1Row.name,
+        plan: d1Row.plan,
+        createdAt: d1Row.created_at,
+      })
+      settings = await stub.getSettings()
+      if (!settings) return { success: false, error: 'NOT_FOUND' }
+    }
+
     return {
       success: true,
       org: {
-        id: orgRow.id,
-        slug: orgRow.slug,
-        name: orgRow.name,
-        plan: orgRow.plan,
-        scheduleDayStart: orgRow.schedule_day_start,
-        createdAt: orgRow.created_at,
+        id: orgIdRow.id,
+        slug: settings.slug,
+        name: settings.name,
+        plan: settings.plan,
+        scheduleDayStart: settings.scheduleDayStart,
+        createdAt: settings.createdAt,
       },
-      userRole: memberRow ? (memberRow.role as OrgRole) : ('owner' as OrgRole),
+      userRole,
     }
   })
 
@@ -234,9 +269,9 @@ export const updateOrgSettingsServerFn = createServerFn({ method: 'POST' })
 
     if (!orgId) return { success: false, error: 'UNAUTHORIZED' }
 
-    await env.DB.prepare(
-      `UPDATE organization SET schedule_day_start = ? WHERE id = ?`,
-    ).bind(data.scheduleDayStart, orgId).run()
+    // Update DO settings (sole source of truth)
+    const stub = getOrgStub(env, orgId)
+    await stub.updateSettings({ scheduleDayStart: data.scheduleDayStart })
 
     return { success: true }
   })

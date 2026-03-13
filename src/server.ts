@@ -3,6 +3,10 @@ import {
   defaultStreamHandler,
 } from '@tanstack/react-start/server'
 
+// Re-export DO class so Cloudflare Workers runtime can instantiate it.
+// wrangler.jsonc "main" points to this file; the runtime discovers exported DO classes here.
+export { OrgDurableObject } from './do/org-durable-object'
+
 const handler = createStartHandler(defaultStreamHandler)
 
 export default {

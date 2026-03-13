@@ -12,6 +12,7 @@ import type {
   DeleteStationOutput,
 } from '@/lib/station.types'
 import { requireOrgMembership } from '@/server/_helpers'
+import { getOrgStub } from '@/server/_do-helpers'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -19,7 +20,6 @@ import { requireOrgMembership } from '@/server/_helpers'
 
 type StationRow = {
   id: string
-  org_id: string
   name: string
   code: string | null
   address: string | null
@@ -55,16 +55,13 @@ export const listStationsServerFn = createServerFn({ method: 'GET' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    const rows = await env.DB.prepare(
-      `SELECT id, org_id, name, code, address, status, sort_order, created_at, updated_at
+    const stub = getOrgStub(env, membership.orgId)
+    const rows = await stub.query(
+      `SELECT id, name, code, address, status, sort_order, created_at, updated_at
        FROM station
-       WHERE org_id = ?
        ORDER BY sort_order ASC, LOWER(name) ASC`,
-    )
-      .bind(membership.orgId)
-      .all<StationRow>()
-
-    return { success: true, stations: (rows.results ?? []).map(toView) }
+    ) as StationRow[]
+    return { success: true, stations: rows.map(toView) }
   })
 
 // ---------------------------------------------------------------------------
@@ -95,16 +92,16 @@ export const createStationServerFn = createServerFn({ method: 'POST' })
     const now = new Date().toISOString()
     const id = crypto.randomUUID()
 
+    const stub = getOrgStub(env, membership.orgId)
     try {
-      await env.DB.prepare(
-        `INSERT INTO station (id, org_id, name, code, address, status, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'active', 0, ?, ?)`,
+      await stub.execute(
+        `INSERT INTO station (id, name, code, address, status, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'active', 0, ?, ?)`,
+        id, name, code, address, now, now,
       )
-        .bind(id, membership.orgId, name, code, address, now, now)
-        .run()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : ''
-      if (msg.includes('idx_station_org_name')) {
+      if (msg.includes('idx_station_org_name') || msg.includes('UNIQUE constraint failed')) {
         return { success: false, error: 'DUPLICATE_NAME', message: 'A station with this name already exists' }
       }
       if (msg.includes('idx_station_org_code')) {
@@ -113,12 +110,11 @@ export const createStationServerFn = createServerFn({ method: 'POST' })
       throw err
     }
 
-    const row = await env.DB.prepare(
-      `SELECT id, org_id, name, code, address, status, sort_order, created_at, updated_at
+    const row = await stub.queryOne(
+      `SELECT id, name, code, address, status, sort_order, created_at, updated_at
        FROM station WHERE id = ?`,
-    )
-      .bind(id)
-      .first<StationRow>()
+      id,
+    ) as StationRow | null
 
     return { success: true, station: toView(row!) }
   })
@@ -137,11 +133,12 @@ export const updateStationServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-stations')) return { success: false, error: 'FORBIDDEN' }
 
-    const existing = await env.DB.prepare(
-      `SELECT id FROM station WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.stationId, membership.orgId)
-      .first<{ id: string }>()
+    const stub = getOrgStub(env, membership.orgId)
+
+    const existing = await stub.queryOne(
+      `SELECT id FROM station WHERE id = ?`,
+      data.stationId,
+    ) as { id: string } | null
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
     const sets: string[] = []
@@ -184,12 +181,11 @@ export const updateStationServerFn = createServerFn({ method: 'POST' })
     }
 
     if (sets.length === 0) {
-      const row = await env.DB.prepare(
-        `SELECT id, org_id, name, code, address, status, sort_order, created_at, updated_at
+      const row = await stub.queryOne(
+        `SELECT id, name, code, address, status, sort_order, created_at, updated_at
          FROM station WHERE id = ?`,
-      )
-        .bind(data.stationId)
-        .first<StationRow>()
+        data.stationId,
+      ) as StationRow | null
       return { success: true, station: toView(row!) }
     }
 
@@ -197,17 +193,15 @@ export const updateStationServerFn = createServerFn({ method: 'POST' })
     sets.push('updated_at = ?')
     binds.push(now)
     binds.push(data.stationId)
-    binds.push(membership.orgId)
 
     try {
-      await env.DB.prepare(
-        `UPDATE station SET ${sets.join(', ')} WHERE id = ? AND org_id = ?`,
+      await stub.execute(
+        `UPDATE station SET ${sets.join(', ')} WHERE id = ?`,
+        ...binds,
       )
-        .bind(...binds)
-        .run()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : ''
-      if (msg.includes('idx_station_org_name')) {
+      if (msg.includes('idx_station_org_name') || msg.includes('UNIQUE constraint failed')) {
         return { success: false, error: 'DUPLICATE_NAME', message: 'A station with this name already exists' }
       }
       if (msg.includes('idx_station_org_code')) {
@@ -216,12 +210,11 @@ export const updateStationServerFn = createServerFn({ method: 'POST' })
       throw err
     }
 
-    const row = await env.DB.prepare(
-      `SELECT id, org_id, name, code, address, status, sort_order, created_at, updated_at
+    const row = await stub.queryOne(
+      `SELECT id, name, code, address, status, sort_order, created_at, updated_at
        FROM station WHERE id = ?`,
-    )
-      .bind(data.stationId)
-      .first<StationRow>()
+      data.stationId,
+    ) as StationRow | null
 
     return { success: true, station: toView(row!) }
   })
@@ -240,18 +233,17 @@ export const deleteStationServerFn = createServerFn({ method: 'POST' })
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'manage-stations')) return { success: false, error: 'FORBIDDEN' }
 
-    const existing = await env.DB.prepare(
-      `SELECT id FROM station WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.stationId, membership.orgId)
-      .first<{ id: string }>()
+    const stub = getOrgStub(env, membership.orgId)
+
+    const existing = await stub.queryOne(
+      `SELECT id FROM station WHERE id = ?`,
+      data.stationId,
+    ) as { id: string } | null
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
     // Future: check for FK references (staff, assets) and return HAS_ASSIGNMENTS
 
-    await env.DB.prepare(`DELETE FROM station WHERE id = ? AND org_id = ?`)
-      .bind(data.stationId, membership.orgId)
-      .run()
+    await stub.execute(`DELETE FROM station WHERE id = ?`, data.stationId)
 
     return { success: true }
   })

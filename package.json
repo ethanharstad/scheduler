@@ -10,10 +10,12 @@
 		"build": "vite build",
 		"preview": "npm run build && vite preview",
 		"test": "vitest run",
-		"deploy": "npm run build && wrangler deploy",
+		"deploy:dev": "CLOUDFLARE_ENV=dev npm run build && wrangler deploy --env dev",
+		"deploy:prod": "CLOUDFLARE_ENV=prod npm run build && wrangler deploy --env prod",
 		"cf-typegen": "wrangler types",
-		"migrate:local": "wrangler d1 migrations apply scheduler-auth --local",
-		"migrate:remote": "wrangler d1 migrations apply scheduler-auth"
+		"migrate:local": "wrangler d1 migrations apply DB --local",
+		"migrate:dev": "wrangler d1 migrations apply DB --remote --env dev",
+		"migrate:prod": "wrangler d1 migrations apply DB --remote --env prod"
 	},
 	"dependencies": {
 		"@cloudflare/vite-plugin": "^1.13.8",

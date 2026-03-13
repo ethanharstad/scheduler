@@ -16,6 +16,7 @@ import type {
   UpdateConstraintOutput,
 } from '@/lib/constraint.types'
 import { requireOrgMembership } from '@/server/_helpers'
+import { getOrgStub } from '@/server/_do-helpers'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -27,31 +28,31 @@ async function resolveStaffMemberId(
   userId: string,
 ): Promise<string | null> {
   type Row = { id: string }
-  const row = await env.DB.prepare(
-    `SELECT id FROM staff_member WHERE org_id = ? AND user_id = ? AND status != 'removed'`,
-  )
-    .bind(orgId, userId)
-    .first<Row>()
+  const stub = getOrgStub(env, orgId)
+  const row = await stub.queryOne(
+    `SELECT id FROM staff_member WHERE user_id = ? AND status != 'removed'`,
+    userId,
+  ) as Row | null
   return row?.id ?? null
 }
 
-type ConstraintRow = {
+type DOConstraintRow = {
   id: string
   staff_member_id: string
   staff_member_name: string
+  reviewer_id: string | null
   type: string
   status: string
   start_datetime: string
   end_datetime: string
   days_of_week: string | null
   reason: string | null
-  reviewer_name: string | null
   reviewed_at: string | null
   created_at: string
   updated_at: string
 }
 
-function rowToView(r: ConstraintRow): ConstraintView {
+function rowToView(r: DOConstraintRow, reviewerName: string | null): ConstraintView {
   return {
     id: r.id,
     staffMemberId: r.staff_member_id,
@@ -62,24 +63,46 @@ function rowToView(r: ConstraintRow): ConstraintView {
     endDatetime: r.end_datetime,
     daysOfWeek: r.days_of_week ? (JSON.parse(r.days_of_week) as number[]) : null,
     reason: r.reason,
-    reviewerName: r.reviewer_name,
+    reviewerName,
     reviewedAt: r.reviewed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
 }
 
-const CONSTRAINT_SELECT = `
+const DO_CONSTRAINT_SELECT = `
   SELECT
     c.id, c.staff_member_id, sm.name AS staff_member_name,
     c.type, c.status, c.start_datetime, c.end_datetime,
-    c.days_of_week, c.reason,
-    rp.display_name AS reviewer_name, c.reviewed_at,
+    c.days_of_week, c.reason, c.reviewer_id, c.reviewed_at,
     c.created_at, c.updated_at
   FROM staff_constraint c
   JOIN staff_member sm ON sm.id = c.staff_member_id
-  LEFT JOIN user_profile rp ON rp.user_id = c.reviewer_id
 `
+
+/**
+ * Batch-resolve reviewer display names from D1 user_profile for a set of DO constraint rows.
+ */
+async function enrichReviewerNames(
+  env: Cloudflare.Env,
+  rows: DOConstraintRow[],
+): Promise<Map<string, string>> {
+  const reviewerIds = [...new Set(rows.map((r) => r.reviewer_id).filter((id): id is string => id != null))]
+  const nameMap = new Map<string, string>()
+  if (reviewerIds.length === 0) return nameMap
+
+  const placeholders = reviewerIds.map(() => '?').join(', ')
+  type ProfileRow = { user_id: string; display_name: string }
+  const result = await env.DB.prepare(
+    `SELECT user_id, display_name FROM user_profile WHERE user_id IN (${placeholders})`,
+  )
+    .bind(...reviewerIds)
+    .all<ProfileRow>()
+  for (const row of result.results ?? []) {
+    nameMap.set(row.user_id, row.display_name)
+  }
+  return nameMap
+}
 
 function validateDatetimes(start: string, end: string): boolean {
   return end > start
@@ -118,15 +141,16 @@ export const listConstraintsServerFn = createServerFn({ method: 'GET' })
       targetStaffId = selfId
     }
 
-    const rows = await env.DB.prepare(
-      `${CONSTRAINT_SELECT}
-       WHERE c.org_id = ? AND c.staff_member_id = ?
+    const stub = getOrgStub(env, membership.orgId)
+    const rows = await stub.query(
+      `${DO_CONSTRAINT_SELECT}
+       WHERE c.staff_member_id = ?
        ORDER BY c.start_datetime ASC`,
-    )
-      .bind(membership.orgId, targetStaffId)
-      .all<ConstraintRow>()
+      targetStaffId,
+    ) as DOConstraintRow[]
 
-    return { success: true, constraints: (rows.results ?? []).map(rowToView) }
+    const reviewerNames = await enrichReviewerNames(env, rows)
+    return { success: true, constraints: rows.map((r) => rowToView(r, reviewerNames.get(r.reviewer_id ?? '') ?? null)) }
   })
 
 // ---------------------------------------------------------------------------
@@ -146,15 +170,15 @@ export const listPendingTimeOffServerFn = createServerFn({ method: 'GET' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
-    const rows = await env.DB.prepare(
-      `${CONSTRAINT_SELECT}
-       WHERE c.org_id = ? AND c.type = 'time_off' AND c.status = 'pending'
+    const stub = getOrgStub(env, membership.orgId)
+    const rows = await stub.query(
+      `${DO_CONSTRAINT_SELECT}
+       WHERE c.type = 'time_off' AND c.status = 'pending'
        ORDER BY c.start_datetime ASC`,
-    )
-      .bind(membership.orgId)
-      .all<ConstraintRow>()
+    ) as DOConstraintRow[]
 
-    return { success: true, constraints: (rows.results ?? []).map(rowToView) }
+    const reviewerNames = await enrichReviewerNames(env, rows)
+    return { success: true, constraints: rows.map((r) => rowToView(r, reviewerNames.get(r.reviewer_id ?? '') ?? null)) }
   })
 
 // ---------------------------------------------------------------------------
@@ -170,6 +194,7 @@ export const createConstraintServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
+    const stub = getOrgStub(env, membership.orgId)
     let targetStaffId: string
 
     if (data.staffMemberId) {
@@ -177,11 +202,10 @@ export const createConstraintServerFn = createServerFn({ method: 'POST' })
         return { success: false, error: 'FORBIDDEN' }
       }
       type StaffRow = { id: string }
-      const staffRow = await env.DB.prepare(
-        `SELECT id FROM staff_member WHERE id = ? AND org_id = ? AND status != 'removed'`,
-      )
-        .bind(data.staffMemberId, membership.orgId)
-        .first<StaffRow>()
+      const staffRow = await stub.queryOne(
+        `SELECT id FROM staff_member WHERE id = ? AND status != 'removed'`,
+        data.staffMemberId,
+      ) as StaffRow | null
       if (!staffRow) return { success: false, error: 'NOT_FOUND' }
       targetStaffId = staffRow.id
     } else {
@@ -206,27 +230,26 @@ export const createConstraintServerFn = createServerFn({ method: 'POST' })
     const status = data.type === 'time_off' ? 'pending' : 'approved'
     const daysOfWeekJson = data.daysOfWeek ? JSON.stringify(data.daysOfWeek) : null
 
-    await env.DB.prepare(
+    await stub.execute(
       `INSERT INTO staff_constraint
-         (id, org_id, staff_member_id, created_by, type, status,
+         (id, staff_member_id, created_by, type, status,
           start_datetime, end_datetime, days_of_week, reason, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, targetStaffId, membership.userId,
+      data.type, status,
+      data.startDatetime, data.endDatetime,
+      daysOfWeekJson, data.reason ?? null,
+      now, now,
     )
-      .bind(
-        id, membership.orgId, targetStaffId, membership.userId,
-        data.type, status,
-        data.startDatetime, data.endDatetime,
-        daysOfWeekJson, data.reason ?? null,
-        now, now,
-      )
-      .run()
 
-    const row = await env.DB.prepare(`${CONSTRAINT_SELECT} WHERE c.id = ?`)
-      .bind(id)
-      .first<ConstraintRow>()
+    const row = await stub.queryOne(
+      `${DO_CONSTRAINT_SELECT} WHERE c.id = ?`,
+      id,
+    ) as DOConstraintRow | null
 
     if (!row) return { success: false, error: 'NOT_FOUND' }
-    return { success: true, constraint: rowToView(row) }
+    const reviewerNames = await enrichReviewerNames(env, [row])
+    return { success: true, constraint: rowToView(row, reviewerNames.get(row.reviewer_id ?? '') ?? null) }
   })
 
 // ---------------------------------------------------------------------------
@@ -242,6 +265,8 @@ export const updateConstraintServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type ConstraintMeta = {
       staff_member_id: string
       type: string
@@ -249,12 +274,11 @@ export const updateConstraintServerFn = createServerFn({ method: 'POST' })
       start_datetime: string
       end_datetime: string
     }
-    const existing = await env.DB.prepare(
+    const existing = await stub.queryOne(
       `SELECT staff_member_id, type, status, start_datetime, end_datetime
-       FROM staff_constraint WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.constraintId, membership.orgId)
-      .first<ConstraintMeta>()
+       FROM staff_constraint WHERE id = ?`,
+      data.constraintId,
+    ) as ConstraintMeta | null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
@@ -293,20 +317,17 @@ export const updateConstraintServerFn = createServerFn({ method: 'POST' })
     }
     if ('reason' in data) { sets.push('reason = ?'); vals.push(data.reason ?? null) }
 
-    // D1 doesn't support spread — build a statement with exact arity
-    const sql = `UPDATE staff_constraint SET ${sets.join(', ')} WHERE id = ? AND org_id = ?`
-    let stmt = env.DB.prepare(sql)
-    for (const v of [...vals, data.constraintId, membership.orgId]) {
-      stmt = stmt.bind(v)
-    }
-    await stmt.run()
+    const doSql = `UPDATE staff_constraint SET ${sets.join(', ')} WHERE id = ?`
+    await stub.execute(doSql, ...vals, data.constraintId)
 
-    const row = await env.DB.prepare(`${CONSTRAINT_SELECT} WHERE c.id = ?`)
-      .bind(data.constraintId)
-      .first<ConstraintRow>()
+    const row = await stub.queryOne(
+      `${DO_CONSTRAINT_SELECT} WHERE c.id = ?`,
+      data.constraintId,
+    ) as DOConstraintRow | null
 
     if (!row) return { success: false, error: 'NOT_FOUND' }
-    return { success: true, constraint: rowToView(row) }
+    const reviewerNames = await enrichReviewerNames(env, [row])
+    return { success: true, constraint: rowToView(row, reviewerNames.get(row.reviewer_id ?? '') ?? null) }
   })
 
 // ---------------------------------------------------------------------------
@@ -322,12 +343,13 @@ export const deleteConstraintServerFn = createServerFn({ method: 'POST' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type ConstraintMeta = { staff_member_id: string }
-    const existing = await env.DB.prepare(
-      `SELECT staff_member_id FROM staff_constraint WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.constraintId, membership.orgId)
-      .first<ConstraintMeta>()
+    const existing = await stub.queryOne(
+      `SELECT staff_member_id FROM staff_constraint WHERE id = ?`,
+      data.constraintId,
+    ) as ConstraintMeta | null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
@@ -337,9 +359,10 @@ export const deleteConstraintServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
-    await env.DB.prepare(`DELETE FROM staff_constraint WHERE id = ? AND org_id = ?`)
-      .bind(data.constraintId, membership.orgId)
-      .run()
+    await stub.execute(
+      `DELETE FROM staff_constraint WHERE id = ?`,
+      data.constraintId,
+    )
 
     return { success: true }
   })
@@ -361,12 +384,13 @@ export const reviewConstraintServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type ConstraintMeta = { type: string; status: string }
-    const existing = await env.DB.prepare(
-      `SELECT type, status FROM staff_constraint WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.constraintId, membership.orgId)
-      .first<ConstraintMeta>()
+    const existing = await stub.queryOne(
+      `SELECT type, status FROM staff_constraint WHERE id = ?`,
+      data.constraintId,
+    ) as ConstraintMeta | null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
     if (existing.type !== 'time_off') return { success: false, error: 'WRONG_TYPE' }
@@ -374,18 +398,19 @@ export const reviewConstraintServerFn = createServerFn({ method: 'POST' })
 
     const now = new Date().toISOString()
 
-    await env.DB.prepare(
+    await stub.execute(
       `UPDATE staff_constraint
        SET status = ?, reviewer_id = ?, reviewed_at = ?, updated_at = ?
-       WHERE id = ? AND org_id = ?`,
+       WHERE id = ?`,
+      data.decision, membership.userId, now, now, data.constraintId,
     )
-      .bind(data.decision, membership.userId, now, now, data.constraintId, membership.orgId)
-      .run()
 
-    const row = await env.DB.prepare(`${CONSTRAINT_SELECT} WHERE c.id = ?`)
-      .bind(data.constraintId)
-      .first<ConstraintRow>()
+    const row = await stub.queryOne(
+      `${DO_CONSTRAINT_SELECT} WHERE c.id = ?`,
+      data.constraintId,
+    ) as DOConstraintRow | null
 
     if (!row) return { success: false, error: 'NOT_FOUND' }
-    return { success: true, constraint: rowToView(row) }
+    const reviewerNames = await enrichReviewerNames(env, [row])
+    return { success: true, constraint: rowToView(row, reviewerNames.get(row.reviewer_id ?? '') ?? null) }
   })

@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { canDo } from '@/lib/rbac'
 import { requireOrgMembership } from '@/server/_helpers'
+import { getOrgStub } from '@/server/_do-helpers'
 import { checkSingleStaffEligibility } from '@/server/qualifications'
 import type {
   CreateScheduleInput,
@@ -106,20 +107,16 @@ export const listSchedulesServerFn = createServerFn({ method: 'GET' })
       created_at: string
     }
 
-    const rows = await env.DB.prepare(
+    const stub = getOrgStub(env, membership.orgId)
+    const doRows = await stub.query(
       `SELECT s.id, s.name, s.start_date, s.end_date, s.status,
-              p.display_name AS created_by_name,
+              s.created_by AS created_by_name,
               (SELECT COUNT(*) FROM shift_assignment sa WHERE sa.schedule_id = s.id) AS assignment_count,
               s.created_at
        FROM schedule s
-       LEFT JOIN user_profile p ON p.user_id = s.created_by
-       WHERE s.org_id = ?
        ORDER BY s.start_date DESC, s.name ASC`,
-    )
-      .bind(membership.orgId)
-      .all<ScheduleRow>()
-
-    const schedules: ScheduleView[] = (rows.results ?? []).map((r) => ({
+    ) as ScheduleRow[]
+    const schedules: ScheduleView[] = doRows.map((r) => ({
       id: r.id,
       name: r.name,
       startDate: r.start_date,
@@ -129,7 +126,6 @@ export const listSchedulesServerFn = createServerFn({ method: 'GET' })
       assignmentCount: r.assignment_count,
       createdAt: r.created_at,
     }))
-
     return { success: true, schedules }
   })
 
@@ -162,18 +158,6 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
       created_at: string
     }
 
-    const scheduleRow = await env.DB.prepare(
-      `SELECT s.id, s.name, s.start_date, s.end_date, s.status,
-              p.display_name AS created_by_name, s.created_at
-       FROM schedule s
-       LEFT JOIN user_profile p ON p.user_id = s.created_by
-       WHERE s.id = ? AND s.org_id = ?`,
-    )
-      .bind(data.scheduleId, membership.orgId)
-      .first<ScheduleRow>()
-
-    if (!scheduleRow) return { success: false, error: 'NOT_FOUND' }
-
     type AssignmentRow = {
       id: string
       staff_member_id: string
@@ -186,7 +170,16 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
       notes: string | null
     }
 
-    const assignmentRows = await env.DB.prepare(
+    const stub = getOrgStub(env, membership.orgId)
+    const doScheduleRows = await stub.query(
+      `SELECT id, name, start_date, end_date, status, created_by AS created_by_name, created_at
+       FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    ) as ScheduleRow[]
+    if (doScheduleRows.length === 0) return { success: false, error: 'NOT_FOUND' }
+    const sr = doScheduleRows[0]
+
+    const doAssignmentRows = await stub.query(
       `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
               sa.start_datetime, sa.end_datetime, sa.position, sa.position_id,
               pos.sort_order AS position_sort_order, sa.notes
@@ -195,25 +188,20 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
        LEFT JOIN position pos ON pos.id = sa.position_id
        WHERE sa.schedule_id = ?
        ORDER BY sa.start_datetime ASC, COALESCE(pos.sort_order, -1) DESC, sm.name ASC`,
-    )
-      .bind(data.scheduleId)
-      .all<AssignmentRow>()
-
-    // Count assignments for view
-    const assignmentCount = assignmentRows.results?.length ?? 0
+      data.scheduleId,
+    ) as AssignmentRow[]
 
     const schedule: ScheduleView = {
-      id: scheduleRow.id,
-      name: scheduleRow.name,
-      startDate: scheduleRow.start_date,
-      endDate: scheduleRow.end_date,
-      status: scheduleRow.status as ScheduleView['status'],
-      createdByName: scheduleRow.created_by_name,
-      assignmentCount,
-      createdAt: scheduleRow.created_at,
+      id: sr.id,
+      name: sr.name,
+      startDate: sr.start_date,
+      endDate: sr.end_date,
+      status: sr.status as ScheduleView['status'],
+      createdByName: sr.created_by_name,
+      assignmentCount: doAssignmentRows.length,
+      createdAt: sr.created_at,
     }
-
-    const assignments: ShiftAssignmentView[] = (assignmentRows.results ?? []).map((r) => ({
+    const assignments: ShiftAssignmentView[] = doAssignmentRows.map((r) => ({
       id: r.id,
       staffMemberId: r.staff_member_id,
       staffMemberName: r.staff_member_name,
@@ -224,7 +212,6 @@ export const getScheduleServerFn = createServerFn({ method: 'GET' })
       positionSortOrder: r.position_sort_order ?? 0,
       notes: r.notes,
     }))
-
     return { success: true, schedule, assignments }
   })
 
@@ -261,25 +248,23 @@ export const getTodayAssignmentsServerFn = createServerFn({ method: 'GET' })
       position: string | null
     }
 
-    const rows = await env.DB.prepare(
+    const stub = getOrgStub(env, membership.orgId)
+    const doRows = await stub.query(
       `SELECT sm.name AS staff_member_name, sa.start_datetime, sa.end_datetime, sa.position
        FROM shift_assignment sa
        JOIN schedule s ON s.id = sa.schedule_id
        JOIN staff_member sm ON sm.id = sa.staff_member_id
-       WHERE s.org_id = ? AND s.status = 'published'
+       WHERE s.status = 'published'
          AND date(sa.start_datetime) = ?
        ORDER BY sa.start_datetime ASC, sm.name ASC`,
-    )
-      .bind(membership.orgId, data.date)
-      .all<Row>()
-
-    const assignments: TodayAssignment[] = (rows.results ?? []).map((r) => ({
+      data.date,
+    ) as Row[]
+    const assignments: TodayAssignment[] = doRows.map((r) => ({
       staffMemberName: r.staff_member_name,
       startDatetime: r.start_datetime,
       endDatetime: r.end_datetime,
       position: r.position,
     }))
-
     return { success: true, assignments }
   })
 
@@ -307,13 +292,13 @@ export const getMyUpcomingShiftsServerFn = createServerFn({ method: 'GET' })
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    type StaffRow = { id: string }
-    const staffRow = await env.DB.prepare(
-      `SELECT id FROM staff_member WHERE org_id = ? AND user_id = ? AND status = 'active' LIMIT 1`,
-    )
-      .bind(membership.orgId, membership.userId)
-      .first<StaffRow>()
+    const stub = getOrgStub(env, membership.orgId)
 
+    type StaffRow = { id: string }
+    const staffRow = await stub.queryOne(
+      `SELECT id FROM staff_member WHERE user_id = ? AND status = 'active' LIMIT 1`,
+      membership.userId,
+    ) as StaffRow | null
     if (!staffRow) return { success: false, error: 'NO_STAFF_RECORD' }
 
     const now = new Date().toISOString()
@@ -324,27 +309,24 @@ export const getMyUpcomingShiftsServerFn = createServerFn({ method: 'GET' })
       position: string | null
       schedule_name: string
     }
-
-    const rows = await env.DB.prepare(
+    const doRows = await stub.query(
       `SELECT sa.start_datetime, sa.end_datetime, sa.position, s.name AS schedule_name
        FROM shift_assignment sa
        JOIN schedule s ON s.id = sa.schedule_id
-       WHERE s.org_id = ? AND s.status = 'published'
+       WHERE s.status = 'published'
          AND sa.staff_member_id = ?
          AND sa.start_datetime > ?
        ORDER BY sa.start_datetime ASC
        LIMIT 5`,
-    )
-      .bind(membership.orgId, staffRow.id, now)
-      .all<Row>()
-
-    const shifts: UpcomingShift[] = (rows.results ?? []).map((r) => ({
+      staffRow.id,
+      now,
+    ) as Row[]
+    const shifts: UpcomingShift[] = doRows.map((r) => ({
       startDatetime: r.start_datetime,
       endDatetime: r.end_datetime,
       position: r.position,
       scheduleName: r.schedule_name,
     }))
-
     return { success: true, shifts }
   })
 
@@ -376,12 +358,12 @@ export const createScheduleServerFn = createServerFn({ method: 'POST' })
     const now = new Date().toISOString()
     const id = crypto.randomUUID()
 
-    await env.DB.prepare(
-      `INSERT INTO schedule (id, org_id, name, start_date, end_date, status, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`,
+    const stub = getOrgStub(env, membership.orgId)
+    await stub.execute(
+      `INSERT INTO schedule (id, name, start_date, end_date, status, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)`,
+      id, name, data.startDate, data.endDate, membership.userId, now, now,
     )
-      .bind(id, membership.orgId, name, data.startDate, data.endDate, membership.userId, now, now)
-      .run()
 
     const schedule: ScheduleView = {
       id,
@@ -417,12 +399,13 @@ export const updateScheduleServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type ScheduleRow = { id: string; start_date: string; end_date: string; name: string }
-    const existing = await env.DB.prepare(
-      `SELECT id, start_date, end_date, name FROM schedule WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.scheduleId, membership.orgId)
-      .first<ScheduleRow>()
+    const existing = await stub.queryOne(
+      `SELECT id, start_date, end_date, name FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    ) as ScheduleRow | null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
@@ -442,17 +425,15 @@ export const updateScheduleServerFn = createServerFn({ method: 'POST' })
     const now = new Date().toISOString()
 
     if (status) {
-      await env.DB.prepare(
+      await stub.execute(
         `UPDATE schedule SET name = ?, start_date = ?, end_date = ?, status = ?, updated_at = ? WHERE id = ?`,
+        name, startDate, endDate, status, now, data.scheduleId,
       )
-        .bind(name, startDate, endDate, status, now, data.scheduleId)
-        .run()
     } else {
-      await env.DB.prepare(
+      await stub.execute(
         `UPDATE schedule SET name = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?`,
+        name, startDate, endDate, now, data.scheduleId,
       )
-        .bind(name, startDate, endDate, now, data.scheduleId)
-        .run()
     }
 
     return { success: true }
@@ -478,18 +459,17 @@ export const deleteScheduleServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type Row = { id: string }
-    const existing = await env.DB.prepare(
-      `SELECT id FROM schedule WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.scheduleId, membership.orgId)
-      .first<Row>()
+    const existing = await stub.queryOne(
+      `SELECT id FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    ) as Row | null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
-    await env.DB.prepare(`DELETE FROM schedule WHERE id = ?`)
-      .bind(data.scheduleId)
-      .run()
+    await stub.execute(`DELETE FROM schedule WHERE id = ?`, data.scheduleId)
 
     return { success: true }
   })
@@ -514,22 +494,22 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
-    // Verify schedule belongs to org
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Verify schedule exists
     type ScheduleRow = { id: string }
-    const schedule = await env.DB.prepare(
-      `SELECT id FROM schedule WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.scheduleId, membership.orgId)
-      .first<ScheduleRow>()
+    const schedule = await stub.queryOne(
+      `SELECT id FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    ) as ScheduleRow | null
     if (!schedule) return { success: false, error: 'NOT_FOUND' }
 
-    // Verify staff member belongs to org
+    // Verify staff member exists
     type StaffRow = { id: string; name: string }
-    const staff = await env.DB.prepare(
-      `SELECT id, name FROM staff_member WHERE id = ? AND org_id = ? AND status != 'removed'`,
-    )
-      .bind(data.staffMemberId, membership.orgId)
-      .first<StaffRow>()
+    const staff = await stub.queryOne(
+      `SELECT id, name FROM staff_member WHERE id = ? AND status != 'removed'`,
+      data.staffMemberId,
+    ) as StaffRow | null
     if (!staff) return { success: false, error: 'NOT_FOUND' }
 
     if (!data.startDatetime || !data.endDatetime || data.endDatetime <= data.startDatetime) {
@@ -540,23 +520,12 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
     const id = crypto.randomUUID()
     const positionId = data.positionId ?? null
 
-    await env.DB.prepare(
+    await stub.execute(
       `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, position_id, notes, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, data.scheduleId, data.staffMemberId, data.startDatetime, data.endDatetime,
+      data.position?.trim() || null, positionId, data.notes?.trim() || null, now, now,
     )
-      .bind(
-        id,
-        data.scheduleId,
-        data.staffMemberId,
-        data.startDatetime,
-        data.endDatetime,
-        data.position?.trim() || null,
-        positionId,
-        data.notes?.trim() || null,
-        now,
-        now,
-      )
-      .run()
 
     // Advisory eligibility check
     let warnings: EligibilityWarning[] = []
@@ -570,7 +539,7 @@ export const createAssignmentServerFn = createServerFn({ method: 'POST' })
         positionId,
         asOfDate,
       )
-      const posRow = await env.DB.prepare(`SELECT sort_order FROM position WHERE id = ?`).bind(positionId).first<{ sort_order: number }>()
+      const posRow = await stub.queryOne(`SELECT sort_order FROM position WHERE id = ?`, positionId) as { sort_order: number } | null
       positionSortOrder = posRow?.sort_order ?? 0
     }
 
@@ -609,7 +578,9 @@ export const updateAssignmentServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
-    // Verify assignment belongs to a schedule in this org
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Verify assignment exists
     type AssignmentRow = {
       id: string
       staff_member_id: string
@@ -619,14 +590,12 @@ export const updateAssignmentServerFn = createServerFn({ method: 'POST' })
       position_id: string | null
       notes: string | null
     }
-    const existing = await env.DB.prepare(
+    const existing = await stub.queryOne(
       `SELECT sa.id, sa.staff_member_id, sa.start_datetime, sa.end_datetime, sa.position, sa.position_id, sa.notes
        FROM shift_assignment sa
-       JOIN schedule s ON s.id = sa.schedule_id
-       WHERE sa.id = ? AND s.org_id = ?`,
-    )
-      .bind(data.assignmentId, membership.orgId)
-      .first<AssignmentRow>()
+       WHERE sa.id = ?`,
+      data.assignmentId,
+    ) as AssignmentRow | null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
@@ -641,24 +610,22 @@ export const updateAssignmentServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'VALIDATION_ERROR' }
     }
 
-    // If staff member changed, verify they belong to org
+    // If staff member changed, verify they exist
     if (data.staffMemberId && data.staffMemberId !== existing.staff_member_id) {
       type StaffRow = { id: string }
-      const staff = await env.DB.prepare(
-        `SELECT id FROM staff_member WHERE id = ? AND org_id = ? AND status != 'removed'`,
-      )
-        .bind(data.staffMemberId, membership.orgId)
-        .first<StaffRow>()
+      const staff = await stub.queryOne(
+        `SELECT id FROM staff_member WHERE id = ? AND status != 'removed'`,
+        data.staffMemberId,
+      ) as StaffRow | null
       if (!staff) return { success: false, error: 'NOT_FOUND' }
     }
 
     const now = new Date().toISOString()
 
-    await env.DB.prepare(
+    await stub.execute(
       `UPDATE shift_assignment SET staff_member_id = ?, start_datetime = ?, end_datetime = ?, position = ?, position_id = ?, notes = ?, updated_at = ? WHERE id = ?`,
+      staffMemberId, startDatetime, endDatetime, position, positionId, notes, now, data.assignmentId,
     )
-      .bind(staffMemberId, startDatetime, endDatetime, position, positionId, notes, now, data.assignmentId)
-      .run()
 
     // Advisory eligibility check
     let warnings: EligibilityWarning[] = []
@@ -696,21 +663,18 @@ export const deleteAssignmentServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
-    // Verify assignment belongs to a schedule in this org
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Verify assignment exists
     type Row = { id: string }
-    const existing = await env.DB.prepare(
-      `SELECT sa.id FROM shift_assignment sa
-       JOIN schedule s ON s.id = sa.schedule_id
-       WHERE sa.id = ? AND s.org_id = ?`,
-    )
-      .bind(data.assignmentId, membership.orgId)
-      .first<Row>()
+    const existing = await stub.queryOne(
+      `SELECT id FROM shift_assignment WHERE id = ?`,
+      data.assignmentId,
+    ) as Row | null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
-    await env.DB.prepare(`DELETE FROM shift_assignment WHERE id = ?`)
-      .bind(data.assignmentId)
-      .run()
+    await stub.execute(`DELETE FROM shift_assignment WHERE id = ?`, data.assignmentId)
 
     return { success: true }
   })
@@ -751,41 +715,37 @@ export const createRecurringAssignmentsServerFn = createServerFn({ method: 'POST
       return { success: false, error: 'VALIDATION_ERROR' }
     }
 
-    // Verify schedule belongs to org and get date range
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Verify schedule exists and get date range
     type ScheduleRow = { id: string; start_date: string; end_date: string }
-    const schedule = await env.DB.prepare(
-      `SELECT id, start_date, end_date FROM schedule WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.scheduleId, membership.orgId)
-      .first<ScheduleRow>()
+    const schedule = await stub.queryOne(
+      `SELECT id, start_date, end_date FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    ) as ScheduleRow | null
     if (!schedule) return { success: false, error: 'NOT_FOUND' }
 
-    // Verify staff member belongs to org
+    // Verify staff member exists
     type StaffRow = { id: string; name: string }
-    const staff = await env.DB.prepare(
-      `SELECT id, name FROM staff_member WHERE id = ? AND org_id = ? AND status != 'removed'`,
-    )
-      .bind(data.staffMemberId, membership.orgId)
-      .first<StaffRow>()
+    const staff = await stub.queryOne(
+      `SELECT id, name FROM staff_member WHERE id = ? AND status != 'removed'`,
+      data.staffMemberId,
+    ) as StaffRow | null
     if (!staff) return { success: false, error: 'NOT_FOUND' }
 
     // Fetch approved blocking constraints for this staff member overlapping the schedule range
     type BlockingConstraintRow = { start_datetime: string; end_datetime: string; days_of_week: string | null }
-    const constraintResult = await env.DB.prepare(
+    const constraintRows = await stub.query(
       `SELECT start_datetime, end_datetime, days_of_week
        FROM staff_constraint
-       WHERE org_id = ? AND staff_member_id = ?
+       WHERE staff_member_id = ?
          AND type IN ('time_off', 'unavailable') AND status = 'approved'
          AND start_datetime < ? AND end_datetime > ?`,
-    )
-      .bind(
-        membership.orgId,
-        data.staffMemberId,
-        schedule.end_date + 'T23:59:59',
-        schedule.start_date + 'T00:00:00',
-      )
-      .all<BlockingConstraintRow>()
-    const blockingConstraints: ConstraintInfo[] = (constraintResult.results ?? []).map((r) => ({
+      data.staffMemberId,
+      schedule.end_date + 'T23:59:59',
+      schedule.start_date + 'T00:00:00',
+    ) as BlockingConstraintRow[]
+    const blockingConstraints: ConstraintInfo[] = constraintRows.map((r) => ({
       startDatetime: r.start_datetime,
       endDatetime: r.end_datetime,
       daysOfWeek: r.days_of_week ? (JSON.parse(r.days_of_week) as number[]) : null,
@@ -828,7 +788,7 @@ export const createRecurringAssignmentsServerFn = createServerFn({ method: 'POST
     }
 
     const assignments: ShiftAssignmentView[] = []
-    const stmts: D1PreparedStatement[] = []
+    const doBatchItems: Array<{ sql: string; params: unknown[] }> = []
 
     for (const date of matchingDates) {
       const dateStr = date.toISOString().slice(0, 10)
@@ -848,12 +808,11 @@ export const createRecurringAssignmentsServerFn = createServerFn({ method: 'POST
 
       for (const iv of freeIntervals) {
         const id = crypto.randomUUID()
-        stmts.push(
-          env.DB.prepare(
-            `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).bind(id, data.scheduleId, data.staffMemberId, iv.start, iv.end, position, notes, now, now),
-        )
+        doBatchItems.push({
+          sql: `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          params: [id, data.scheduleId, data.staffMemberId, iv.start, iv.end, position, notes, now, now],
+        })
         assignments.push({
           id,
           staffMemberId: data.staffMemberId,
@@ -868,8 +827,8 @@ export const createRecurringAssignmentsServerFn = createServerFn({ method: 'POST
       }
     }
 
-    if (stmts.length > 0) {
-      await env.DB.batch(stmts)
+    if (doBatchItems.length > 0) {
+      await stub.executeBatch(doBatchItems)
     }
 
     return { success: true, assignments }
@@ -928,13 +887,14 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'FORBIDDEN' }
     }
 
-    // Fetch schedule (verify it belongs to this org)
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Fetch schedule (verify it exists)
     type ScheduleRow = { id: string; start_date: string; end_date: string }
-    const schedule = await env.DB.prepare(
-      `SELECT id, start_date, end_date FROM schedule WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.scheduleId, membership.orgId)
-      .first<ScheduleRow>()
+    const schedule = await stub.queryOne(
+      `SELECT id, start_date, end_date FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    ) as ScheduleRow | null
     if (!schedule) return { success: false, error: 'NOT_FOUND' }
 
     // Fetch platoons with members (including per-member position from platoon_membership)
@@ -952,31 +912,24 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
     let platoonRows: PlatoonMemberRow[]
 
     if (data.platoonIds.length > 0) {
-      // Filter to specific platoons. D1 doesn't support array binding, so build placeholders.
       const placeholders = data.platoonIds.map(() => '?').join(', ')
-      const result = await env.DB.prepare(
+      platoonRows = await stub.query(
         `SELECT p.id AS platoon_id, p.rrules, p.start_date, p.shift_start_time, p.shift_end_time,
                 pm.staff_member_id, pm.position_id, pos.name AS position_name
          FROM platoon p
          JOIN platoon_membership pm ON pm.platoon_id = p.id
          LEFT JOIN position pos ON pos.id = pm.position_id
-         WHERE p.org_id = ? AND p.id IN (${placeholders})`,
-      )
-        .bind(membership.orgId, ...data.platoonIds)
-        .all<PlatoonMemberRow>()
-      platoonRows = result.results ?? []
+         WHERE p.id IN (${placeholders})`,
+        ...data.platoonIds,
+      ) as PlatoonMemberRow[]
     } else {
-      const result = await env.DB.prepare(
+      platoonRows = await stub.query(
         `SELECT p.id AS platoon_id, p.rrules, p.start_date, p.shift_start_time, p.shift_end_time,
                 pm.staff_member_id, pm.position_id, pos.name AS position_name
          FROM platoon p
          JOIN platoon_membership pm ON pm.platoon_id = p.id
-         LEFT JOIN position pos ON pos.id = pm.position_id
-         WHERE p.org_id = ?`,
-      )
-        .bind(membership.orgId)
-        .all<PlatoonMemberRow>()
-      platoonRows = result.results ?? []
+         LEFT JOIN position pos ON pos.id = pm.position_id`,
+      ) as PlatoonMemberRow[]
     }
 
     // Group rows by platoon
@@ -1007,7 +960,7 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
     }
 
     const now = new Date().toISOString()
-    const stmts: D1PreparedStatement[] = []
+    const doBatchItems: Array<{ sql: string; params: unknown[] }> = []
 
     // Fetch approved blocking constraints for all affected staff members
     const allStaffIds = Array.from(
@@ -1022,21 +975,17 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
         end_datetime: string
         days_of_week: string | null
       }
-      const cResult = await env.DB.prepare(
+      const cRows = await stub.query(
         `SELECT staff_member_id, start_datetime, end_datetime, days_of_week
          FROM staff_constraint
-         WHERE org_id = ? AND staff_member_id IN (${placeholders})
+         WHERE staff_member_id IN (${placeholders})
            AND type IN ('time_off', 'unavailable') AND status = 'approved'
            AND start_datetime < ? AND end_datetime > ?`,
-      )
-        .bind(
-          membership.orgId,
-          ...allStaffIds,
-          schedule.end_date + 'T23:59:59',
-          schedule.start_date + 'T00:00:00',
-        )
-        .all<BlockingConstraintRow>()
-      for (const row of cResult.results ?? []) {
+        ...allStaffIds,
+        schedule.end_date + 'T23:59:59',
+        schedule.start_date + 'T00:00:00',
+      ) as BlockingConstraintRow[]
+      for (const row of cRows) {
         if (!constraintsByStaff.has(row.staff_member_id)) {
           constraintsByStaff.set(row.staff_member_id, [])
         }
@@ -1076,22 +1025,22 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
           const freeIntervals = subtractConstraints(startDatetime, endDatetime, constraints)
 
           for (const iv of freeIntervals) {
-            stmts.push(
-              env.DB.prepare(
-                `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, position_id, notes, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
-              ).bind(crypto.randomUUID(), data.scheduleId, staffMember.id, iv.start, iv.end, staffMember.positionName, staffMember.positionId, now, now),
-            )
+            const assignId = crypto.randomUUID()
+            doBatchItems.push({
+              sql: `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, position_id, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+              params: [assignId, data.scheduleId, staffMember.id, iv.start, iv.end, staffMember.positionName, staffMember.positionId, now, now],
+            })
           }
         }
       }
     }
 
-    if (stmts.length === 0) return { success: false, error: 'NO_ASSIGNMENTS' }
+    if (doBatchItems.length === 0) return { success: false, error: 'NO_ASSIGNMENTS' }
 
-    await env.DB.batch(stmts)
+    await stub.executeBatch(doBatchItems)
 
-    return { success: true, count: stmts.length }
+    return { success: true, count: doBatchItems.length }
   })
 
 // ---------------------------------------------------------------------------
@@ -1117,12 +1066,13 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
       return { success: false, error: 'FORBIDDEN' }
     }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     type ScheduleRow = { id: string; start_date: string; end_date: string }
-    const schedule = await env.DB.prepare(
-      `SELECT id, start_date, end_date FROM schedule WHERE id = ? AND org_id = ?`,
-    )
-      .bind(data.scheduleId, membership.orgId)
-      .first<ScheduleRow>()
+    const schedule = await stub.queryOne(
+      `SELECT id, start_date, end_date FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    ) as ScheduleRow | null
     if (!schedule) return { success: false, error: 'NOT_FOUND' }
 
     type AssignmentRow = {
@@ -1136,7 +1086,7 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
       position_sort_order: number | null
       notes: string | null
     }
-    const assignmentRows = await env.DB.prepare(
+    const current = await stub.query(
       `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
               sa.start_datetime, sa.end_datetime, sa.position, sa.position_id,
               pos.sort_order AS position_sort_order, sa.notes
@@ -1144,11 +1094,9 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
        JOIN staff_member sm ON sm.id = sa.staff_member_id
        LEFT JOIN position pos ON pos.id = sa.position_id
        WHERE sa.schedule_id = ?`,
-    )
-      .bind(data.scheduleId)
-      .all<AssignmentRow>()
+      data.scheduleId,
+    ) as AssignmentRow[]
 
-    const current = assignmentRows.results ?? []
     if (current.length === 0) {
       return { success: true, assignments: [], changed: 0 }
     }
@@ -1162,23 +1110,19 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
       end_datetime: string
       days_of_week: string | null
     }
-    const cResult = await env.DB.prepare(
+    const cRows = await stub.query(
       `SELECT staff_member_id, start_datetime, end_datetime, days_of_week
        FROM staff_constraint
-       WHERE org_id = ? AND staff_member_id IN (${placeholders})
+       WHERE staff_member_id IN (${placeholders})
          AND type IN ('time_off', 'unavailable') AND status = 'approved'
          AND start_datetime < ? AND end_datetime > ?`,
-    )
-      .bind(
-        membership.orgId,
-        ...allStaffIds,
-        schedule.end_date + 'T23:59:59',
-        schedule.start_date + 'T00:00:00',
-      )
-      .all<BlockingConstraintRow>()
+      ...allStaffIds,
+      schedule.end_date + 'T23:59:59',
+      schedule.start_date + 'T00:00:00',
+    ) as BlockingConstraintRow[]
 
     const constraintsByStaff = new Map<string, ConstraintInfo[]>()
-    for (const row of cResult.results ?? []) {
+    for (const row of cRows) {
       if (!constraintsByStaff.has(row.staff_member_id)) {
         constraintsByStaff.set(row.staff_member_id, [])
       }
@@ -1190,7 +1134,7 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
     }
 
     const now = new Date().toISOString()
-    const stmts: D1PreparedStatement[] = []
+    const doBatchItems: Array<{ sql: string; params: unknown[] }> = []
     let changed = 0
     const newAssignments: ShiftAssignmentView[] = []
 
@@ -1219,16 +1163,15 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
       }
 
       changed++
-      stmts.push(env.DB.prepare(`DELETE FROM shift_assignment WHERE id = ?`).bind(a.id))
+      doBatchItems.push({ sql: `DELETE FROM shift_assignment WHERE id = ?`, params: [a.id] })
 
       for (const iv of freeIntervals) {
         const newId = crypto.randomUUID()
-        stmts.push(
-          env.DB.prepare(
-            `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, position_id, notes, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).bind(newId, data.scheduleId, a.staff_member_id, iv.start, iv.end, a.position, a.position_id, a.notes, now, now),
-        )
+        doBatchItems.push({
+          sql: `INSERT INTO shift_assignment (id, schedule_id, staff_member_id, start_datetime, end_datetime, position, position_id, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          params: [newId, data.scheduleId, a.staff_member_id, iv.start, iv.end, a.position, a.position_id, a.notes, now, now],
+        })
         newAssignments.push({
           id: newId,
           staffMemberId: a.staff_member_id,
@@ -1243,8 +1186,8 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
       }
     }
 
-    if (stmts.length > 0) {
-      await env.DB.batch(stmts)
+    if (doBatchItems.length > 0) {
+      await stub.executeBatch(doBatchItems)
     }
 
     newAssignments.sort((a, b) => a.startDatetime.localeCompare(b.startDatetime))

@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { canDo } from '@/lib/rbac'
 import { requireOrgMembership } from '@/server/_helpers'
+import { getOrgStub } from '@/server/_do-helpers'
 import type {
   ListScheduleRequirementsInput,
   ListScheduleRequirementsOutput,
@@ -92,20 +93,17 @@ export const listScheduleRequirementsServerFn = createServerFn({ method: 'GET' }
     const membership = await requireOrgMembership(env, data.orgSlug)
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
 
-    const rows = await env.DB.prepare(
+    const stub = getOrgStub(env, membership.orgId)
+    const rows = await stub.query(
       `SELECT sr.id, sr.name, sr.position_id, p.name AS position_name,
               sr.min_staff, sr.max_staff, sr.effective_start, sr.effective_end,
               sr.rrule, sr.window_start_time, sr.window_end_time, sr.window_end_day_offset,
               sr.sort_order, sr.created_at, sr.updated_at
        FROM schedule_requirement sr
        LEFT JOIN position p ON p.id = sr.position_id
-       WHERE sr.org_id = ?
        ORDER BY sr.sort_order DESC, sr.name ASC`,
-    )
-      .bind(membership.orgId)
-      .all<ReqRow>()
-
-    return { success: true, requirements: (rows.results ?? []).map(rowToView) }
+    ) as ReqRow[]
+    return { success: true, requirements: rows.map(rowToView) }
   })
 
 export const createScheduleRequirementServerFn = createServerFn({ method: 'POST' })
@@ -121,12 +119,13 @@ export const createScheduleRequirementServerFn = createServerFn({ method: 'POST'
     const validationError = validateRequirementInput(data)
     if (validationError) return { success: false, error: 'VALIDATION_ERROR' }
 
+    const stub = getOrgStub(env, membership.orgId)
+
     if (data.positionId) {
-      const posRow = await env.DB.prepare(
-        `SELECT id FROM position WHERE id = ? AND org_id = ?`,
-      )
-        .bind(data.positionId, membership.orgId)
-        .first<{ id: string }>()
+      const posRow = await stub.queryOne(
+        `SELECT id FROM position WHERE id = ?`,
+        data.positionId,
+      ) as { id: string } | null
       if (!posRow) return { success: false, error: 'VALIDATION_ERROR' }
     }
 
@@ -135,29 +134,25 @@ export const createScheduleRequirementServerFn = createServerFn({ method: 'POST'
 
     const hasWindow = !!(data.windowStartTime && data.windowEndTime && data.windowEndDayOffset != null)
 
-    await env.DB.prepare(
-      `INSERT INTO schedule_requirement (id, org_id, name, position_id, min_staff, max_staff, effective_start, effective_end, rrule, window_start_time, window_end_time, window_end_day_offset, sort_order, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    await stub.execute(
+      `INSERT INTO schedule_requirement (id, name, position_id, min_staff, max_staff, effective_start, effective_end, rrule, window_start_time, window_end_time, window_end_day_offset, sort_order, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id,
+      data.name.trim(),
+      data.positionId ?? null,
+      data.minStaff,
+      data.maxStaff ?? null,
+      data.effectiveStart,
+      data.effectiveEnd ?? null,
+      data.rrule.trim(),
+      hasWindow ? data.windowStartTime! : null,
+      hasWindow ? data.windowEndTime! : null,
+      hasWindow ? data.windowEndDayOffset! : null,
+      data.sortOrder ?? 0,
+      membership.userId,
+      now,
+      now,
     )
-      .bind(
-        id,
-        membership.orgId,
-        data.name.trim(),
-        data.positionId ?? null,
-        data.minStaff,
-        data.maxStaff ?? null,
-        data.effectiveStart,
-        data.effectiveEnd ?? null,
-        data.rrule.trim(),
-        hasWindow ? data.windowStartTime! : null,
-        hasWindow ? data.windowEndTime! : null,
-        hasWindow ? data.windowEndDayOffset! : null,
-        data.sortOrder ?? 0,
-        membership.userId,
-        now,
-        now,
-      )
-      .run()
 
     return { success: true, requirementId: id }
   })
@@ -172,51 +167,50 @@ export const updateScheduleRequirementServerFn = createServerFn({ method: 'POST'
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'create-edit-schedules')) return { success: false, error: 'FORBIDDEN' }
 
-    const existing = await env.DB.prepare(
-      `SELECT org_id FROM schedule_requirement WHERE id = ?`,
-    )
-      .bind(data.requirementId)
-      .first<{ org_id: string }>()
-    if (!existing || existing.org_id !== membership.orgId) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
+
+    const existing = await stub.queryOne(
+      `SELECT id FROM schedule_requirement WHERE id = ?`,
+      data.requirementId,
+    ) as { id: string } | null
+    if (!existing) return { success: false, error: 'NOT_FOUND' }
 
     const validationError = validateRequirementInput(data)
     if (validationError) return { success: false, error: 'VALIDATION_ERROR' }
 
     if (data.positionId) {
-      const posRow = await env.DB.prepare(
-        `SELECT id FROM position WHERE id = ? AND org_id = ?`,
-      )
-        .bind(data.positionId, membership.orgId)
-        .first<{ id: string }>()
+      const posRow = await stub.queryOne(
+        `SELECT id FROM position WHERE id = ?`,
+        data.positionId,
+      ) as { id: string } | null
       if (!posRow) return { success: false, error: 'VALIDATION_ERROR' }
     }
 
     const hasWindow = !!(data.windowStartTime && data.windowEndTime && data.windowEndDayOffset != null)
 
-    await env.DB.prepare(
+    const updatedAt = new Date().toISOString()
+
+    await stub.execute(
       `UPDATE schedule_requirement
        SET name = ?, position_id = ?, min_staff = ?, max_staff = ?,
            effective_start = ?, effective_end = ?, rrule = ?,
            window_start_time = ?, window_end_time = ?, window_end_day_offset = ?,
            sort_order = ?, updated_at = ?
        WHERE id = ?`,
+      data.name.trim(),
+      data.positionId ?? null,
+      data.minStaff,
+      data.maxStaff ?? null,
+      data.effectiveStart,
+      data.effectiveEnd ?? null,
+      data.rrule.trim(),
+      hasWindow ? data.windowStartTime! : null,
+      hasWindow ? data.windowEndTime! : null,
+      hasWindow ? data.windowEndDayOffset! : null,
+      data.sortOrder ?? 0,
+      updatedAt,
+      data.requirementId,
     )
-      .bind(
-        data.name.trim(),
-        data.positionId ?? null,
-        data.minStaff,
-        data.maxStaff ?? null,
-        data.effectiveStart,
-        data.effectiveEnd ?? null,
-        data.rrule.trim(),
-        hasWindow ? data.windowStartTime! : null,
-        hasWindow ? data.windowEndTime! : null,
-        hasWindow ? data.windowEndDayOffset! : null,
-        data.sortOrder ?? 0,
-        new Date().toISOString(),
-        data.requirementId,
-      )
-      .run()
 
     return { success: true }
   })
@@ -231,16 +225,15 @@ export const deleteScheduleRequirementServerFn = createServerFn({ method: 'POST'
     if (!membership) return { success: false, error: 'UNAUTHORIZED' }
     if (!canDo(membership.role, 'create-edit-schedules')) return { success: false, error: 'FORBIDDEN' }
 
-    const existing = await env.DB.prepare(
-      `SELECT org_id FROM schedule_requirement WHERE id = ?`,
-    )
-      .bind(data.requirementId)
-      .first<{ org_id: string }>()
-    if (!existing || existing.org_id !== membership.orgId) return { success: false, error: 'NOT_FOUND' }
+    const stub = getOrgStub(env, membership.orgId)
 
-    await env.DB.prepare(`DELETE FROM schedule_requirement WHERE id = ?`)
-      .bind(data.requirementId)
-      .run()
+    const existing = await stub.queryOne(
+      `SELECT id FROM schedule_requirement WHERE id = ?`,
+      data.requirementId,
+    ) as { id: string } | null
+    if (!existing) return { success: false, error: 'NOT_FOUND' }
+
+    await stub.execute(`DELETE FROM schedule_requirement WHERE id = ?`, data.requirementId)
 
     return { success: true }
   })
