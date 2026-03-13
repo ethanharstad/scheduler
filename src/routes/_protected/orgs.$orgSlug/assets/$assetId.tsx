@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouteContext, useRouter } from '@tanstack/react-router'
 import { canDo } from '@/lib/rbac'
 import type {
   AssetDetailView,
@@ -140,6 +140,7 @@ type StaffMember = { memberId: string; displayName: string; userId: string; emai
 function AssetDetailPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
   const { asset: initialAsset, staffList, apparatusList } = Route.useLoaderData()
+  const router = useRouter()
 
   const [asset, setAsset] = useState<AssetDetailView | null>(initialAsset)
   const [activeTab, setActiveTab] = useState<'details' | 'assigned-gear' | 'inspections' | 'audit'>('details')
@@ -387,6 +388,8 @@ function AssetDetailPage() {
         await loadSchedules()
         // Refresh submissions if loaded
         if (submissionsLoaded) await loadSubmissions(0)
+        // Invalidate router so the assets list compliance widget picks up updated due dates
+        void router.invalidate()
       } else if (result.error === 'VALIDATION_ERROR' && result.validationErrors) {
         setInspErrors(result.validationErrors)
       } else {

@@ -31,6 +31,7 @@ import type {
   FormFieldType,
   FormCategory,
 } from '@/lib/form.types'
+import { computeNextDue } from '@/lib/rrule'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,30 +41,15 @@ function isoNow(): string {
   return new Date().toISOString()
 }
 
-function computeNextDueForSchedule(base: string, rule: { freq: string; dayOfWeek?: number; dayOfMonth?: number }): string {
-  const baseDate = new Date(base + 'T00:00:00Z')
-
-  if (rule.freq === 'daily') {
-    return new Date(baseDate.getTime() + 86400000).toISOString().slice(0, 10)
-  }
-
-  if (rule.freq === 'weekly') {
-    const dow = rule.dayOfWeek ?? 5
-    let diff = (dow - baseDate.getUTCDay() + 7) % 7
-    if (diff === 0) diff = 7
-    return new Date(baseDate.getTime() + diff * 86400000).toISOString().slice(0, 10)
-  }
-
-  const dom = Math.min(rule.dayOfMonth ?? baseDate.getUTCDate(), 28)
-  const monthStep =
-    rule.freq === 'monthly' ? 1 : rule.freq === 'quarterly' ? 3 : rule.freq === 'semi_annual' ? 6 : 12
-
-  let year = baseDate.getUTCFullYear()
-  let month = baseDate.getUTCMonth() + monthStep
-  year += Math.floor(month / 12)
-  month = ((month % 12) + 12) % 12
-  return new Date(Date.UTC(year, month, dom)).toISOString().slice(0, 10)
+function orgToday(scheduleDayStart: string): string {
+  const now = new Date()
+  const [h, m] = scheduleDayStart.split(':').map(Number)
+  const dayStartMs = ((h ?? 0) * 60 + (m ?? 0)) * 60 * 1000
+  const utcMs = now.getUTCHours() * 3600000 + now.getUTCMinutes() * 60000
+  const effectiveDate = utcMs < dayStartMs ? new Date(now.getTime() - 86400000) : now
+  return effectiveDate.toISOString().slice(0, 10)
 }
+
 
 const VALID_CATEGORIES: FormCategory[] = [
   'equipment_inspection',
@@ -616,9 +602,11 @@ export const submitFormServerFn = createServerFn({ method: 'POST' })
         ).bind(data.scheduleId, membership.orgId).first<SchedRow>()
 
         if (schedRow) {
-          const rule = JSON.parse(schedRow.recurrence_rule) as { freq: string; dayOfWeek?: number; dayOfMonth?: number }
-          const baseDate = now.slice(0, 10) // submission date
-          const nextDue = computeNextDueForSchedule(baseDate, rule)
+          type OrgRow = { schedule_day_start: string }
+          const orgRow = await env.DB.prepare(`SELECT schedule_day_start FROM organization WHERE id = ?`)
+            .bind(membership.orgId).first<OrgRow>()
+          const baseDate = orgToday(orgRow?.schedule_day_start ?? '00:00')
+          const nextDue = computeNextDue(baseDate, schedRow.recurrence_rule, true)
           await env.DB.prepare(
             `UPDATE asset_inspection_schedule SET next_inspection_due = ?, updated_at = ? WHERE id = ?`,
           ).bind(nextDue, now, data.scheduleId).run()
