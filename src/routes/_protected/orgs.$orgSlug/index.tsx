@@ -68,6 +68,37 @@ function formatTime(datetime: string): string {
   return `${hour12}:${m} ${ampm}`
 }
 
+function formatDate(datetime: string): string {
+  const date = new Date(datetime)
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function daysUntil(dateStr: string, today: string): number {
+  return Math.ceil(
+    (new Date(dateStr + 'T00:00:00Z').getTime() - new Date(today + 'T00:00:00Z').getTime()) / 86400000
+  )
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(' ')
+  if (parts.length >= 2) return ((parts[0]?.[0] ?? '') + (parts[parts.length - 1]?.[0] ?? '')).toUpperCase()
+  return name.slice(0, 2).toUpperCase()
+}
+
+function positionBadgeClass(position: string): string {
+  const p = position.toLowerCase()
+  if (p.includes('officer') || p.includes('captain') || p.includes('chief') || p.includes('lieutenant') || p.startsWith('lt ') || p.includes(' lt ')) {
+    return 'bg-red-100 text-red-700'
+  }
+  if (p.includes('senior') || p.startsWith('sr ') || p.includes(' sr ') || p.includes('sr.')) {
+    return 'bg-navy-100 text-navy-700'
+  }
+  if (p.includes('backup')) {
+    return 'bg-warning-bg text-warning'
+  }
+  return 'bg-gray-100 text-gray-600'
+}
+
 function ScheduleWidget({
   assignments,
   shifts,
@@ -88,8 +119,8 @@ function ScheduleWidget({
   })
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-navy-600" />
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -114,67 +145,71 @@ function ScheduleWidget({
           </Link>
         )}
       </div>
-      <div className="grid grid-cols-2 divide-x divide-gray-100">
-        {/* On Shift Today */}
-        <div className="p-5">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
-              On Shift Today
-            </span>
-            <span className="text-xs text-gray-400">{todayLabel}</span>
-          </div>
-          {assignments.length === 0 ? (
-            <p className="text-sm text-gray-400">No assignments today.</p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {assignments.map((a, i) => (
-                <li key={i} className="flex items-center justify-between py-2">
-                  <span className="text-sm font-medium text-navy-700">{a.staffMemberName}</span>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    {a.position && (
-                      <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium" style={{ fontFamily: 'var(--font-condensed)' }}>
-                        {a.position}
+
+      {/* On Shift Today */}
+      <div className="px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+            On Shift Today
+          </span>
+          <span className="px-2 py-0.5 rounded-full bg-navy-50 text-navy-700 text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
+            {todayLabel}
+          </span>
+        </div>
+        {assignments.length === 0 ? (
+          <p className="text-sm text-gray-400">No assignments today.</p>
+        ) : (
+          <ul className="space-y-1">
+            {assignments.map((a, i) => (
+              <li key={i} className="flex items-center justify-between py-1.5 pl-3 border-l-[3px] border-navy-700">
+                <span className="text-sm font-medium text-navy-700">{a.staffMemberName}</span>
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  {a.position && (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${positionBadgeClass(a.position)}`} style={{ fontFamily: 'var(--font-condensed)' }}>
+                      {a.position}
+                    </span>
+                  )}
+                  <span className="whitespace-nowrap">{formatTime(a.startDatetime)} – {formatTime(a.endDatetime)}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* My Upcoming Shifts */}
+      <div className="px-5 py-4">
+        <div className="mb-3">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
+            My Upcoming Shifts
+          </span>
+        </div>
+        {shifts.length === 0 ? (
+          <p className="text-sm text-gray-400">No upcoming shifts scheduled.</p>
+        ) : (
+          <ul className="space-y-1">
+            {shifts.map((s, i) => {
+              const dateLabel = new Date(s.startDatetime).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+              return (
+                <li key={i} className="flex items-center justify-between py-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="px-2 py-0.5 rounded-full bg-navy-50 text-navy-700 text-xs font-semibold whitespace-nowrap" style={{ fontFamily: 'var(--font-condensed)' }}>
+                      {dateLabel}
+                    </span>
+                    {s.position && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${positionBadgeClass(s.position)}`} style={{ fontFamily: 'var(--font-condensed)' }}>
+                        {s.position}
                       </span>
                     )}
-                    <span className="whitespace-nowrap">{formatTime(a.startDatetime)} – {formatTime(a.endDatetime)}</span>
                   </div>
+                  <span className="text-xs text-gray-500 whitespace-nowrap ml-3">
+                    {formatTime(s.startDatetime)} – {formatTime(s.endDatetime)}
+                  </span>
                 </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        {/* My Upcoming Shifts */}
-        <div className="p-5">
-          <div className="mb-3">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
-              My Upcoming Shifts
-            </span>
-          </div>
-          {shifts.length === 0 ? (
-            <p className="text-sm text-gray-400">No upcoming shifts scheduled.</p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {shifts.map((s, i) => {
-                const dateLabel = new Date(s.startDatetime).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-                return (
-                  <li key={i} className="flex items-center justify-between py-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm font-medium text-navy-700 whitespace-nowrap">{dateLabel}</span>
-                      {s.position && (
-                        <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium" style={{ fontFamily: 'var(--font-condensed)' }}>
-                          {s.position}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs text-gray-500 whitespace-nowrap ml-3">
-                      {formatTime(s.startDatetime)} – {formatTime(s.endDatetime)}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
+              )
+            })}
+          </ul>
+        )}
       </div>
     </div>
   )
@@ -189,16 +224,19 @@ function ExpiringCertsWidget({
 }) {
   if (certs.length === 0) return null
   return (
-    <div className="rounded-lg border border-warning bg-warning-bg p-6">
-      <div className="flex items-center gap-2 mb-3">
-        <AlertTriangle className="w-4 h-4 text-warning" />
+    <div className="rounded-lg border border-warning bg-white overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-warning/30 bg-warning-bg">
+        <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
         <h2 className="text-xs font-semibold text-warning uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
           Certifications Expiring Within 30 Days
         </h2>
+        <span className="ml-auto inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-warning text-white text-xs font-bold" style={{ fontFamily: 'var(--font-condensed)', minWidth: '1.5rem' }}>
+          {certs.length}
+        </span>
       </div>
-      <ul className="divide-y divide-warning/20">
+      <ul className="divide-y divide-gray-100">
         {certs.map((c, i) => (
-          <li key={i} className="flex items-center justify-between py-2">
+          <li key={i} className="flex items-center justify-between px-5 py-2.5">
             <div>
               <Link
                 to="/orgs/$orgSlug/staff/$staffMemberId"
@@ -209,7 +247,7 @@ function ExpiringCertsWidget({
               </Link>
               <span className="text-sm text-gray-600 ml-1.5">— {c.certTypeName}</span>
             </div>
-            <span className="text-xs text-warning font-semibold">
+            <span className="text-xs text-warning font-semibold whitespace-nowrap ml-3">
               {c.daysUntilExpiry === 0 ? 'Today' : `${c.daysUntilExpiry}d`}
             </span>
           </li>
@@ -217,11 +255,6 @@ function ExpiringCertsWidget({
       </ul>
     </div>
   )
-}
-
-function formatDate(datetime: string): string {
-  const date = new Date(datetime)
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function PendingTimeOffWidget({
@@ -233,13 +266,16 @@ function PendingTimeOffWidget({
 }) {
   if (requests.length === 0) return null
   return (
-    <div className="rounded-lg border border-navy-200 bg-white p-6">
-      <div className="flex items-center justify-between mb-3">
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4 text-navy-600" />
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
             Pending Time-Off Requests
           </h2>
+          <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-navy-100 text-navy-700 text-xs font-bold" style={{ fontFamily: 'var(--font-condensed)', minWidth: '1.5rem' }}>
+            {requests.length}
+          </span>
         </div>
         <Link
           to="/orgs/$orgSlug/availability"
@@ -250,27 +286,27 @@ function PendingTimeOffWidget({
         </Link>
       </div>
       <ul className="divide-y divide-gray-100">
-        {requests.map((r) => (
-          <li key={r.id} className="flex items-center justify-between py-2">
-            <div className="min-w-0">
-              <span className="text-sm font-medium text-navy-700">{r.staffMemberName}</span>
-              {r.reason && (
-                <span className="text-sm text-gray-500 ml-1.5">— {r.reason}</span>
-              )}
-            </div>
-            <span className="text-xs text-gray-500 whitespace-nowrap ml-3">
-              {formatDate(r.startDatetime)} – {formatDate(r.endDatetime)}
-            </span>
-          </li>
-        ))}
+        {requests.map((r) => {
+          const initials = getInitials(r.staffMemberName)
+          return (
+            <li key={r.id} className="flex items-center gap-3 px-5 py-2.5">
+              <div className="w-8 h-8 rounded-full bg-navy-100 text-navy-700 flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ fontFamily: 'var(--font-condensed)' }}>
+                {initials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-sm font-medium text-navy-700">{r.staffMemberName}</span>
+                {r.reason && (
+                  <span className="text-sm text-gray-500 ml-1.5">— {r.reason}</span>
+                )}
+              </div>
+              <span className="text-xs text-gray-500 whitespace-nowrap">
+                {formatDate(r.startDatetime)} – {formatDate(r.endDatetime)}
+              </span>
+            </li>
+          )
+        })}
       </ul>
     </div>
-  )
-}
-
-function daysUntil(dateStr: string, today: string): number {
-  return Math.ceil(
-    (new Date(dateStr + 'T00:00:00Z').getTime() - new Date(today + 'T00:00:00Z').getTime()) / 86400000
   )
 }
 
@@ -299,11 +335,11 @@ function AssetComplianceWidget({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
           <Wrench className="w-4 h-4 text-navy-600" />
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
-            Asset Compliance Alerts
+            Asset Compliance
           </h2>
           {!allClear && (
             <span
@@ -323,14 +359,14 @@ function AssetComplianceWidget({
         </Link>
       </div>
       {allClear ? (
-        <div className="px-6 py-5 flex items-center gap-3 bg-success-bg">
+        <div className="px-5 py-4 flex items-center gap-3 bg-success-bg">
           <Shield className="w-4 h-4 text-success flex-shrink-0" />
           <span className="text-sm text-success font-medium">All assets are compliant</span>
         </div>
       ) : (
         <>
           {actuallyOverdue.length > 0 && (
-            <div className={`px-6 py-4 bg-danger-bg border-b border-danger/20 ${(dueSoon.length > 0 || expiringAssets.length > 0) ? '' : ''}`}>
+            <div className="px-5 py-4 bg-danger-bg border-b border-danger/20">
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="w-3.5 h-3.5 text-danger" />
                 <span className="text-xs font-semibold text-danger uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -349,7 +385,7 @@ function AssetComplianceWidget({
                       >
                         {item.assetName} — {item.schedule.label}
                       </Link>
-                      <span className="text-xs text-danger font-semibold">
+                      <span className="text-xs text-danger font-semibold whitespace-nowrap ml-3">
                         {days === null ? 'Overdue' : `${Math.abs(days)}d overdue`}
                       </span>
                     </li>
@@ -359,7 +395,7 @@ function AssetComplianceWidget({
             </div>
           )}
           {dueSoon.length > 0 && (
-            <div className={`px-6 py-4 bg-warning-bg border-b border-warning/20`}>
+            <div className="px-5 py-4 bg-warning-bg border-b border-warning/20">
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="w-3.5 h-3.5 text-warning" />
                 <span className="text-xs font-semibold text-warning uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -378,7 +414,7 @@ function AssetComplianceWidget({
                       >
                         {item.assetName} — {item.schedule.label}
                       </Link>
-                      <span className="text-xs text-warning font-semibold">
+                      <span className="text-xs text-warning font-semibold whitespace-nowrap ml-3">
                         {days === null ? 'Due soon' : days === 0 ? 'Due today' : `Due in ${days}d`}
                       </span>
                     </li>
@@ -388,7 +424,7 @@ function AssetComplianceWidget({
             </div>
           )}
           {expiringAssets.length > 0 && (
-            <div className="px-6 py-4 bg-warning-bg">
+            <div className="px-5 py-4 bg-warning-bg">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="w-3.5 h-3.5 text-warning" />
                 <span className="text-xs font-semibold text-warning uppercase tracking-wider" style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -410,7 +446,7 @@ function AssetComplianceWidget({
                       >
                         {a.name}
                       </Link>
-                      <span className="text-xs text-warning font-semibold">
+                      <span className="text-xs text-warning font-semibold whitespace-nowrap ml-3">
                         {days === null
                           ? 'Expiring'
                           : days === 0
@@ -439,78 +475,156 @@ function OrgDashboard() {
   const canApproveTimeOff = canDo(userRole, 'approve-time-off')
   const canManageAssets = canDo(userRole, 'manage-assets')
 
-  const createdDate = new Date(org.createdAt).toLocaleDateString(undefined, {
-    year: 'numeric',
+  const todayFormatted = new Date(today + 'T00:00:00').toLocaleDateString(undefined, {
+    weekday: 'long',
     month: 'long',
     day: 'numeric',
   })
 
+  const overdueCount = overdueInspections.filter(
+    (item) => item.schedule.nextInspectionDue && daysUntil(item.schedule.nextInspectionDue, today) < 0
+  ).length
+  const assetAlertCount = overdueInspections.length + expiringAssets.length
+
+  const alertCount =
+    (canViewCerts ? expiringCerts.length : 0) +
+    (canApproveTimeOff ? pendingTimeOff.length : 0) +
+    (canManageAssets ? assetAlertCount : 0)
+
+  const hasAlerts = alertCount > 0
+  const hasOverdueAssets = canManageAssets && overdueCount > 0
+
+  const hasAlertWidgets =
+    (canViewCerts && expiringCerts.length > 0) ||
+    (canApproveTimeOff && pendingTimeOff.length > 0) ||
+    canManageAssets
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-navy-700 mb-1">{org.name}</h1>
-        <p className="text-gray-500 text-sm">Created {createdDate}</p>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="pb-4 border-b border-gray-100">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-condensed)' }}>
+          Dashboard
+        </p>
+        <div className="flex items-baseline justify-between">
+          <p className="text-2xl font-bold text-navy-700">{todayFormatted}</p>
+          <p className="text-sm text-gray-500 font-medium">{org.name}</p>
+        </div>
       </div>
 
-      {canViewCerts && <ExpiringCertsWidget certs={expiringCerts} orgSlug={org.slug} />}
-      {canApproveTimeOff && <PendingTimeOffWidget requests={pendingTimeOff} orgSlug={org.slug} />}
-      {canManageAssets && (
-        <AssetComplianceWidget
-          expiringAssets={expiringAssets}
-          overdueInspections={overdueInspections}
-          orgSlug={org.slug}
-          today={today}
-        />
-      )}
-      <ScheduleWidget assignments={todayAssignments} shifts={myUpcomingShifts} orgSlug={org.slug} today={today} currentScheduleId={currentScheduleId} />
-
-      <div className="grid grid-cols-2 gap-4">
+      {/* KPI Stats Bar */}
+      <div className="grid grid-cols-4 gap-4">
         <Link
           to="/orgs/$orgSlug/staff"
           params={{ orgSlug: org.slug }}
-          className="block rounded-lg border border-gray-200 bg-white p-6 hover:border-navy-300 hover:shadow-sm transition-all group"
+          className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-navy-300 hover:shadow-sm transition-all group"
+          style={{ borderTopWidth: '3px', borderTopColor: 'var(--color-navy-500)' }}
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1" style={{ fontFamily: 'var(--font-condensed)' }}>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1" style={{ fontFamily: 'var(--font-condensed)' }}>
                 Active Staff
-              </h2>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-navy-700">{activeCount}</span>
-                <span className="text-sm text-gray-400">of {totalCount} total</span>
-              </div>
+              </p>
+              <p className="text-3xl font-bold text-navy-700 leading-none">{activeCount}</p>
+              <p className="text-xs text-gray-400 mt-1">of {totalCount} total</p>
             </div>
-            <div className="w-10 h-10 rounded-full bg-navy-50 flex items-center justify-center group-hover:bg-navy-100 transition-colors">
-              <Users className="w-5 h-5 text-navy-600" />
+            <div className="w-9 h-9 rounded-full bg-navy-50 flex items-center justify-center group-hover:bg-navy-100 transition-colors flex-shrink-0">
+              <Users className="w-4 h-4 text-navy-600" />
             </div>
           </div>
-          <p className="text-sm text-gray-500 mt-2 group-hover:text-navy-600 transition-colors">
-            View and manage staff &rarr;
-          </p>
         </Link>
 
         <Link
           to="/orgs/$orgSlug/schedules/platoons"
           params={{ orgSlug: org.slug }}
-          className="block rounded-lg border border-gray-200 bg-white p-6 hover:border-navy-300 hover:shadow-sm transition-all group"
+          className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-navy-300 hover:shadow-sm transition-all group"
+          style={{ borderTopWidth: '3px', borderTopColor: 'var(--color-navy-300)' }}
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1" style={{ fontFamily: 'var(--font-condensed)' }}>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1" style={{ fontFamily: 'var(--font-condensed)' }}>
                 Platoons
-              </h2>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-navy-700">{platoonCount}</span>
-              </div>
+              </p>
+              <p className="text-3xl font-bold text-navy-700 leading-none">{platoonCount}</p>
+              <p className="text-xs text-gray-400 mt-1">configured</p>
             </div>
-            <div className="w-10 h-10 rounded-full bg-navy-50 flex items-center justify-center group-hover:bg-navy-100 transition-colors">
-              <Shield className="w-5 h-5 text-navy-600" />
+            <div className="w-9 h-9 rounded-full bg-navy-50 flex items-center justify-center group-hover:bg-navy-100 transition-colors flex-shrink-0">
+              <Shield className="w-4 h-4 text-navy-600" />
             </div>
           </div>
-          <p className="text-sm text-gray-500 mt-2 group-hover:text-navy-600 transition-colors">
-            View and manage platoons &rarr;
-          </p>
         </Link>
+
+        <Link
+          to={currentScheduleId ? '/orgs/$orgSlug/schedules/$scheduleId' : '/orgs/$orgSlug/schedules'}
+          params={currentScheduleId ? { orgSlug: org.slug, scheduleId: currentScheduleId } : { orgSlug: org.slug }}
+          className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-navy-300 hover:shadow-sm transition-all group"
+          style={{ borderTopWidth: '3px', borderTopColor: todayAssignments.length > 0 ? 'var(--color-success)' : 'var(--color-navy-300)' }}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1" style={{ fontFamily: 'var(--font-condensed)' }}>
+                On Shift Today
+              </p>
+              <p className="text-3xl font-bold text-navy-700 leading-none">{todayAssignments.length}</p>
+              <p className="text-xs text-gray-400 mt-1">assigned</p>
+            </div>
+            <div className="w-9 h-9 rounded-full bg-navy-50 flex items-center justify-center group-hover:bg-navy-100 transition-colors flex-shrink-0">
+              <Calendar className="w-4 h-4 text-navy-600" />
+            </div>
+          </div>
+        </Link>
+
+        <Link
+          to="/orgs/$orgSlug/assets"
+          params={{ orgSlug: org.slug }}
+          className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-navy-300 hover:shadow-sm transition-all group"
+          style={{ borderTopWidth: '3px', borderTopColor: hasOverdueAssets ? 'var(--color-danger)' : hasAlerts ? 'var(--color-warning)' : 'var(--color-success)' }}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1" style={{ fontFamily: 'var(--font-condensed)' }}>
+                Open Alerts
+              </p>
+              <p className={`text-3xl font-bold leading-none ${hasAlerts ? (hasOverdueAssets ? 'text-danger' : 'text-warning') : 'text-success'}`}>
+                {alertCount}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">{hasAlerts ? 'need attention' : 'all clear'}</p>
+            </div>
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center group-hover:opacity-80 transition-opacity flex-shrink-0 ${hasAlerts ? (hasOverdueAssets ? 'bg-danger-bg' : 'bg-warning-bg') : 'bg-success-bg'}`}>
+              <AlertTriangle className={`w-4 h-4 ${hasAlerts ? (hasOverdueAssets ? 'text-danger' : 'text-warning') : 'text-success'}`} />
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* Main Content: Two-column */}
+      <div className="flex gap-5 items-start">
+        {/* Alerts Column */}
+        {hasAlertWidgets && (
+          <div className="flex-[3] space-y-4">
+            {canViewCerts && <ExpiringCertsWidget certs={expiringCerts} orgSlug={org.slug} />}
+            {canApproveTimeOff && <PendingTimeOffWidget requests={pendingTimeOff} orgSlug={org.slug} />}
+            {canManageAssets && (
+              <AssetComplianceWidget
+                expiringAssets={expiringAssets}
+                overdueInspections={overdueInspections}
+                orgSlug={org.slug}
+                today={today}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Schedule Column */}
+        <div className={hasAlertWidgets ? 'flex-[2]' : 'flex-1'}>
+          <ScheduleWidget
+            assignments={todayAssignments}
+            shifts={myUpcomingShifts}
+            orgSlug={org.slug}
+            today={today}
+            currentScheduleId={currentScheduleId}
+          />
+        </div>
       </div>
     </div>
   )
