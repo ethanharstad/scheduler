@@ -40,22 +40,26 @@ const STATUS_LABELS: Record<string, string> = {
 
 function statusBadge(status: string) {
   const label = STATUS_LABELS[status] ?? status
+  const base = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide'
   if (status === 'available' || status === 'assigned') {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-success-bg text-success" style={{ fontFamily: 'var(--font-condensed)' }}>
+      <span className={`${base} bg-success-bg text-success`} style={{ fontFamily: 'var(--font-condensed)' }}>
+        <span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0" />
         {label}
       </span>
     )
   }
   if (status === 'out_of_service' || status === 'expired') {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-danger-bg text-danger" style={{ fontFamily: 'var(--font-condensed)' }}>
+      <span className={`${base} bg-danger-bg text-danger`} style={{ fontFamily: 'var(--font-condensed)' }}>
+        <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0" />
         {label}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-gray-100 text-gray-500" style={{ fontFamily: 'var(--font-condensed)' }}>
+    <span className={`${base} bg-gray-100 text-gray-500`} style={{ fontFamily: 'var(--font-condensed)' }}>
+      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0" />
       {label}
     </span>
   )

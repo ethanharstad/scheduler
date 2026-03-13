@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { AlertTriangle, Clock, ChevronDown, ChevronUp, Truck, Package, Search } from 'lucide-react'
 import {
   listAssetsServerFn,
   getExpiringAssetsServerFn,
@@ -72,29 +72,34 @@ const STATUS_LABELS: Record<string, string> = {
 
 function statusBadge(status: string) {
   const label = STATUS_LABELS[status] ?? status
+  const base = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide'
   if (status === 'in_service' || status === 'available') {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-success-bg text-success" style={{ fontFamily: 'var(--font-condensed)' }}>
+      <span className={`${base} bg-success-bg text-success`} style={{ fontFamily: 'var(--font-condensed)' }}>
+        <span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0" />
         {label}
       </span>
     )
   }
   if (status === 'decommissioned' || status === 'expired') {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-gray-100 text-gray-500" style={{ fontFamily: 'var(--font-condensed)' }}>
+      <span className={`${base} bg-gray-100 text-gray-500`} style={{ fontFamily: 'var(--font-condensed)' }}>
+        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0" />
         {label}
       </span>
     )
   }
   if (status === 'out_of_service') {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-danger-bg text-danger" style={{ fontFamily: 'var(--font-condensed)' }}>
+      <span className={`${base} bg-danger-bg text-danger`} style={{ fontFamily: 'var(--font-condensed)' }}>
+        <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0" />
         {label}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide bg-warning-bg text-warning" style={{ fontFamily: 'var(--font-condensed)' }}>
+    <span className={`${base} bg-warning-bg text-warning`} style={{ fontFamily: 'var(--font-condensed)' }}>
+      <span className="w-1.5 h-1.5 rounded-full bg-warning flex-shrink-0" />
       {label}
     </span>
   )
@@ -184,18 +189,18 @@ function AssetsIndex() {
     <div className="space-y-6">
       {/* Alerts section */}
       {hasAlerts && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden" style={{ borderLeft: '4px solid #DC2626' }}>
           <button
             onClick={() => setAlertsExpanded((v) => !v)}
             className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
           >
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-danger" />
-              <span className="font-semibold text-gray-900">
+              <span className="font-semibold text-gray-900" style={{ fontFamily: 'var(--font-condensed)' }}>
                 Compliance Alerts
-                <span className="ml-2 inline-flex items-center justify-center w-5 h-5 rounded-full bg-danger text-white text-xs font-bold">
-                  {expiringAssets.length + overdueInspections.length}
-                </span>
+              </span>
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-danger text-white text-xs font-bold">
+                {expiringAssets.length + overdueInspections.length}
               </span>
             </div>
             {alertsExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
@@ -327,13 +332,16 @@ function AssetsIndex() {
             )}
           </select>
 
-          <input
-            type="search"
-            placeholder="Search name, unit #, serial #…"
-            value={search}
-            onChange={(e) => handleSearchInput(e.target.value)}
-            className="flex-1 min-w-48 text-sm border border-gray-300 rounded-md px-3 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-navy-700"
-          />
+          <div className="flex-1 relative min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            <input
+              type="search"
+              placeholder="Search name, unit #, serial #…"
+              value={search}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-md pl-9 pr-3 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-navy-700"
+            />
+          </div>
         </div>
 
         {/* Table */}
@@ -367,19 +375,29 @@ function AssetsIndex() {
                   return (
                     <tr key={asset.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
-                        <Link
-                          to="/orgs/$orgSlug/assets/$assetId"
-                          params={{ orgSlug: org.slug, assetId: asset.id }}
-                          className="font-medium text-navy-700 hover:underline"
-                        >
-                          {asset.name}
-                        </Link>
-                        {asset.assignedToStaffName && (
-                          <div className="text-xs text-gray-400">→ {asset.assignedToStaffName}</div>
-                        )}
-                        {asset.assignedToApparatusName && (
-                          <div className="text-xs text-gray-400">→ {asset.assignedToApparatusName}</div>
-                        )}
+                        <div className="flex items-start gap-2.5">
+                          <span className="mt-0.5 flex-shrink-0">
+                            {asset.assetType === 'apparatus'
+                              ? <Truck className="w-4 h-4 text-navy-300" />
+                              : <Package className="w-4 h-4 text-navy-300" />
+                            }
+                          </span>
+                          <div className="min-w-0">
+                            <Link
+                              to="/orgs/$orgSlug/assets/$assetId"
+                              params={{ orgSlug: org.slug, assetId: asset.id }}
+                              className="font-medium text-navy-700 hover:underline"
+                            >
+                              {asset.name}
+                            </Link>
+                            {asset.assignedToStaffName && (
+                              <div className="text-xs text-gray-400">→ {asset.assignedToStaffName}</div>
+                            )}
+                            {asset.assignedToApparatusName && (
+                              <div className="text-xs text-gray-400">→ {asset.assignedToApparatusName}</div>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       {typeFilter === 'all' && (
                         <td className="px-4 py-3 text-gray-600">{TYPE_LABELS[asset.assetType] ?? asset.assetType}</td>

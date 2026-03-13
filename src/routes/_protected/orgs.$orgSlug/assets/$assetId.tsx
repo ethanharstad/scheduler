@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useRouteContext, useRouter } from '@tanstack/react-router'
+import { ChevronLeft } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type {
   AssetDetailView,
@@ -113,17 +114,17 @@ function buildRRule(
 
 function statusBadge(status: string) {
   const label = STATUS_LABELS[status] ?? status
-  const base = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide'
+  const base = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide'
   if (status === 'in_service' || status === 'available') {
-    return <span className={`${base} bg-success-bg text-success`} style={{ fontFamily: 'var(--font-condensed)' }}>{label}</span>
+    return <span className={`${base} bg-success-bg text-success`} style={{ fontFamily: 'var(--font-condensed)' }}><span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0" />{label}</span>
   }
   if (status === 'decommissioned' || status === 'expired') {
-    return <span className={`${base} bg-gray-100 text-gray-500`} style={{ fontFamily: 'var(--font-condensed)' }}>{label}</span>
+    return <span className={`${base} bg-gray-100 text-gray-500`} style={{ fontFamily: 'var(--font-condensed)' }}><span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0" />{label}</span>
   }
   if (status === 'out_of_service') {
-    return <span className={`${base} bg-danger-bg text-danger`} style={{ fontFamily: 'var(--font-condensed)' }}>{label}</span>
+    return <span className={`${base} bg-danger-bg text-danger`} style={{ fontFamily: 'var(--font-condensed)' }}><span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0" />{label}</span>
   }
-  return <span className={`${base} bg-warning-bg text-warning`} style={{ fontFamily: 'var(--font-condensed)' }}>{label}</span>
+  return <span className={`${base} bg-warning-bg text-warning`} style={{ fontFamily: 'var(--font-condensed)' }}><span className="w-1.5 h-1.5 rounded-full bg-warning flex-shrink-0" />{label}</span>
 }
 
 function Field({ label, value }: { label: string; value?: string | number | null }) {
@@ -506,26 +507,42 @@ function AssetDetailPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
+      {/* Back nav */}
+      <Link
+        to="/orgs/$orgSlug/assets"
+        params={{ orgSlug: org.slug }}
+        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-navy-700 transition-colors"
+      >
+        <ChevronLeft className="w-4 h-4" />
+        Inventory
+      </Link>
+
       {/* Header */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-gray-200 rounded-lg p-6" style={{ borderLeft: '4px solid #1B2A4A' }}>
         <div className="flex items-start justify-between">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h2 className="text-2xl font-bold text-navy-700" style={{ fontFamily: 'var(--font-condensed)' }}>
                 {currentAsset.name}
               </h2>
               {statusBadge(currentAsset.status)}
             </div>
-            <div className="flex gap-4 mt-1 text-sm text-gray-500">
-              <span>{currentAsset.assetType === 'apparatus' ? 'Apparatus' : 'Gear'}</span>
-              <span>·</span>
-              <span>{CATEGORY_LABELS[currentAsset.category] ?? currentAsset.category}</span>
-              {currentAsset.unitNumber && <><span>·</span><span className="font-mono">{currentAsset.unitNumber}</span></>}
-              {currentAsset.serialNumber && <><span>·</span><span className="font-mono text-xs">{currentAsset.serialNumber}</span></>}
+            <div className="flex flex-wrap gap-2 mt-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-navy-50 text-navy-700" style={{ fontFamily: 'var(--font-condensed)' }}>
+                {currentAsset.assetType === 'apparatus' ? 'Apparatus' : 'Gear'}
+              </span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600" style={{ fontFamily: 'var(--font-condensed)' }}>
+                {CATEGORY_LABELS[currentAsset.category] ?? currentAsset.category}
+              </span>
+              {currentAsset.unitNumber && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 font-mono">
+                  #{currentAsset.unitNumber}
+                </span>
+              )}
             </div>
           </div>
           {canManage && !isDecommissioned && (
-            <button onClick={openEdit} className="px-4 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">
+            <button onClick={openEdit} className="px-4 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 flex-shrink-0">
               Edit
             </button>
           )}
@@ -550,7 +567,7 @@ function AssetDetailPage() {
         <div className="space-y-6">
           {/* Core fields */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Asset Info</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-700 mb-4 pl-3" style={{ fontFamily: 'var(--font-condensed)', borderLeft: '2px solid #C5D0E0' }}>Asset Info</h3>
             <dl className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <Field label="Name" value={currentAsset.name} />
               <Field label="Category" value={CATEGORY_LABELS[currentAsset.category] ?? currentAsset.category} />
@@ -570,7 +587,7 @@ function AssetDetailPage() {
 
           {/* Lifecycle dates */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Lifecycle</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-700 mb-4 pl-3" style={{ fontFamily: 'var(--font-condensed)', borderLeft: '2px solid #C5D0E0' }}>Lifecycle</h3>
             <dl className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <Field label="Manufactured" value={currentAsset.manufactureDate} />
               <Field label="Purchased" value={currentAsset.purchasedDate} />
@@ -583,7 +600,7 @@ function AssetDetailPage() {
           {/* Custom fields */}
           {currentAsset.customFields && Object.keys(currentAsset.customFields).length > 0 && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4" style={{ fontFamily: 'var(--font-condensed)' }}>Custom Fields</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-700 mb-4 pl-3" style={{ fontFamily: 'var(--font-condensed)', borderLeft: '2px solid #C5D0E0' }}>Custom Fields</h3>
               <dl className="grid grid-cols-2 gap-3">
                 {Object.entries(currentAsset.customFields).map(([k, v]) => (
                   <Field key={k} label={k} value={String(v)} />
@@ -825,7 +842,7 @@ function AssetDetailPage() {
           {/* Status Change */}
           {canManage && !isDecommissioned && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Change Status</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-700 mb-3 pl-3" style={{ fontFamily: 'var(--font-condensed)', borderLeft: '2px solid #C5D0E0' }}>Change Status</h3>
               <div className="flex items-center gap-3">
                 <select value={newStatus} onChange={(e) => { setNewStatus(e.target.value); setConfirmDecomm(false) }} className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-700">
                   <option value="">Select…</option>
@@ -846,7 +863,7 @@ function AssetDetailPage() {
           {/* Gear Assignment */}
           {isGear && !isDecommissioned && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Assignment</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-700 mb-3 pl-3" style={{ fontFamily: 'var(--font-condensed)', borderLeft: '2px solid #C5D0E0' }}>Assignment</h3>
               {(currentAsset.assignedToStaffName || currentAsset.assignedToApparatusName) ? (
                 <div className="flex items-center justify-between">
                   <div>
@@ -938,7 +955,7 @@ function AssetDetailPage() {
           {/* Asset Locations */}
           {canManage && !isDecommissioned && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3" style={{ fontFamily: 'var(--font-condensed)' }}>Locations</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-700 mb-3 pl-3" style={{ fontFamily: 'var(--font-condensed)', borderLeft: '2px solid #C5D0E0' }}>Locations</h3>
               {!locationsLoaded ? (
                 <p className="text-sm text-gray-400">Loading…</p>
               ) : (

@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, Link, useRouteContext, useMatchRoute } from '@tanstack/react-router'
 import { canDo } from '@/lib/rbac'
+import { Layers } from 'lucide-react'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/assets')({
   component: AssetsLayout,
@@ -19,7 +20,8 @@ function AssetsLayout() {
         <>
           <div className="flex items-center justify-between mb-1">
             <div>
-              <h1 className="text-2xl font-bold text-navy-700" style={{ fontFamily: 'var(--font-condensed)' }}>
+              <h1 className="text-2xl font-bold text-navy-700 flex items-center gap-2" style={{ fontFamily: 'var(--font-condensed)' }}>
+                <Layers className="w-6 h-6 text-navy-300" />
                 Asset Management
               </h1>
               <p className="text-sm text-gray-500 mt-0.5">Manage apparatus and gear for {org.name}.</p>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { createFileRoute, useNavigate, useRouteContext, redirect } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useRouteContext, redirect, Link } from '@tanstack/react-router'
 import { canDo } from '@/lib/rbac'
+import { ChevronLeft } from 'lucide-react'
 import type { AssetType } from '@/lib/asset.types'
 import { APPARATUS_CATEGORIES, GEAR_CATEGORIES, APPARATUS_STATUSES, GEAR_STATUSES } from '@/lib/asset.types'
 import { createAssetServerFn } from '@/server/assets'
@@ -131,6 +132,14 @@ function NewAssetPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
+      <Link
+        to="/orgs/$orgSlug/assets"
+        params={{ orgSlug: org.slug }}
+        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-navy-700 transition-colors mb-4"
+      >
+        <ChevronLeft className="w-4 h-4" />
+        Back to Assets
+      </Link>
       <h2 className="text-xl font-bold text-navy-700 mb-6" style={{ fontFamily: 'var(--font-condensed)' }}>
         Add New Asset
       </h2>
@@ -256,7 +265,7 @@ function NewAssetPage() {
           </button>
           <button
             type="button"
-            onClick={() => navigate({ to: '/orgs/$orgSlug/assets/', params: { orgSlug: org.slug } })}
+            onClick={() => navigate({ to: '/orgs/$orgSlug/assets', params: { orgSlug: org.slug } })}
             className="px-5 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
           >
             Cancel
