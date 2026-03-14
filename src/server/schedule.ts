@@ -1058,19 +1058,34 @@ export const populateFromPlatoonsServerFn = createServerFn({ method: 'POST' })
   })
 
 // ---------------------------------------------------------------------------
-// applyConstraintsToScheduleServerFn
-// Re-processes all existing assignments against current approved constraints.
-// Unchanged assignments are left alone; conflicting ones are deleted and
-// replaced with their trimmed/split free intervals.
+// previewConstraintsServerFn / applyConstraintsToScheduleServerFn
+// Two-step process:
+//   1. previewConstraintsServerFn — computes proposed changes, returns them without writing
+//   2. applyConstraintsToScheduleServerFn — accepts accepted change IDs and commits them
 // ---------------------------------------------------------------------------
 
-type ApplyConstraintsOutput =
-  | { success: true; assignments: ShiftAssignmentView[]; changed: number }
+export type ConstraintChangeProposal = {
+  assignmentId: string
+  staffMemberId: string
+  staffMemberName: string
+  originalStart: string
+  originalEnd: string
+  position: string | null
+  positionId: string | null
+  positionSortOrder: number
+  notes: string | null
+  // changeType: 'deleted' = fully blocked, 'trimmed' = one segment remains, 'split' = multiple segments
+  changeType: 'deleted' | 'trimmed' | 'split'
+  replacements: Array<{ start: string; end: string }>
+}
+
+type PreviewConstraintsOutput =
+  | { success: true; proposals: ConstraintChangeProposal[] }
   | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' }
 
-export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST' })
+export const previewConstraintsServerFn = createServerFn({ method: 'POST' })
   .inputValidator((d: { orgSlug: string; scheduleId: string }) => d)
-  .handler(async (ctx): Promise<ApplyConstraintsOutput> => {
+  .handler(async (ctx): Promise<PreviewConstraintsOutput> => {
     const { data } = ctx
     const env = ctx.context as unknown as Cloudflare.Env
 
@@ -1111,9 +1126,7 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
       data.scheduleId,
     ) as AssignmentRow[]
 
-    if (current.length === 0) {
-      return { success: true, assignments: [], changed: 0 }
-    }
+    if (current.length === 0) return { success: true, proposals: [] }
 
     const allStaffIds = Array.from(new Set(current.map((a) => a.staff_member_id)))
     const placeholders = allStaffIds.map(() => '?').join(', ')
@@ -1137,9 +1150,167 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
 
     const constraintsByStaff = new Map<string, ConstraintInfo[]>()
     for (const row of cRows) {
-      if (!constraintsByStaff.has(row.staff_member_id)) {
-        constraintsByStaff.set(row.staff_member_id, [])
+      if (!constraintsByStaff.has(row.staff_member_id)) constraintsByStaff.set(row.staff_member_id, [])
+      constraintsByStaff.get(row.staff_member_id)!.push({
+        startDatetime: row.start_datetime,
+        endDatetime: row.end_datetime,
+        daysOfWeek: row.days_of_week ? (JSON.parse(row.days_of_week) as number[]) : null,
+      })
+    }
+
+    const proposals: ConstraintChangeProposal[] = []
+    for (const a of current) {
+      const constraints = constraintsByStaff.get(a.staff_member_id) ?? []
+      const freeIntervals = subtractConstraints(a.start_datetime, a.end_datetime, constraints)
+
+      const unchanged =
+        freeIntervals.length === 1 &&
+        freeIntervals[0].start === a.start_datetime &&
+        freeIntervals[0].end === a.end_datetime
+      if (unchanged) continue
+
+      let changeType: ConstraintChangeProposal['changeType']
+      if (freeIntervals.length === 0) changeType = 'deleted'
+      else if (freeIntervals.length === 1) changeType = 'trimmed'
+      else changeType = 'split'
+
+      proposals.push({
+        assignmentId: a.id,
+        staffMemberId: a.staff_member_id,
+        staffMemberName: a.staff_member_name,
+        originalStart: a.start_datetime,
+        originalEnd: a.end_datetime,
+        position: a.position,
+        positionId: a.position_id,
+        positionSortOrder: a.position_sort_order ?? 0,
+        notes: a.notes,
+        changeType,
+        replacements: freeIntervals,
+      })
+    }
+
+    return { success: true, proposals }
+  })
+
+type ApplyConstraintsOutput =
+  | { success: true; assignments: ShiftAssignmentView[] }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' }
+
+export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { orgSlug: string; scheduleId: string; acceptedAssignmentIds: string[] }) => d)
+  .handler(async (ctx): Promise<ApplyConstraintsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'create-edit-schedules')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    const stub = getOrgStub(env, membership.orgId)
+
+    type ScheduleRow = { id: string; start_date: string; end_date: string }
+    const schedule = await stub.queryOne(
+      `SELECT id, start_date, end_date FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    ) as ScheduleRow | null
+    if (!schedule) return { success: false, error: 'NOT_FOUND' }
+
+    if (data.acceptedAssignmentIds.length === 0) {
+      // Nothing accepted — return current assignments unchanged
+      type AssignmentRow = {
+        id: string; staff_member_id: string; staff_member_name: string
+        start_datetime: string; end_datetime: string
+        position: string | null; position_id: string | null
+        position_sort_order: number | null; notes: string | null
       }
+      const rows = await stub.query(
+        `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
+                sa.start_datetime, sa.end_datetime, sa.position, sa.position_id,
+                pos.sort_order AS position_sort_order, sa.notes
+         FROM shift_assignment sa
+         JOIN staff_member sm ON sm.id = sa.staff_member_id
+         LEFT JOIN position pos ON pos.id = sa.position_id
+         WHERE sa.schedule_id = ?`,
+        data.scheduleId,
+      ) as AssignmentRow[]
+      return {
+        success: true,
+        assignments: rows.map((a) => ({
+          id: a.id, staffMemberId: a.staff_member_id, staffMemberName: a.staff_member_name,
+          startDatetime: a.start_datetime, endDatetime: a.end_datetime,
+          position: a.position, positionId: a.position_id, positionSortOrder: a.position_sort_order ?? 0,
+          notes: a.notes,
+        })),
+      }
+    }
+
+    // Re-compute proposals for the accepted IDs only
+    const acceptedSet = new Set(data.acceptedAssignmentIds)
+    const placeholdersIds = data.acceptedAssignmentIds.map(() => '?').join(', ')
+
+    type AssignmentRow = {
+      id: string; staff_member_id: string; staff_member_name: string
+      start_datetime: string; end_datetime: string
+      position: string | null; position_id: string | null
+      position_sort_order: number | null; notes: string | null
+    }
+    const toProcess = await stub.query(
+      `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
+              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id,
+              pos.sort_order AS position_sort_order, sa.notes
+       FROM shift_assignment sa
+       JOIN staff_member sm ON sm.id = sa.staff_member_id
+       LEFT JOIN position pos ON pos.id = sa.position_id
+       WHERE sa.schedule_id = ? AND sa.id IN (${placeholdersIds})`,
+      data.scheduleId,
+      ...data.acceptedAssignmentIds,
+    ) as AssignmentRow[]
+
+    if (toProcess.length === 0) {
+      // Accepted IDs no longer exist — return current state
+      const rows = await stub.query(
+        `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
+                sa.start_datetime, sa.end_datetime, sa.position, sa.position_id,
+                pos.sort_order AS position_sort_order, sa.notes
+         FROM shift_assignment sa
+         JOIN staff_member sm ON sm.id = sa.staff_member_id
+         LEFT JOIN position pos ON pos.id = sa.position_id
+         WHERE sa.schedule_id = ?`,
+        data.scheduleId,
+      ) as AssignmentRow[]
+      return {
+        success: true,
+        assignments: rows.map((a) => ({
+          id: a.id, staffMemberId: a.staff_member_id, staffMemberName: a.staff_member_name,
+          startDatetime: a.start_datetime, endDatetime: a.end_datetime,
+          position: a.position, positionId: a.position_id, positionSortOrder: a.position_sort_order ?? 0,
+          notes: a.notes,
+        })),
+      }
+    }
+
+    const allStaffIds = Array.from(new Set(toProcess.map((a) => a.staff_member_id)))
+    const placeholdersStaff = allStaffIds.map(() => '?').join(', ')
+
+    type BlockingConstraintRow = {
+      staff_member_id: string; start_datetime: string; end_datetime: string; days_of_week: string | null
+    }
+    const cRows = await stub.query(
+      `SELECT staff_member_id, start_datetime, end_datetime, days_of_week
+       FROM staff_constraint
+       WHERE staff_member_id IN (${placeholdersStaff})
+         AND type IN ('time_off', 'unavailable') AND status = 'approved'
+         AND start_datetime < ? AND end_datetime > ?`,
+      ...allStaffIds,
+      schedule.end_date + 'T23:59:59',
+      schedule.start_date + 'T00:00:00',
+    ) as BlockingConstraintRow[]
+
+    const constraintsByStaff = new Map<string, ConstraintInfo[]>()
+    for (const row of cRows) {
+      if (!constraintsByStaff.has(row.staff_member_id)) constraintsByStaff.set(row.staff_member_id, [])
       constraintsByStaff.get(row.staff_member_id)!.push({
         startDatetime: row.start_datetime,
         endDatetime: row.end_datetime,
@@ -1149,36 +1320,13 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
 
     const now = new Date().toISOString()
     const doBatchItems: Array<{ sql: string; params: unknown[] }> = []
-    let changed = 0
-    const newAssignments: ShiftAssignmentView[] = []
 
-    for (const a of current) {
+    for (const a of toProcess) {
+      if (!acceptedSet.has(a.id)) continue
       const constraints = constraintsByStaff.get(a.staff_member_id) ?? []
       const freeIntervals = subtractConstraints(a.start_datetime, a.end_datetime, constraints)
 
-      const unchanged =
-        freeIntervals.length === 1 &&
-        freeIntervals[0].start === a.start_datetime &&
-        freeIntervals[0].end === a.end_datetime
-
-      if (unchanged) {
-        newAssignments.push({
-          id: a.id,
-          staffMemberId: a.staff_member_id,
-          staffMemberName: a.staff_member_name,
-          startDatetime: a.start_datetime,
-          endDatetime: a.end_datetime,
-          position: a.position,
-          positionId: a.position_id,
-          positionSortOrder: a.position_sort_order ?? 0,
-          notes: a.notes,
-        })
-        continue
-      }
-
-      changed++
       doBatchItems.push({ sql: `DELETE FROM shift_assignment WHERE id = ?`, params: [a.id] })
-
       for (const iv of freeIntervals) {
         const newId = crypto.randomUUID()
         doBatchItems.push({
@@ -1186,24 +1334,31 @@ export const applyConstraintsToScheduleServerFn = createServerFn({ method: 'POST
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           params: [newId, data.scheduleId, a.staff_member_id, iv.start, iv.end, a.position, a.position_id, a.notes, now, now],
         })
-        newAssignments.push({
-          id: newId,
-          staffMemberId: a.staff_member_id,
-          staffMemberName: a.staff_member_name,
-          startDatetime: iv.start,
-          endDatetime: iv.end,
-          position: a.position,
-          positionId: a.position_id,
-          positionSortOrder: a.position_sort_order ?? 0,
-          notes: a.notes,
-        })
       }
     }
 
-    if (doBatchItems.length > 0) {
-      await stub.executeBatch(doBatchItems)
-    }
+    if (doBatchItems.length > 0) await stub.executeBatch(doBatchItems)
 
-    newAssignments.sort((a, b) => a.startDatetime.localeCompare(b.startDatetime))
-    return { success: true, assignments: newAssignments, changed }
+    // Return full updated assignment list
+    const allRows = await stub.query(
+      `SELECT sa.id, sa.staff_member_id, sm.name AS staff_member_name,
+              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id,
+              pos.sort_order AS position_sort_order, sa.notes
+       FROM shift_assignment sa
+       JOIN staff_member sm ON sm.id = sa.staff_member_id
+       LEFT JOIN position pos ON pos.id = sa.position_id
+       WHERE sa.schedule_id = ?
+       ORDER BY sa.start_datetime`,
+      data.scheduleId,
+    ) as AssignmentRow[]
+
+    return {
+      success: true,
+      assignments: allRows.map((a) => ({
+        id: a.id, staffMemberId: a.staff_member_id, staffMemberName: a.staff_member_name,
+        startDatetime: a.start_datetime, endDatetime: a.end_datetime,
+        position: a.position, positionId: a.position_id, positionSortOrder: a.position_sort_order ?? 0,
+        notes: a.notes,
+      })),
+    }
   })

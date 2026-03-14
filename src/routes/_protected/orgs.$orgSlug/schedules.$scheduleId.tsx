@@ -16,7 +16,9 @@ import {
   createRecurringAssignmentsServerFn,
   updateAssignmentServerFn,
   deleteAssignmentServerFn,
+  previewConstraintsServerFn,
   applyConstraintsToScheduleServerFn,
+  type ConstraintChangeProposal,
 } from '@/server/schedule'
 import { listStaffServerFn } from '@/server/staff'
 import { listPositionsServerFn, checkPositionEligibilityServerFn } from '@/server/qualifications'
@@ -580,7 +582,9 @@ function ScheduleDetailPage() {
   const [statusBusy, setStatusBusy] = useState(false)
 
   const [applyConstraintsBusy, setApplyConstraintsBusy] = useState(false)
-  const [applyConstraintsChanged, setApplyConstraintsChanged] = useState<number | null>(null)
+  const [constraintProposals, setConstraintProposals] = useState<ConstraintChangeProposal[] | null>(null)
+  const [acceptedProposalIds, setAcceptedProposalIds] = useState<Set<string>>(new Set())
+  const [applyConstraintsConfirmBusy, setApplyConstraintsConfirmBusy] = useState(false)
 
   const addFormRef = useRef<HTMLFormElement>(null)
 
@@ -638,18 +642,38 @@ function ScheduleDetailPage() {
 
   async function handleApplyConstraints() {
     setApplyConstraintsBusy(true)
-    setApplyConstraintsChanged(null)
+    try {
+      const result = await previewConstraintsServerFn({
+        data: { orgSlug: org.slug, scheduleId: schedule.id },
+      })
+      if (result.success) {
+        setConstraintProposals(result.proposals)
+        setAcceptedProposalIds(new Set(result.proposals.map((p) => p.assignmentId)))
+      }
+    } finally {
+      setApplyConstraintsBusy(false)
+    }
+  }
+
+  async function handleConfirmConstraints() {
+    if (!constraintProposals) return
+    setApplyConstraintsConfirmBusy(true)
     try {
       const result = await applyConstraintsToScheduleServerFn({
-        data: { orgSlug: org.slug, scheduleId: schedule.id },
+        data: {
+          orgSlug: org.slug,
+          scheduleId: schedule.id,
+          acceptedAssignmentIds: Array.from(acceptedProposalIds),
+        },
       })
       if (result.success) {
         setAssignments(result.assignments)
         setSchedule((s) => ({ ...s, assignmentCount: result.assignments.length }))
-        setApplyConstraintsChanged(result.changed)
+        setConstraintProposals(null)
+        setAcceptedProposalIds(new Set())
       }
     } finally {
-      setApplyConstraintsBusy(false)
+      setApplyConstraintsConfirmBusy(false)
     }
   }
 
@@ -969,17 +993,12 @@ function ScheduleDetailPage() {
                 <button
                   onClick={() => void handleApplyConstraints()}
                   disabled={applyConstraintsBusy}
-                  title="Re-evaluate schedule requirements and flag staffing gaps — does not modify assignments"
+                  title="Preview how approved time-off and unavailability constraints affect current assignments"
                   className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 rounded-md text-sm transition-colors"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${applyConstraintsBusy ? 'animate-spin' : ''}`} />
-                  {applyConstraintsBusy ? 'Checking…' : 'Check Requirements'}
+                  {applyConstraintsBusy ? 'Checking…' : 'Apply Constraints'}
                 </button>
-                {applyConstraintsChanged !== null && (
-                  <span className="text-xs text-gray-500">
-                    {applyConstraintsChanged === 0 ? 'No changes' : `${applyConstraintsChanged} updated`}
-                  </span>
-                )}
               </div>
               <button
                 onClick={() => void handleToggleStatus()}
@@ -1584,6 +1603,24 @@ function ScheduleDetailPage() {
           onClose={() => setShowWizard(false)}
         />
       )}
+
+      {constraintProposals !== null && (
+        <ConstraintPreviewModal
+          proposals={constraintProposals}
+          acceptedIds={acceptedProposalIds}
+          onToggle={(id: string) => setAcceptedProposalIds((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+          })}
+          onSelectAll={() => setAcceptedProposalIds(new Set(constraintProposals.map((p) => p.assignmentId)))}
+          onSelectNone={() => setAcceptedProposalIds(new Set())}
+          onConfirm={() => void handleConfirmConstraints()}
+          onCancel={() => { setConstraintProposals(null); setAcceptedProposalIds(new Set()) }}
+          busy={applyConstraintsConfirmBusy}
+        />
+      )}
     </div>
   )
 }
@@ -1604,6 +1641,7 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
   const [loading, setLoading] = useState(false)
   const [eligible, setEligible] = useState<EligibleStaffMember[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sortMode, setSortMode] = useState<'hours' | 'name'>('hours')
 
   const scheduledIds = useMemo(() => {
     if (!localDate) return new Set<string>()
@@ -1645,6 +1683,30 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
     return map
   }, [assignments])
 
+  const lastShiftMap = useMemo(() => {
+    const map = new Map<string, string>()
+    if (!localDate) return map
+    for (const a of assignments) {
+      const aDate = a.startDatetime.slice(0, 10)
+      if (aDate >= localDate) continue
+      const cur = map.get(a.staffMemberId)
+      if (!cur || aDate > cur) map.set(a.staffMemberId, aDate)
+    }
+    return map
+  }, [assignments, localDate])
+
+  const nextShiftMap = useMemo(() => {
+    const map = new Map<string, string>()
+    if (!localDate) return map
+    for (const a of assignments) {
+      const aDate = a.startDatetime.slice(0, 10)
+      if (aDate <= localDate) continue
+      const cur = map.get(a.staffMemberId)
+      if (!cur || aDate < cur) map.set(a.staffMemberId, aDate)
+    }
+    return map
+  }, [assignments, localDate])
+
   function fmtStaffStats(staffMemberId: string) {
     const s = staffStats.get(staffMemberId)
     if (!s) return null
@@ -1652,6 +1714,29 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
     const m = s.minutes % 60
     const hrs = m === 0 ? `${h}h` : `${h}h ${m}m`
     return `${s.shifts} shift${s.shifts !== 1 ? 's' : ''} · ${hrs}`
+  }
+
+  function fmtEquityLine(staffMemberId: string): string | null {
+    if (!localDate) return null
+    const targetMs = new Date(localDate + 'T00:00:00Z').getTime()
+    const lastDate = lastShiftMap.get(staffMemberId)
+    const nextDate = nextShiftMap.get(staffMemberId)
+    const lastPart = lastDate
+      ? `Last: ${Math.round((targetMs - new Date(lastDate + 'T00:00:00Z').getTime()) / 86400000)}d ago`
+      : 'Last: never'
+    const nextPart = nextDate
+      ? `Next: in ${Math.round((new Date(nextDate + 'T00:00:00Z').getTime() - targetMs) / 86400000)}d`
+      : 'Next: none'
+    return `${lastPart} · ${nextPart}`
+  }
+
+  function sortByEquity<T extends { staffMemberId: string; name: string }>(list: T[]): T[] {
+    if (sortMode === 'name') return [...list].sort((a, b) => a.name.localeCompare(b.name))
+    return [...list].sort((a, b) => {
+      const aMin = staffStats.get(a.staffMemberId)?.minutes ?? 0
+      const bMin = staffStats.get(b.staffMemberId)?.minutes ?? 0
+      return aMin !== bMin ? aMin - bMin : a.name.localeCompare(b.name)
+    })
   }
 
   useEffect(() => {
@@ -1691,10 +1776,10 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
     }
   }, [localDate, positionId, orgSlug, allStaff, adjacentIds])
 
-  const preferred = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === 'preferred') ?? []
-  const available = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === null && !s.isScheduledAdjacent) ?? []
-  const scheduledAdjacent = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === null && s.isScheduledAdjacent) ?? []
-  const notPreferred = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === 'not_preferred') ?? []
+  const preferred = sortByEquity(eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === 'preferred') ?? [])
+  const available = sortByEquity(eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === null && !s.isScheduledAdjacent) ?? [])
+  const scheduledAdjacent = sortByEquity(eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === null && s.isScheduledAdjacent) ?? [])
+  const notPreferred = sortByEquity(eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && s.constraintType === 'not_preferred') ?? [])
   const unavailable = eligible?.filter((s) => !scheduledIds.has(s.staffMemberId) && (s.constraintType === 'time_off' || s.constraintType === 'unavailable')) ?? []
   const alreadyScheduled = eligible?.filter((s) => scheduledIds.has(s.staffMemberId)) ?? []
   const selectableCount = preferred.length + available.length + scheduledAdjacent.length + notPreferred.length
@@ -1721,6 +1806,23 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
             onChange={(e) => { setLocalDate(e.target.value); setEligible(null) }}
             className="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
           />
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-gray-500">Sort by:</span>
+            <button
+              type="button"
+              onClick={() => setSortMode('hours')}
+              className={`px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors ${sortMode === 'hours' ? 'bg-navy-700 text-white' : 'border border-gray-300 text-gray-600 hover:border-navy-400 hover:text-navy-700'}`}
+            >
+              Hours ↑
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortMode('name')}
+              className={`px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors ${sortMode === 'name' ? 'bg-navy-700 text-white' : 'border border-gray-300 text-gray-600 hover:border-navy-400 hover:text-navy-700'}`}
+            >
+              Name A-Z
+            </button>
+          </div>
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-4">
@@ -1757,6 +1859,9 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                             )}
                             {fmtStaffStats(s.staffMemberId) && (
                               <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
+                            )}
+                            {fmtEquityLine(s.staffMemberId) && (
+                              <p className="text-xs text-gray-400 mt-0.5">{fmtEquityLine(s.staffMemberId)}</p>
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -1807,6 +1912,9 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                             {fmtStaffStats(s.staffMemberId) && (
                               <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
                             )}
+                            {fmtEquityLine(s.staffMemberId) && (
+                              <p className="text-xs text-gray-400 mt-0.5">{fmtEquityLine(s.staffMemberId)}</p>
+                            )}
                           </div>
                           {s.hasExpiringCerts && (
                             <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-warning-bg text-warning text-xs font-semibold" style={{ fontFamily: 'var(--font-condensed)' }}>
@@ -1843,6 +1951,9 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                             )}
                             {fmtStaffStats(s.staffMemberId) && (
                               <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
+                            )}
+                            {fmtEquityLine(s.staffMemberId) && (
+                              <p className="text-xs text-gray-400 mt-0.5">{fmtEquityLine(s.staffMemberId)}</p>
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -1886,6 +1997,9 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
                             )}
                             {fmtStaffStats(s.staffMemberId) && (
                               <p className="text-xs text-gray-400 mt-0.5">{fmtStaffStats(s.staffMemberId)}</p>
+                            )}
+                            {fmtEquityLine(s.staffMemberId) && (
+                              <p className="text-xs text-gray-400 mt-0.5">{fmtEquityLine(s.staffMemberId)}</p>
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -1965,6 +2079,137 @@ function StaffingWizardModal({ orgSlug, positionId, positionName, targetDate: in
               )}
             </>
           ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ConstraintPreviewModal
+// ---------------------------------------------------------------------------
+
+interface ConstraintPreviewModalProps {
+  proposals: ConstraintChangeProposal[]
+  acceptedIds: Set<string>
+  onToggle: (id: string) => void
+  onSelectAll: () => void
+  onSelectNone: () => void
+  onConfirm: () => void
+  onCancel: () => void
+  busy: boolean
+}
+
+function changeLabel(p: ConstraintChangeProposal): string {
+  if (p.changeType === 'deleted') return 'Removed entirely'
+  if (p.changeType === 'split') return `Split into ${p.replacements.length} segments`
+  // trimmed: figure out which end(s) moved
+  const r = p.replacements[0]
+  if (!r) return 'Trimmed'
+  const startMoved = r.start !== p.originalStart
+  const endMoved = r.end !== p.originalEnd
+  if (startMoved && endMoved) return 'Trimmed (both ends)'
+  if (startMoved) return 'Start trimmed'
+  return 'End trimmed'
+}
+
+function ConstraintPreviewModal({ proposals, acceptedIds, onToggle, onSelectAll, onSelectNone, onConfirm, onCancel, busy }: ConstraintPreviewModalProps) {
+  const acceptedCount = acceptedIds.size
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-navy-700">Apply Constraints</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {proposals.length === 0
+                ? 'No conflicts found — all assignments are clear.'
+                : `${proposals.length} assignment${proposals.length !== 1 ? 's' : ''} conflict with approved time-off or unavailability.`}
+            </p>
+          </div>
+          <button type="button" onClick={onCancel} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Select all/none row */}
+        {proposals.length > 0 && (
+          <div className="flex items-center gap-3 px-5 py-2 border-b border-gray-100 bg-gray-50 shrink-0">
+            <span className="text-xs text-gray-500">{acceptedCount} of {proposals.length} selected</span>
+            <button type="button" onClick={onSelectAll} className="text-xs text-navy-700 hover:underline">Select all</button>
+            <button type="button" onClick={onSelectNone} className="text-xs text-navy-700 hover:underline">Deselect all</button>
+          </div>
+        )}
+
+        {/* Proposal list */}
+        <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
+          {proposals.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-10">All assignments are unaffected by current constraints.</p>
+          ) : proposals.map((p) => {
+            const accepted = acceptedIds.has(p.assignmentId)
+            return (
+              <label key={p.assignmentId} className={`flex items-start gap-3 px-5 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${accepted ? '' : 'opacity-60'}`}>
+                <input
+                  type="checkbox"
+                  checked={accepted}
+                  onChange={() => onToggle(p.assignmentId)}
+                  className="mt-0.5 shrink-0 accent-navy-700"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-gray-900">{p.staffMemberName}</span>
+                    {p.position && (
+                      <span className="text-xs text-gray-500">· {p.position}</span>
+                    )}
+                    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${p.changeType === 'deleted' ? 'bg-danger-bg text-danger' : 'bg-warning-bg text-warning'}`} style={{ fontFamily: 'var(--font-condensed)' }}>
+                      {changeLabel(p)}
+                    </span>
+                  </div>
+                  {/* Original */}
+                  <p className="text-xs text-gray-500 mt-1">
+                    <span className="font-medium">Original:</span>{' '}
+                    {formatDate(p.originalStart)} {formatTime(p.originalStart)} – {formatTime(p.originalEnd)}
+                    {' '}({formatDuration(p.originalStart, p.originalEnd)})
+                  </p>
+                  {/* Replacements */}
+                  {p.replacements.length > 0 && (
+                    <div className="mt-1 space-y-0.5">
+                      {p.replacements.map((r, i) => (
+                        <p key={i} className="text-xs text-gray-500 pl-3 border-l-2 border-gray-200">
+                          {formatDate(r.start)} {formatTime(r.start)} – {formatTime(r.end)}
+                          {' '}({formatDuration(r.start, r.end)})
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </label>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-gray-200 shrink-0">
+          <button type="button" onClick={onCancel} disabled={busy} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 transition-colors">
+            Cancel
+          </button>
+          {proposals.length === 0 ? (
+            <button type="button" onClick={onCancel} className="px-4 py-2 bg-navy-700 hover:bg-navy-800 text-white rounded-md text-sm transition-colors">
+              Done
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={busy || acceptedCount === 0}
+              className="px-4 py-2 bg-navy-700 hover:bg-navy-800 disabled:opacity-50 text-white rounded-md text-sm transition-colors"
+            >
+              {busy ? 'Applying…' : `Apply ${acceptedCount} change${acceptedCount !== 1 ? 's' : ''}`}
+            </button>
+          )}
         </div>
       </div>
     </div>

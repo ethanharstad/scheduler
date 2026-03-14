@@ -82,6 +82,7 @@ For development principles and strategic context, see `specs/roadmap.md`.
 - Schedule publishing and versioning (draft → published workflow)
 - Schedule generation from platoon templates to produce recurring shift calendars
 - Schedule validation: flag/block assignment of uncertified staff
+- Restore assignments from platoon schedule after a constraint is removed — "Apply Constraints" is destructive and does not recreate assignments when an unavailability or time-off constraint is later deleted or rejected; a targeted re-populate scoped to a specific staff member and date range (skipping dates that already have an overlapping assignment) would fill this gap
 
 ### Qualifications & Compliance
 - Certification expiration alerts to staff member and manager
