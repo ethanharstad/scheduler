@@ -8,6 +8,7 @@ type ViewMode = '1w' | '2w' | 'month'
 interface ScheduleCalendarProps {
   schedule: ScheduleView
   assignments: ShiftAssignmentView[]
+  today?: string
   onEditAssignment?: (a: ShiftAssignmentView) => void
   onQuickAdd?: (date: string) => void
 }
@@ -268,10 +269,10 @@ function CalendarToolbar({
 
 // --- Main Component ---
 
-export function ScheduleCalendar({ schedule, assignments, onEditAssignment, onQuickAdd }: ScheduleCalendarProps) {
+export function ScheduleCalendar({ schedule, assignments, today: todayProp, onEditAssignment, onQuickAdd }: ScheduleCalendarProps) {
+  const today = todayProp ?? todayStr()
   const [viewMode, setViewMode] = useState<ViewMode>('2w')
   const [viewStart, setViewStart] = useState(() => {
-    const today = todayStr()
     // If today is within the schedule range, start from today; otherwise start from schedule start
     if (today >= schedule.startDate && today <= schedule.endDate) return today
     return schedule.startDate
@@ -282,7 +283,6 @@ export function ScheduleCalendar({ schedule, assignments, onEditAssignment, onQu
 
   const scheduleStartSet = schedule.startDate
   const scheduleEndSet = schedule.endDate
-  const today = todayStr()
 
   // For month view, determine the current month
   const [, viewMonth] = viewStart.split('-').map(Number)
@@ -295,7 +295,7 @@ export function ScheduleCalendar({ schedule, assignments, onEditAssignment, onQu
   }
 
   function handleToday() {
-    setViewStart(todayStr())
+    setViewStart(today)
   }
 
   function handleModeChange(mode: ViewMode) {

@@ -108,6 +108,15 @@ type RequirementEvaluation = {
 }
 
 
+function orgToday(scheduleDayStart: string): string {
+  const now = new Date()
+  const [h, m] = scheduleDayStart.split(':').map(Number)
+  const dayStartMs = ((h ?? 0) * 60 + (m ?? 0)) * 60 * 1000
+  const utcMs = now.getUTCHours() * 3600000 + now.getUTCMinutes() * 60000
+  const effectiveDate = utcMs < dayStartMs ? new Date(now.getTime() - 86400000) : now
+  return effectiveDate.toISOString().slice(0, 10)
+}
+
 function computeRequirementWindow(
   date: string,
   req: ScheduleRequirementView,
@@ -507,6 +516,7 @@ function ScheduleDetailPage() {
   const [assignmentWarnings, setAssignmentWarnings] = useState<Map<string, EligibilityWarning[]>>(new Map())
   const [viewType, setViewType] = useState<'table' | 'calendar'>('table')
 
+  const today = useMemo(() => orgToday(org.scheduleDayStart), [org.scheduleDayStart])
   const allDatesForEval = useMemo(() => getDatesInRange(schedule.startDate, schedule.endDate), [schedule.startDate, schedule.endDate])
   const requirementEvaluations = useMemo(
     () => evaluateRequirements(requirements, assignments, allDatesForEval, org.scheduleDayStart),
@@ -920,7 +930,6 @@ function ScheduleDetailPage() {
                 {new Date(schedule.startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                 {' – '}
                 {new Date(schedule.endDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                {schedule.createdByName && <> &middot; Created by {schedule.createdByName}</>}
               </p>
               <div className="flex items-center bg-gray-100 rounded-md p-0.5 ml-3">
                 <button
@@ -1282,6 +1291,7 @@ function ScheduleDetailPage() {
         <ScheduleCalendar
           schedule={schedule}
           assignments={assignments}
+          today={today}
           onEditAssignment={canEdit ? (a) => startEditAssignment(a) : undefined}
           onQuickAdd={canEdit ? (date) => quickAddForDate(date) : undefined}
         />
@@ -1316,20 +1326,28 @@ function ScheduleDetailPage() {
                 const manDays = (totalHours / 24).toFixed(1)
                 const hasViolations = dayViolations.length > 0
                 const hasRequirements = requirements.length > 0
+                const isToday = date === today
                 const dayBorderClass = hasViolations
                   ? 'border-l-4 border-l-danger'
-                  : hasRequirements
-                    ? 'border-l-4 border-l-success'
-                    : ''
+                  : isToday
+                    ? 'border-l-4 border-l-navy-700'
+                    : hasRequirements
+                      ? 'border-l-4 border-l-success'
+                      : ''
                 return (
                 <Fragment key={date}>
-                  <tr id={`date-${date}`} className={`border-b border-gray-200 bg-gray-50/50 scroll-mt-4 ${dayBorderClass}`}>
+                  <tr id={`date-${date}`} className={`border-b border-gray-200 scroll-mt-4 ${isToday ? 'bg-blue-100/70' : 'bg-gray-50/50'} ${dayBorderClass}`}>
                     <td colSpan={canEdit ? 5 : 4} className="px-4 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
+                          <span className={`text-xs font-semibold uppercase tracking-wide ${isToday ? 'text-navy-700' : 'text-gray-500'}`} style={{ fontFamily: 'var(--font-condensed)' }}>
                             {formatDate(date + 'T00:00:00')}
                           </span>
+                          {isToday && (
+                            <span className="text-xs font-semibold text-white bg-red-700 px-1.5 py-0.5 rounded-full uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
+                              Today
+                            </span>
+                          )}
                           {staffCount > 0 && (
                             <span className={`text-xs font-medium ${hasViolations ? 'text-danger' : hasRequirements ? 'text-success' : 'text-gray-400'}`}>
                               {staffCount} staff · {manDays} man-days
@@ -1365,7 +1383,7 @@ function ScheduleDetailPage() {
                     </td>
                   </tr>
                   {grouped[date].length === 0 && (
-                    <tr className="border-b border-gray-200">
+                    <tr className={`border-b border-gray-200 ${isToday ? 'border-l-4 border-l-navy-700 bg-blue-100/70' : ''}`}>
                       <td colSpan={canEdit ? 5 : 4} className="px-4 py-2 text-gray-400 text-xs italic">
                         No assignments
                       </td>
@@ -1374,7 +1392,7 @@ function ScheduleDetailPage() {
                   {grouped[date].map((a) => {
                     if (editingAssignment === a.id && canEdit) {
                       return (
-                        <tr key={a.id} className="border-b border-gray-200 last:border-0">
+                        <tr key={a.id} className={`border-b border-gray-200 last:border-0 ${isToday ? 'border-l-4 border-l-navy-700 bg-blue-100/70' : ''}`}>
                           <td colSpan={canEdit ? 5 : 4} className="p-0">
                             <div className="border-l-4 border-l-navy-500 bg-blue-50/40 px-4 py-3 space-y-3">
                               {/* Row 1: Staff + Position */}
@@ -1487,7 +1505,7 @@ function ScheduleDetailPage() {
                     const rowWarnings = assignmentWarnings.get(a.id) ?? []
 
                     return (
-                      <tr key={a.id} className="group border-b border-gray-200 last:border-0 hover:bg-gray-50">
+                      <tr key={a.id} className={`group border-b border-gray-200 last:border-0 ${isToday ? 'border-l-4 border-l-navy-700 bg-blue-100/70 hover:bg-blue-100' : 'hover:bg-gray-50'}`}>
                         <td className="px-4 py-2 text-gray-900 font-medium truncate">
                           <div className="flex items-center gap-1.5">
                             {a.staffMemberName}
