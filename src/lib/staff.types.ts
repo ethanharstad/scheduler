@@ -12,6 +12,13 @@ export type StaffAuditAction =
   | 'invitation_resent'
   | 'invitation_accepted'
   | 'rank_changed'
+  | 'trade_proposed'
+  | 'trade_accepted'
+  | 'trade_withdrawn'
+  | 'trade_approved'
+  | 'trade_denied'
+  | 'trade_expired'
+  | 'trade_cancelled_system'
 
 /** Returned by listStaffServerFn */
 export interface StaffMemberView {

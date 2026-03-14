@@ -3,6 +3,7 @@ import { canDo } from '@/lib/rbac'
 import { requireOrgMembership } from '@/server/_helpers'
 import { getOrgStub } from '@/server/_do-helpers'
 import { checkSingleStaffEligibility } from '@/server/qualifications'
+import { cancelActiveTradesForSchedule, cancelActiveTradesForAssignment } from '@/server/trades'
 import type {
   CreateScheduleInput,
   UpdateScheduleInput,
@@ -469,6 +470,9 @@ export const deleteScheduleServerFn = createServerFn({ method: 'POST' })
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
 
+    // Cancel any active trades referencing this schedule before deletion
+    await cancelActiveTradesForSchedule(stub, data.scheduleId)
+
     await stub.execute(`DELETE FROM schedule WHERE id = ?`, data.scheduleId)
 
     return { success: true }
@@ -622,6 +626,13 @@ export const updateAssignmentServerFn = createServerFn({ method: 'POST' })
 
     const now = new Date().toISOString()
 
+    // Cancel active trades if assignment times or staff changed
+    const timesChanged = startDatetime !== existing.start_datetime || endDatetime !== existing.end_datetime
+    const staffChanged = staffMemberId !== existing.staff_member_id
+    if (timesChanged || staffChanged) {
+      await cancelActiveTradesForAssignment(stub, data.assignmentId)
+    }
+
     await stub.execute(
       `UPDATE shift_assignment SET staff_member_id = ?, start_datetime = ?, end_datetime = ?, position = ?, position_id = ?, notes = ?, updated_at = ? WHERE id = ?`,
       staffMemberId, startDatetime, endDatetime, position, positionId, notes, now, data.assignmentId,
@@ -673,6 +684,9 @@ export const deleteAssignmentServerFn = createServerFn({ method: 'POST' })
     ) as Row | null
 
     if (!existing) return { success: false, error: 'NOT_FOUND' }
+
+    // Cancel any active trades referencing this assignment before deletion
+    await cancelActiveTradesForAssignment(stub, data.assignmentId)
 
     await stub.execute(`DELETE FROM shift_assignment WHERE id = ?`, data.assignmentId)
 

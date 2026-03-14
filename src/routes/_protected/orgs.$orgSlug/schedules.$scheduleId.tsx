@@ -1,6 +1,6 @@
 import { useRef, useMemo, useState, useEffect, Fragment } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2, List, CalendarDays, Star, ThumbsDown, Clock } from 'lucide-react'
+import { AlertTriangle, Plus, Trash2, Pencil, Check, X, ChevronDown, Repeat, RefreshCw, CheckCircle2, AlertCircle, Wand2, List, CalendarDays, Star, ThumbsDown, Clock, ArrowRightLeft } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import { formatTime, formatDuration, formatDate, getDatesInRange, addDays } from '@/lib/date-utils'
 import { ScheduleCalendar } from '@/components/ScheduleCalendar'
@@ -474,10 +474,18 @@ function StaffHoursSummary({ assignments }: { assignments: ShiftAssignmentView[]
 
 function ScheduleDetailPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
+  const { session } = useRouteContext({ from: '/_protected' })
   const navigate = useNavigate()
   const loaderData = Route.useLoaderData()
 
   const canEdit = canDo(userRole, 'create-edit-schedules')
+  const canTrade = canDo(userRole, 'submit-trade')
+
+  // Find current user's staff member ID to show "Trade" buttons on their assignments
+  const selfStaffId = useMemo(() => {
+    const match = loaderData.staffMembers.find((m) => m.userId === session.userId)
+    return match?.id ?? null
+  }, [loaderData.staffMembers, session.userId])
 
   if (!loaderData.schedule) {
     return (
@@ -1518,6 +1526,20 @@ function ScheduleDetailPage() {
                                 </button>
                               )}
                             </div>
+                          </td>
+                        )}
+                        {canTrade && schedule.status === 'published' && a.staffMemberId === selfStaffId && (
+                          <td className="px-4 py-2">
+                            <Link
+                              to="/orgs/$orgSlug/trades"
+                              params={{ orgSlug: org.slug }}
+                              search={{ assignmentId: a.id }}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-navy-700 hover:bg-navy-700/10 transition-colors opacity-0 group-hover:opacity-100"
+                              title="Trade this shift"
+                            >
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                              Trade
+                            </Link>
                           </td>
                         )}
                       </tr>

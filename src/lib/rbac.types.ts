@@ -20,6 +20,8 @@ export type Permission =
   | 'manage-forms'
   | 'submit-forms'
   | 'manage-stations'
+  | 'submit-trade'
+  | 'approve-trade'
 
 export interface OrgMemberView {
   memberId: string
