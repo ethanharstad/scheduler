@@ -424,20 +424,6 @@ function StaffPage() {
                         <span className="text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {member.email && (
-                        <span className="flex items-center gap-1">
-                          <Mail className="w-3.5 h-3.5 shrink-0" />
-                          {member.email}
-                        </span>
-                      )}
-                      {member.phone && (
-                        <span className="flex items-center gap-1 mt-0.5">
-                          <Phone className="w-3.5 h-3.5 shrink-0" />
-                          {member.phone}
-                        </span>
-                      )}
-                    </td>
                     <td className="px-4 py-3">
                       {canChangeRoles && member.role !== 'owner' ? (
                         <div className="relative inline-block">
@@ -455,6 +441,20 @@ function StaffPage() {
                         </div>
                       ) : (
                         <span className="text-gray-700">{ROLE_LABELS[member.role]}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {member.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="w-3.5 h-3.5 shrink-0" />
+                          {member.email}
+                        </span>
+                      )}
+                      {member.phone && (
+                        <span className="flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3.5 h-3.5 shrink-0" />
+                          {member.phone}
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3">{statusBadge(member.status)}</td>
