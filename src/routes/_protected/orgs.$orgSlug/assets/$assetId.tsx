@@ -13,6 +13,8 @@ import { describeRRule } from '@/lib/rrule'
 import {
   APPARATUS_STATUSES,
   GEAR_STATUSES,
+  APPARATUS_CATEGORIES,
+  GEAR_CATEGORIES,
 } from '@/lib/asset.types'
 import type { FormFieldDefinition, LinkedEntityType } from '@/lib/form.types'
 import {
@@ -227,6 +229,12 @@ function AssetDetailPage() {
   const [editModel, setEditModel] = useState('')
   const [editSerial, setEditSerial] = useState('')
   const [editExpiration, setEditExpiration] = useState('')
+  const [editManufactureDate, setEditManufactureDate] = useState('')
+  const [editPurchasedDate, setEditPurchasedDate] = useState('')
+  const [editInServiceDate, setEditInServiceDate] = useState('')
+  const [editWarrantyExpiration, setEditWarrantyExpiration] = useState('')
+  const [editUnitNumber, setEditUnitNumber] = useState('')
+  const [editCategory, setEditCategory] = useState('')
   const [editBusy, setEditBusy] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
@@ -460,6 +468,12 @@ function AssetDetailPage() {
     setEditModel(currentAsset.model ?? '')
     setEditSerial(currentAsset.serialNumber ?? '')
     setEditExpiration(currentAsset.expirationDate ?? '')
+    setEditManufactureDate(currentAsset.manufactureDate ?? '')
+    setEditPurchasedDate(currentAsset.purchasedDate ?? '')
+    setEditInServiceDate(currentAsset.inServiceDate ?? '')
+    setEditWarrantyExpiration(currentAsset.warrantyExpirationDate ?? '')
+    setEditUnitNumber(currentAsset.unitNumber ?? '')
+    setEditCategory(currentAsset.category)
     setEditError(null)
     setShowEdit(true)
   }
@@ -473,11 +487,17 @@ function AssetDetailPage() {
         orgSlug: org.slug,
         assetId: currentAsset.id,
         name: editName.trim() || undefined,
+        category: editCategory || undefined,
         make: editMake.trim() || null,
         model: editModel.trim() || null,
         notes: editNotes.trim() || null,
         serialNumber: editSerial.trim() || null,
         expirationDate: editExpiration || null,
+        manufactureDate: editManufactureDate || null,
+        purchasedDate: editPurchasedDate || null,
+        inServiceDate: editInServiceDate || null,
+        warrantyExpirationDate: editWarrantyExpiration || null,
+        unitNumber: editUnitNumber.trim() || undefined,
       },
     })
     setEditBusy(false)
@@ -1282,6 +1302,20 @@ function AssetDetailPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                 <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className={inputClass} required maxLength={200} />
               </div>
+              {currentAsset.assetType === 'apparatus' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Number</label>
+                  <input type="text" value={editUnitNumber} onChange={(e) => setEditUnitNumber(e.target.value)} className={inputClass} />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)} className={inputClass} required>
+                  {(currentAsset.assetType === 'apparatus' ? APPARATUS_CATEGORIES : GEAR_CATEGORIES).map((c) => (
+                    <option key={c} value={c}>{CATEGORY_LABELS[c] ?? c}</option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
@@ -1296,9 +1330,29 @@ function AssetDetailPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
                 <input type="text" value={editSerial} onChange={(e) => setEditSerial(e.target.value)} className={inputClass} />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Manufacture Date</label>
+                  <input type="date" value={editManufactureDate} onChange={(e) => setEditManufactureDate(e.target.value)} className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Date</label>
+                  <input type="date" value={editPurchasedDate} onChange={(e) => setEditPurchasedDate(e.target.value)} className={inputClass} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">In-Service Date</label>
+                  <input type="date" value={editInServiceDate} onChange={(e) => setEditInServiceDate(e.target.value)} className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Expiration Date</label>
+                  <input type="date" value={editExpiration} onChange={(e) => setEditExpiration(e.target.value)} className={inputClass} />
+                </div>
+              </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expiration Date</label>
-                <input type="date" value={editExpiration} onChange={(e) => setEditExpiration(e.target.value)} className={inputClass} />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Warranty Expiration</label>
+                <input type="date" value={editWarrantyExpiration} onChange={(e) => setEditWarrantyExpiration(e.target.value)} className={inputClass} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
