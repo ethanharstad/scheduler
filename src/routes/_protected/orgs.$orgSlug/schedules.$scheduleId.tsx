@@ -1534,7 +1534,7 @@ function ScheduleDetailPage() {
                               to="/orgs/$orgSlug/trades"
                               params={{ orgSlug: org.slug }}
                               search={{ assignmentId: a.id }}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-navy-700 hover:bg-navy-700/10 transition-colors opacity-0 group-hover:opacity-100"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-navy-700 hover:bg-navy-700/10 transition-colors"
                               title="Trade this shift"
                             >
                               <ArrowRightLeft className="w-3.5 h-3.5" />
