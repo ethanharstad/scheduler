@@ -915,6 +915,10 @@ export const removeStaffMemberServerFn = createServerFn({ method: 'POST' })
       }
     }
 
+    // Cancel active trades before removing staff
+    const { cancelActiveTradesForStaffMember } = await import('@/server/trades')
+    await cancelActiveTradesForStaffMember(stub, data.staffMemberId)
+
     // Remove staff + cancel invitations in DO
     await stub.removeStaffMember(data.staffMemberId)
     if (staffRow.status === 'active' && staffRow.user_id) {

@@ -31,6 +31,14 @@ const ACTION_LABELS: Record<StaffAuditAction, string> = {
   invitation_cancelled: 'Invitation Cancelled',
   invitation_resent: 'Invitation Resent',
   invitation_accepted: 'Invitation Accepted',
+  rank_changed: 'Rank Changed',
+  trade_proposed: 'Trade Proposed',
+  trade_accepted: 'Trade Accepted',
+  trade_withdrawn: 'Trade Withdrawn',
+  trade_approved: 'Trade Approved',
+  trade_denied: 'Trade Denied',
+  trade_expired: 'Trade Expired',
+  trade_cancelled_system: 'Trade Cancelled',
 }
 
 const ACTION_BADGE_COLORS: Record<StaffAuditAction, string> = {
@@ -42,6 +50,14 @@ const ACTION_BADGE_COLORS: Record<StaffAuditAction, string> = {
   invitation_cancelled: 'bg-gray-100 text-gray-500',
   invitation_resent: 'bg-warning-bg text-warning',
   invitation_accepted: 'bg-success-bg text-success',
+  rank_changed: 'bg-info-bg text-info',
+  trade_proposed: 'bg-warning-bg text-warning',
+  trade_accepted: 'bg-success-bg text-success',
+  trade_withdrawn: 'bg-gray-100 text-gray-500',
+  trade_approved: 'bg-success-bg text-success',
+  trade_denied: 'bg-danger-bg text-danger',
+  trade_expired: 'bg-gray-100 text-gray-500',
+  trade_cancelled_system: 'bg-gray-100 text-gray-500',
 }
 
 function formatRelativeTime(isoString: string): string {

@@ -24,6 +24,7 @@ import { Route as ProtectedOrgsIndexRouteImport } from './routes/_protected/orgs
 import { Route as ProtectedOrgsOrgSlugRouteImport } from './routes/_protected/orgs.$orgSlug'
 import { Route as ProtectedAdminAdminRouteImport } from './routes/_protected/_admin/admin'
 import { Route as ProtectedOrgsOrgSlugIndexRouteImport } from './routes/_protected/orgs.$orgSlug/index'
+import { Route as ProtectedOrgsOrgSlugTradesRouteImport } from './routes/_protected/orgs.$orgSlug/trades'
 import { Route as ProtectedOrgsOrgSlugStationsRouteImport } from './routes/_protected/orgs.$orgSlug/stations'
 import { Route as ProtectedOrgsOrgSlugStaffRouteImport } from './routes/_protected/orgs.$orgSlug/staff'
 import { Route as ProtectedOrgsOrgSlugSettingsRouteImport } from './routes/_protected/orgs.$orgSlug/settings'
@@ -35,12 +36,15 @@ import { Route as ProtectedOrgsOrgSlugAvailabilityRouteImport } from './routes/_
 import { Route as ProtectedOrgsOrgSlugAssetsRouteImport } from './routes/_protected/orgs.$orgSlug/assets'
 import { Route as ProtectedAdminAdminUsersRouteImport } from './routes/_protected/_admin/admin_.users'
 import { Route as ProtectedAdminAdminOrgsRouteImport } from './routes/_protected/_admin/admin_.orgs'
+import { Route as ProtectedOrgsOrgSlugTradesIndexRouteImport } from './routes/_protected/orgs.$orgSlug/trades.index'
 import { Route as ProtectedOrgsOrgSlugStaffIndexRouteImport } from './routes/_protected/orgs.$orgSlug/staff.index'
 import { Route as ProtectedOrgsOrgSlugSettingsIndexRouteImport } from './routes/_protected/orgs.$orgSlug/settings.index'
 import { Route as ProtectedOrgsOrgSlugSchedulesIndexRouteImport } from './routes/_protected/orgs.$orgSlug/schedules.index'
 import { Route as ProtectedOrgsOrgSlugQualificationsIndexRouteImport } from './routes/_protected/orgs.$orgSlug/qualifications.index'
 import { Route as ProtectedOrgsOrgSlugFormsIndexRouteImport } from './routes/_protected/orgs.$orgSlug/forms/index'
 import { Route as ProtectedOrgsOrgSlugAssetsIndexRouteImport } from './routes/_protected/orgs.$orgSlug/assets/index'
+import { Route as ProtectedOrgsOrgSlugTradesApprovalsRouteImport } from './routes/_protected/orgs.$orgSlug/trades.approvals'
+import { Route as ProtectedOrgsOrgSlugTradesTradeIdRouteImport } from './routes/_protected/orgs.$orgSlug/trades.$tradeId'
 import { Route as ProtectedOrgsOrgSlugStaffAuditRouteImport } from './routes/_protected/orgs.$orgSlug/staff.audit'
 import { Route as ProtectedOrgsOrgSlugStaffStaffMemberIdRouteImport } from './routes/_protected/orgs.$orgSlug/staff.$staffMemberId'
 import { Route as ProtectedOrgsOrgSlugSettingsSchedulingRouteImport } from './routes/_protected/orgs.$orgSlug/settings.scheduling'
@@ -140,6 +144,12 @@ const ProtectedOrgsOrgSlugIndexRoute =
     path: '/',
     getParentRoute: () => ProtectedOrgsOrgSlugRoute,
   } as any)
+const ProtectedOrgsOrgSlugTradesRoute =
+  ProtectedOrgsOrgSlugTradesRouteImport.update({
+    id: '/trades',
+    path: '/trades',
+    getParentRoute: () => ProtectedOrgsOrgSlugRoute,
+  } as any)
 const ProtectedOrgsOrgSlugStationsRoute =
   ProtectedOrgsOrgSlugStationsRouteImport.update({
     id: '/stations',
@@ -205,6 +215,12 @@ const ProtectedAdminAdminOrgsRoute = ProtectedAdminAdminOrgsRouteImport.update({
   path: '/admin/orgs',
   getParentRoute: () => ProtectedAdminRoute,
 } as any)
+const ProtectedOrgsOrgSlugTradesIndexRoute =
+  ProtectedOrgsOrgSlugTradesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ProtectedOrgsOrgSlugTradesRoute,
+  } as any)
 const ProtectedOrgsOrgSlugStaffIndexRoute =
   ProtectedOrgsOrgSlugStaffIndexRouteImport.update({
     id: '/',
@@ -240,6 +256,18 @@ const ProtectedOrgsOrgSlugAssetsIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => ProtectedOrgsOrgSlugAssetsRoute,
+  } as any)
+const ProtectedOrgsOrgSlugTradesApprovalsRoute =
+  ProtectedOrgsOrgSlugTradesApprovalsRouteImport.update({
+    id: '/approvals',
+    path: '/approvals',
+    getParentRoute: () => ProtectedOrgsOrgSlugTradesRoute,
+  } as any)
+const ProtectedOrgsOrgSlugTradesTradeIdRoute =
+  ProtectedOrgsOrgSlugTradesTradeIdRouteImport.update({
+    id: '/$tradeId',
+    path: '/$tradeId',
+    getParentRoute: () => ProtectedOrgsOrgSlugTradesRoute,
   } as any)
 const ProtectedOrgsOrgSlugStaffAuditRoute =
   ProtectedOrgsOrgSlugStaffAuditRouteImport.update({
@@ -410,6 +438,7 @@ export interface FileRoutesByFullPath {
   '/orgs/$orgSlug/settings': typeof ProtectedOrgsOrgSlugSettingsRouteWithChildren
   '/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
   '/orgs/$orgSlug/stations': typeof ProtectedOrgsOrgSlugStationsRoute
+  '/orgs/$orgSlug/trades': typeof ProtectedOrgsOrgSlugTradesRouteWithChildren
   '/orgs/$orgSlug/': typeof ProtectedOrgsOrgSlugIndexRoute
   '/orgs/$orgSlug/assets/$assetId': typeof ProtectedOrgsOrgSlugAssetsAssetIdRoute
   '/orgs/$orgSlug/assets/my-gear': typeof ProtectedOrgsOrgSlugAssetsMyGearRoute
@@ -423,12 +452,15 @@ export interface FileRoutesByFullPath {
   '/orgs/$orgSlug/settings/scheduling': typeof ProtectedOrgsOrgSlugSettingsSchedulingRouteWithChildren
   '/orgs/$orgSlug/staff/$staffMemberId': typeof ProtectedOrgsOrgSlugStaffStaffMemberIdRoute
   '/orgs/$orgSlug/staff/audit': typeof ProtectedOrgsOrgSlugStaffAuditRoute
+  '/orgs/$orgSlug/trades/$tradeId': typeof ProtectedOrgsOrgSlugTradesTradeIdRoute
+  '/orgs/$orgSlug/trades/approvals': typeof ProtectedOrgsOrgSlugTradesApprovalsRoute
   '/orgs/$orgSlug/assets/': typeof ProtectedOrgsOrgSlugAssetsIndexRoute
   '/orgs/$orgSlug/forms/': typeof ProtectedOrgsOrgSlugFormsIndexRoute
   '/orgs/$orgSlug/qualifications/': typeof ProtectedOrgsOrgSlugQualificationsIndexRoute
   '/orgs/$orgSlug/schedules/': typeof ProtectedOrgsOrgSlugSchedulesIndexRoute
   '/orgs/$orgSlug/settings/': typeof ProtectedOrgsOrgSlugSettingsIndexRoute
   '/orgs/$orgSlug/staff/': typeof ProtectedOrgsOrgSlugStaffIndexRoute
+  '/orgs/$orgSlug/trades/': typeof ProtectedOrgsOrgSlugTradesIndexRoute
   '/orgs/$orgSlug/forms/fill/$templateId': typeof ProtectedOrgsOrgSlugFormsFillTemplateIdRoute
   '/orgs/$orgSlug/forms/submissions/$submissionId': typeof ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRoute
   '/orgs/$orgSlug/forms/templates/$templateId': typeof ProtectedOrgsOrgSlugFormsTemplatesTemplateIdRoute
@@ -470,12 +502,15 @@ export interface FileRoutesByTo {
   '/orgs/$orgSlug/settings/scheduling': typeof ProtectedOrgsOrgSlugSettingsSchedulingRouteWithChildren
   '/orgs/$orgSlug/staff/$staffMemberId': typeof ProtectedOrgsOrgSlugStaffStaffMemberIdRoute
   '/orgs/$orgSlug/staff/audit': typeof ProtectedOrgsOrgSlugStaffAuditRoute
+  '/orgs/$orgSlug/trades/$tradeId': typeof ProtectedOrgsOrgSlugTradesTradeIdRoute
+  '/orgs/$orgSlug/trades/approvals': typeof ProtectedOrgsOrgSlugTradesApprovalsRoute
   '/orgs/$orgSlug/assets': typeof ProtectedOrgsOrgSlugAssetsIndexRoute
   '/orgs/$orgSlug/forms': typeof ProtectedOrgsOrgSlugFormsIndexRoute
   '/orgs/$orgSlug/qualifications': typeof ProtectedOrgsOrgSlugQualificationsIndexRoute
   '/orgs/$orgSlug/schedules': typeof ProtectedOrgsOrgSlugSchedulesIndexRoute
   '/orgs/$orgSlug/settings': typeof ProtectedOrgsOrgSlugSettingsIndexRoute
   '/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffIndexRoute
+  '/orgs/$orgSlug/trades': typeof ProtectedOrgsOrgSlugTradesIndexRoute
   '/orgs/$orgSlug/forms/fill/$templateId': typeof ProtectedOrgsOrgSlugFormsFillTemplateIdRoute
   '/orgs/$orgSlug/forms/submissions/$submissionId': typeof ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRoute
   '/orgs/$orgSlug/forms/templates/$templateId': typeof ProtectedOrgsOrgSlugFormsTemplatesTemplateIdRoute
@@ -516,6 +551,7 @@ export interface FileRoutesById {
   '/_protected/orgs/$orgSlug/settings': typeof ProtectedOrgsOrgSlugSettingsRouteWithChildren
   '/_protected/orgs/$orgSlug/staff': typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
   '/_protected/orgs/$orgSlug/stations': typeof ProtectedOrgsOrgSlugStationsRoute
+  '/_protected/orgs/$orgSlug/trades': typeof ProtectedOrgsOrgSlugTradesRouteWithChildren
   '/_protected/orgs/$orgSlug/': typeof ProtectedOrgsOrgSlugIndexRoute
   '/_protected/orgs/$orgSlug/assets/$assetId': typeof ProtectedOrgsOrgSlugAssetsAssetIdRoute
   '/_protected/orgs/$orgSlug/assets/my-gear': typeof ProtectedOrgsOrgSlugAssetsMyGearRoute
@@ -529,12 +565,15 @@ export interface FileRoutesById {
   '/_protected/orgs/$orgSlug/settings/scheduling': typeof ProtectedOrgsOrgSlugSettingsSchedulingRouteWithChildren
   '/_protected/orgs/$orgSlug/staff/$staffMemberId': typeof ProtectedOrgsOrgSlugStaffStaffMemberIdRoute
   '/_protected/orgs/$orgSlug/staff/audit': typeof ProtectedOrgsOrgSlugStaffAuditRoute
+  '/_protected/orgs/$orgSlug/trades/$tradeId': typeof ProtectedOrgsOrgSlugTradesTradeIdRoute
+  '/_protected/orgs/$orgSlug/trades/approvals': typeof ProtectedOrgsOrgSlugTradesApprovalsRoute
   '/_protected/orgs/$orgSlug/assets/': typeof ProtectedOrgsOrgSlugAssetsIndexRoute
   '/_protected/orgs/$orgSlug/forms/': typeof ProtectedOrgsOrgSlugFormsIndexRoute
   '/_protected/orgs/$orgSlug/qualifications/': typeof ProtectedOrgsOrgSlugQualificationsIndexRoute
   '/_protected/orgs/$orgSlug/schedules/': typeof ProtectedOrgsOrgSlugSchedulesIndexRoute
   '/_protected/orgs/$orgSlug/settings/': typeof ProtectedOrgsOrgSlugSettingsIndexRoute
   '/_protected/orgs/$orgSlug/staff/': typeof ProtectedOrgsOrgSlugStaffIndexRoute
+  '/_protected/orgs/$orgSlug/trades/': typeof ProtectedOrgsOrgSlugTradesIndexRoute
   '/_protected/orgs/$orgSlug/forms/fill/$templateId': typeof ProtectedOrgsOrgSlugFormsFillTemplateIdRoute
   '/_protected/orgs/$orgSlug/forms/submissions/$submissionId': typeof ProtectedOrgsOrgSlugFormsSubmissionsSubmissionIdRoute
   '/_protected/orgs/$orgSlug/forms/templates/$templateId': typeof ProtectedOrgsOrgSlugFormsTemplatesTemplateIdRoute
@@ -574,6 +613,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/settings'
     | '/orgs/$orgSlug/staff'
     | '/orgs/$orgSlug/stations'
+    | '/orgs/$orgSlug/trades'
     | '/orgs/$orgSlug/'
     | '/orgs/$orgSlug/assets/$assetId'
     | '/orgs/$orgSlug/assets/my-gear'
@@ -587,12 +627,15 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/settings/scheduling'
     | '/orgs/$orgSlug/staff/$staffMemberId'
     | '/orgs/$orgSlug/staff/audit'
+    | '/orgs/$orgSlug/trades/$tradeId'
+    | '/orgs/$orgSlug/trades/approvals'
     | '/orgs/$orgSlug/assets/'
     | '/orgs/$orgSlug/forms/'
     | '/orgs/$orgSlug/qualifications/'
     | '/orgs/$orgSlug/schedules/'
     | '/orgs/$orgSlug/settings/'
     | '/orgs/$orgSlug/staff/'
+    | '/orgs/$orgSlug/trades/'
     | '/orgs/$orgSlug/forms/fill/$templateId'
     | '/orgs/$orgSlug/forms/submissions/$submissionId'
     | '/orgs/$orgSlug/forms/templates/$templateId'
@@ -634,12 +677,15 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/settings/scheduling'
     | '/orgs/$orgSlug/staff/$staffMemberId'
     | '/orgs/$orgSlug/staff/audit'
+    | '/orgs/$orgSlug/trades/$tradeId'
+    | '/orgs/$orgSlug/trades/approvals'
     | '/orgs/$orgSlug/assets'
     | '/orgs/$orgSlug/forms'
     | '/orgs/$orgSlug/qualifications'
     | '/orgs/$orgSlug/schedules'
     | '/orgs/$orgSlug/settings'
     | '/orgs/$orgSlug/staff'
+    | '/orgs/$orgSlug/trades'
     | '/orgs/$orgSlug/forms/fill/$templateId'
     | '/orgs/$orgSlug/forms/submissions/$submissionId'
     | '/orgs/$orgSlug/forms/templates/$templateId'
@@ -679,6 +725,7 @@ export interface FileRouteTypes {
     | '/_protected/orgs/$orgSlug/settings'
     | '/_protected/orgs/$orgSlug/staff'
     | '/_protected/orgs/$orgSlug/stations'
+    | '/_protected/orgs/$orgSlug/trades'
     | '/_protected/orgs/$orgSlug/'
     | '/_protected/orgs/$orgSlug/assets/$assetId'
     | '/_protected/orgs/$orgSlug/assets/my-gear'
@@ -692,12 +739,15 @@ export interface FileRouteTypes {
     | '/_protected/orgs/$orgSlug/settings/scheduling'
     | '/_protected/orgs/$orgSlug/staff/$staffMemberId'
     | '/_protected/orgs/$orgSlug/staff/audit'
+    | '/_protected/orgs/$orgSlug/trades/$tradeId'
+    | '/_protected/orgs/$orgSlug/trades/approvals'
     | '/_protected/orgs/$orgSlug/assets/'
     | '/_protected/orgs/$orgSlug/forms/'
     | '/_protected/orgs/$orgSlug/qualifications/'
     | '/_protected/orgs/$orgSlug/schedules/'
     | '/_protected/orgs/$orgSlug/settings/'
     | '/_protected/orgs/$orgSlug/staff/'
+    | '/_protected/orgs/$orgSlug/trades/'
     | '/_protected/orgs/$orgSlug/forms/fill/$templateId'
     | '/_protected/orgs/$orgSlug/forms/submissions/$submissionId'
     | '/_protected/orgs/$orgSlug/forms/templates/$templateId'
@@ -830,6 +880,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedOrgsOrgSlugIndexRouteImport
       parentRoute: typeof ProtectedOrgsOrgSlugRoute
     }
+    '/_protected/orgs/$orgSlug/trades': {
+      id: '/_protected/orgs/$orgSlug/trades'
+      path: '/trades'
+      fullPath: '/orgs/$orgSlug/trades'
+      preLoaderRoute: typeof ProtectedOrgsOrgSlugTradesRouteImport
+      parentRoute: typeof ProtectedOrgsOrgSlugRoute
+    }
     '/_protected/orgs/$orgSlug/stations': {
       id: '/_protected/orgs/$orgSlug/stations'
       path: '/stations'
@@ -907,6 +964,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedAdminAdminOrgsRouteImport
       parentRoute: typeof ProtectedAdminRoute
     }
+    '/_protected/orgs/$orgSlug/trades/': {
+      id: '/_protected/orgs/$orgSlug/trades/'
+      path: '/'
+      fullPath: '/orgs/$orgSlug/trades/'
+      preLoaderRoute: typeof ProtectedOrgsOrgSlugTradesIndexRouteImport
+      parentRoute: typeof ProtectedOrgsOrgSlugTradesRoute
+    }
     '/_protected/orgs/$orgSlug/staff/': {
       id: '/_protected/orgs/$orgSlug/staff/'
       path: '/'
@@ -948,6 +1012,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/orgs/$orgSlug/assets/'
       preLoaderRoute: typeof ProtectedOrgsOrgSlugAssetsIndexRouteImport
       parentRoute: typeof ProtectedOrgsOrgSlugAssetsRoute
+    }
+    '/_protected/orgs/$orgSlug/trades/approvals': {
+      id: '/_protected/orgs/$orgSlug/trades/approvals'
+      path: '/approvals'
+      fullPath: '/orgs/$orgSlug/trades/approvals'
+      preLoaderRoute: typeof ProtectedOrgsOrgSlugTradesApprovalsRouteImport
+      parentRoute: typeof ProtectedOrgsOrgSlugTradesRoute
+    }
+    '/_protected/orgs/$orgSlug/trades/$tradeId': {
+      id: '/_protected/orgs/$orgSlug/trades/$tradeId'
+      path: '/$tradeId'
+      fullPath: '/orgs/$orgSlug/trades/$tradeId'
+      preLoaderRoute: typeof ProtectedOrgsOrgSlugTradesTradeIdRouteImport
+      parentRoute: typeof ProtectedOrgsOrgSlugTradesRoute
     }
     '/_protected/orgs/$orgSlug/staff/audit': {
       id: '/_protected/orgs/$orgSlug/staff/audit'
@@ -1341,6 +1419,26 @@ const ProtectedOrgsOrgSlugStaffRouteWithChildren =
     ProtectedOrgsOrgSlugStaffRouteChildren,
   )
 
+interface ProtectedOrgsOrgSlugTradesRouteChildren {
+  ProtectedOrgsOrgSlugTradesTradeIdRoute: typeof ProtectedOrgsOrgSlugTradesTradeIdRoute
+  ProtectedOrgsOrgSlugTradesApprovalsRoute: typeof ProtectedOrgsOrgSlugTradesApprovalsRoute
+  ProtectedOrgsOrgSlugTradesIndexRoute: typeof ProtectedOrgsOrgSlugTradesIndexRoute
+}
+
+const ProtectedOrgsOrgSlugTradesRouteChildren: ProtectedOrgsOrgSlugTradesRouteChildren =
+  {
+    ProtectedOrgsOrgSlugTradesTradeIdRoute:
+      ProtectedOrgsOrgSlugTradesTradeIdRoute,
+    ProtectedOrgsOrgSlugTradesApprovalsRoute:
+      ProtectedOrgsOrgSlugTradesApprovalsRoute,
+    ProtectedOrgsOrgSlugTradesIndexRoute: ProtectedOrgsOrgSlugTradesIndexRoute,
+  }
+
+const ProtectedOrgsOrgSlugTradesRouteWithChildren =
+  ProtectedOrgsOrgSlugTradesRoute._addFileChildren(
+    ProtectedOrgsOrgSlugTradesRouteChildren,
+  )
+
 interface ProtectedOrgsOrgSlugRouteChildren {
   ProtectedOrgsOrgSlugAssetsRoute: typeof ProtectedOrgsOrgSlugAssetsRouteWithChildren
   ProtectedOrgsOrgSlugAvailabilityRoute: typeof ProtectedOrgsOrgSlugAvailabilityRoute
@@ -1351,6 +1449,7 @@ interface ProtectedOrgsOrgSlugRouteChildren {
   ProtectedOrgsOrgSlugSettingsRoute: typeof ProtectedOrgsOrgSlugSettingsRouteWithChildren
   ProtectedOrgsOrgSlugStaffRoute: typeof ProtectedOrgsOrgSlugStaffRouteWithChildren
   ProtectedOrgsOrgSlugStationsRoute: typeof ProtectedOrgsOrgSlugStationsRoute
+  ProtectedOrgsOrgSlugTradesRoute: typeof ProtectedOrgsOrgSlugTradesRouteWithChildren
   ProtectedOrgsOrgSlugIndexRoute: typeof ProtectedOrgsOrgSlugIndexRoute
 }
 
@@ -1367,6 +1466,7 @@ const ProtectedOrgsOrgSlugRouteChildren: ProtectedOrgsOrgSlugRouteChildren = {
     ProtectedOrgsOrgSlugSettingsRouteWithChildren,
   ProtectedOrgsOrgSlugStaffRoute: ProtectedOrgsOrgSlugStaffRouteWithChildren,
   ProtectedOrgsOrgSlugStationsRoute: ProtectedOrgsOrgSlugStationsRoute,
+  ProtectedOrgsOrgSlugTradesRoute: ProtectedOrgsOrgSlugTradesRouteWithChildren,
   ProtectedOrgsOrgSlugIndexRoute: ProtectedOrgsOrgSlugIndexRoute,
 }
 
