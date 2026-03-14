@@ -6,6 +6,7 @@ export type StaffAuditAction =
   | 'member_added'
   | 'member_removed'
   | 'member_linked'
+  | 'member_updated'
   | 'role_changed'
   | 'invitation_sent'
   | 'invitation_cancelled'
@@ -99,6 +100,15 @@ export interface AcceptInvitationInput {
   name?: string
   /** Required when creating a new account */
   password?: string
+}
+
+/** Input for updateStaffMemberServerFn */
+export interface UpdateStaffMemberInput {
+  orgSlug: string
+  staffMemberId: string
+  name?: string
+  email?: string | null
+  phone?: string | null
 }
 
 /** Input for getStaffAuditLogServerFn */

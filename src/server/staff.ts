@@ -15,6 +15,7 @@ import type {
   RemoveStaffMemberInput,
   StaffAuditEntry,
   StaffMemberView,
+  UpdateStaffMemberInput,
 } from '@/lib/staff.types'
 import { requireOrgMembership } from '@/server/_helpers'
 import { getOrgStub } from '@/server/_do-helpers'
@@ -65,7 +66,7 @@ async function sendInvitationEmail(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'noreply@scheduler.tailboardapp.com',
+      from: 'noreply@sceneready.app',
       to,
       subject: `You've been invited to join ${orgName} on Scheduler`,
       html: `<p>${fromLine} you to join <strong>${orgName}</strong> on Scheduler.</p>
@@ -216,6 +217,81 @@ export const addStaffMemberServerFn = createServerFn({ method: 'POST' })
     }
 
     return { success: true, member }
+  })
+
+// ---------------------------------------------------------------------------
+// updateStaffMemberServerFn
+// ---------------------------------------------------------------------------
+
+type UpdateStaffMemberOutput =
+  | { success: true }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION_ERROR' | 'DUPLICATE_EMAIL' }
+
+export const updateStaffMemberServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: UpdateStaffMemberInput) => d)
+  .handler(async (ctx): Promise<UpdateStaffMemberOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+
+    if (!canDo(membership.role, 'invite-members')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    const name = data.name !== undefined ? data.name.trim() : undefined
+    if (name !== undefined && !name) return { success: false, error: 'VALIDATION_ERROR' }
+
+    const email = data.email !== undefined
+      ? (data.email?.trim().toLowerCase() || null)
+      : undefined
+    const phone = data.phone !== undefined
+      ? (data.phone?.trim() || null)
+      : undefined
+
+    const stub = getOrgStub(env, membership.orgId)
+
+    type StaffRow = { name: string; email: string | null; phone: string | null; status: string }
+    const existing = await stub.queryOne(
+      `SELECT name, email, phone, status FROM staff_member WHERE id = ? AND status != 'removed'`,
+      data.staffMemberId,
+    ) as StaffRow | null
+
+    if (!existing) return { success: false, error: 'NOT_FOUND' }
+
+    // Check for duplicate email if it's changing
+    if (email !== undefined && email !== existing.email && email !== null) {
+      const dup = await stub.queryOne(
+        `SELECT id FROM staff_member WHERE email = ? AND id != ? AND status != 'removed'`,
+        email,
+        data.staffMemberId,
+      ) as { id: string } | null
+      if (dup) return { success: false, error: 'DUPLICATE_EMAIL' }
+    }
+
+    const fields: { name?: string; email?: string | null; phone?: string | null } = {}
+    if (name !== undefined) fields.name = name
+    if (email !== undefined) fields.email = email
+    if (phone !== undefined) fields.phone = phone
+
+    if (Object.keys(fields).length === 0) return { success: true }
+
+    await stub.updateStaffDetails(data.staffMemberId, fields)
+
+    const changes: Record<string, string> = {}
+    if (name !== undefined && name !== existing.name) changes.name = name
+    if (email !== undefined && email !== existing.email) changes.email = email ?? ''
+    if (phone !== undefined && phone !== existing.phone) changes.phone = phone ?? ''
+
+    await stub.writeAuditLog({
+      staffMemberId: data.staffMemberId,
+      performedBy: membership.userId,
+      action: 'member_updated',
+      metadata: changes,
+    })
+
+    return { success: true }
   })
 
 // ---------------------------------------------------------------------------

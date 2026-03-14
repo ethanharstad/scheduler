@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, useRouteContext } from '@tanstack/react-router'
-import { AlertTriangle, Star, Award, ChevronDown, Layers, X } from 'lucide-react'
+import { AlertTriangle, Star, Award, ChevronDown, Layers, Pencil, X } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { StaffCertView, StaffMemberDetailView } from '@/lib/qualifications.types'
 import {
@@ -12,6 +12,7 @@ import {
   revokeStaffCertServerFn,
 } from '@/server/qualifications'
 import { listPlatoonsServerFn, getStaffPlatoonServerFn, assignMemberServerFn, removeMemberFromPlatoonServerFn } from '@/server/platoons'
+import { updateStaffMemberServerFn } from '@/server/staff'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/staff/$staffMemberId')({
   loader: async ({ params }) => {
@@ -99,6 +100,16 @@ function StaffDetailPage() {
   const [certs, setCerts] = useState<StaffCertView[]>(loaderData.certs)
   const { ranks, certTypes } = loaderData
 
+  const canEditDetails = canDo(userRole, 'invite-members')
+
+  // Profile editing
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [editName, setEditName] = useState(staffMember?.name ?? '')
+  const [editEmail, setEditEmail] = useState(staffMember?.email ?? '')
+  const [editPhone, setEditPhone] = useState(staffMember?.phone ?? '')
+  const [profileBusy, setProfileBusy] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
+
   // Rank editing
   const [editingRank, setEditingRank] = useState(false)
   const [selectedRankId, setSelectedRankId] = useState(staffMember?.rankId ?? '')
@@ -139,6 +150,35 @@ function StaffDetailPage() {
         <p className="text-gray-500">Staff member not found.</p>
       </div>
     )
+  }
+
+  async function handleSaveProfile() {
+    if (!editName.trim()) { setProfileError('Name is required.'); return }
+    setProfileError(null)
+    setProfileBusy(true)
+    try {
+      const result = await updateStaffMemberServerFn({
+        data: {
+          orgSlug: org.slug,
+          staffMemberId: params.staffMemberId,
+          name: editName.trim(),
+          email: editEmail.trim().toLowerCase() || null,
+          phone: editPhone.trim() || null,
+        },
+      })
+      if (result.success) {
+        setStaffMember((prev) =>
+          prev
+            ? { ...prev, name: editName.trim(), email: editEmail.trim().toLowerCase() || null, phone: editPhone.trim() || null }
+            : prev,
+        )
+        setEditingProfile(false)
+      } else {
+        setProfileError(result.error === 'DUPLICATE_EMAIL' ? 'That email is already used by another staff member.' : 'Failed to save changes.')
+      }
+    } finally {
+      setProfileBusy(false)
+    }
   }
 
   async function handleSaveRank() {
@@ -275,25 +315,86 @@ function StaffDetailPage() {
       {/* Profile header */}
       <div className="rounded-lg border border-gray-200 bg-white p-6 mb-6">
         <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-navy-700">{staffMember.name}</h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-sm text-gray-500">{ROLE_LABELS[staffMember.role] ?? staffMember.role}</span>
-              <span className="text-gray-300">·</span>
-              <span className="text-sm text-gray-500">{STATUS_LABELS[staffMember.status] ?? staffMember.status}</span>
-              {staffMember.email && (
-                <>
+          <div className="flex-1 min-w-0">
+            {editingProfile ? (
+              <div className="space-y-3 max-w-md">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Name <span className="text-danger">*</span></label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+                  />
+                </div>
+                {profileError && <p className="text-sm text-danger">{profileError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => void handleSaveProfile()}
+                    disabled={profileBusy}
+                    className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold"
+                  >
+                    {profileBusy ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => { setEditingProfile(false); setProfileError(null); setEditName(staffMember.name); setEditEmail(staffMember.email ?? ''); setEditPhone(staffMember.phone ?? '') }}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold text-navy-700">{staffMember.name}</h1>
+                  {canEditDetails && (
+                    <button
+                      onClick={() => { setEditName(staffMember.name); setEditEmail(staffMember.email ?? ''); setEditPhone(staffMember.phone ?? ''); setEditingProfile(true) }}
+                      className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors"
+                      title="Edit staff details"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <span className="text-sm text-gray-500">{ROLE_LABELS[staffMember.role] ?? staffMember.role}</span>
                   <span className="text-gray-300">·</span>
-                  <span className="text-sm text-gray-500">{staffMember.email}</span>
-                </>
-              )}
-              {staffMember.phone && (
-                <>
-                  <span className="text-gray-300">·</span>
-                  <span className="text-sm text-gray-500">{staffMember.phone}</span>
-                </>
-              )}
-            </div>
+                  <span className="text-sm text-gray-500">{STATUS_LABELS[staffMember.status] ?? staffMember.status}</span>
+                  {staffMember.email && (
+                    <>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-sm text-gray-500">{staffMember.email}</span>
+                    </>
+                  )}
+                  {staffMember.phone && (
+                    <>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-sm text-gray-500">{staffMember.phone}</span>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
           </div>
           {/* Rank */}
           <div className="flex items-center gap-2">

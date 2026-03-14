@@ -380,6 +380,20 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
     )
   }
 
+  async updateStaffDetails(
+    staffId: string,
+    fields: { name?: string; email?: string | null; phone?: string | null },
+  ): Promise<void> {
+    const now = new Date().toISOString()
+    const sets: string[] = ['updated_at = ?']
+    const params: unknown[] = [now]
+    if (fields.name !== undefined) { sets.push('name = ?'); params.push(fields.name) }
+    if ('email' in fields) { sets.push('email = ?'); params.push(fields.email ?? null) }
+    if ('phone' in fields) { sets.push('phone = ?'); params.push(fields.phone ?? null) }
+    params.push(staffId)
+    this.sql.exec(`UPDATE staff_member SET ${sets.join(', ')} WHERE id = ?`, ...params)
+  }
+
   async removeStaffMember(staffId: string): Promise<void> {
     const now = new Date().toISOString()
     this.sql.exec(
