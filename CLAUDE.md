@@ -211,6 +211,20 @@ const days = Math.ceil(ms / 86400000)
 - `src/db/` — D1 database schema reference
 - `specs/` — Feature specs, plans, data models, and task checklists (001–007)
 
+## Feature Tracking
+
+Two root-level markdown files track feature status:
+
+- **`FEATURES.md`** — All implemented features with descriptions and spec references.
+- **`ROADMAP.md`** — Planned features not yet implemented.
+
+**Maintenance rules (follow these whenever completing a feature):**
+1. When a feature from `ROADMAP.md` is fully implemented, **remove it from `ROADMAP.md`** and **add a corresponding entry to `FEATURES.md`** with a brief description and a link to its spec directory (if one exists).
+2. When starting a new feature that isn't on the roadmap, add it to `ROADMAP.md` first. Move it to `FEATURES.md` upon completion.
+3. Keep entries concise — a heading, spec reference, and 2–4 sentence summary.
+4. `FEATURES.md` also has an "Additional Implemented Capabilities" section for features built without a numbered spec. Add to this section when appropriate.
+5. `specs/roadmap.md` is the original strategic roadmap document (read-only reference). `ROADMAP.md` is the living working copy that gets updated as features ship.
+
 ## Key Domain Concepts
 
 - **Staff vs Members:** `org_membership` tracks platform users' roles within an org. `staff_member` tracks personnel on the roster (may or may not be linked to a platform user via `user_id`). Staff with `roster_only` status exist only on paper; `pending` have been invited; `active` have accepted.
