@@ -1528,7 +1528,7 @@ function ScheduleDetailPage() {
                             </div>
                           </td>
                         )}
-                        {canTrade && schedule.status === 'published' && a.staffMemberId === selfStaffId && (
+                        {canTrade && schedule.status === 'published' && a.staffMemberId === selfStaffId && a.startDatetime > new Date().toISOString() && (
                           <td className="px-4 py-2">
                             <Link
                               to="/orgs/$orgSlug/trades"
