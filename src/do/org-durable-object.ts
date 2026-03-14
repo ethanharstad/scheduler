@@ -239,10 +239,15 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
   async listStaff(): Promise<StaffMemberView[]> {
     const rows = [
       ...this.sql.exec(
-        `SELECT id, name, email, phone, role, status, user_id, created_at, updated_at
-         FROM staff_member
-         WHERE status != 'removed'
-         ORDER BY name ASC`,
+        `SELECT sm.id, sm.name, sm.email, sm.phone, sm.role, sm.status, sm.user_id, sm.created_at, sm.updated_at,
+                r.name AS rank_name, r.sort_order AS rank_sort_order,
+                p.name AS platoon_name, p.color AS platoon_color
+         FROM staff_member sm
+         LEFT JOIN rank r ON r.id = sm.rank_id
+         LEFT JOIN platoon_membership pm ON pm.staff_member_id = sm.id
+         LEFT JOIN platoon p ON p.id = pm.platoon_id
+         WHERE sm.status != 'removed'
+         ORDER BY sm.name ASC`,
       ),
     ] as Array<Record<string, unknown>>
 
@@ -254,6 +259,10 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
       role: r['role'] as OrgRole,
       status: r['status'] as StaffMemberView['status'],
       userId: (r['user_id'] as string) ?? null,
+      rankName: (r['rank_name'] as string) ?? null,
+      rankSortOrder: (r['rank_sort_order'] as number) ?? null,
+      platoonName: (r['platoon_name'] as string) ?? null,
+      platoonColor: (r['platoon_color'] as string) ?? null,
       addedAt: r['created_at'] as string,
       updatedAt: r['updated_at'] as string,
     }))
@@ -262,8 +271,14 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
   async getStaffMember(staffId: string): Promise<StaffMemberView | null> {
     const row = this.sql
       .exec(
-        `SELECT id, name, email, phone, role, status, user_id, created_at, updated_at
-         FROM staff_member WHERE id = ?`,
+        `SELECT sm.id, sm.name, sm.email, sm.phone, sm.role, sm.status, sm.user_id, sm.created_at, sm.updated_at,
+                r.name AS rank_name, r.sort_order AS rank_sort_order,
+                p.name AS platoon_name, p.color AS platoon_color
+         FROM staff_member sm
+         LEFT JOIN rank r ON r.id = sm.rank_id
+         LEFT JOIN platoon_membership pm ON pm.staff_member_id = sm.id
+         LEFT JOIN platoon p ON p.id = pm.platoon_id
+         WHERE sm.id = ?`,
         staffId,
       )
       .one() as Record<string, unknown> | undefined
@@ -276,6 +291,10 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
       role: row['role'] as OrgRole,
       status: row['status'] as StaffMemberView['status'],
       userId: (row['user_id'] as string) ?? null,
+      rankName: (row['rank_name'] as string) ?? null,
+      rankSortOrder: (row['rank_sort_order'] as number) ?? null,
+      platoonName: (row['platoon_name'] as string) ?? null,
+      platoonColor: (row['platoon_color'] as string) ?? null,
       addedAt: row['created_at'] as string,
       updatedAt: row['updated_at'] as string,
     }
@@ -308,6 +327,10 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
       role: input.role,
       status: input.userId ? 'active' : 'roster_only',
       userId: input.userId,
+      rankName: null,
+      rankSortOrder: null,
+      platoonName: null,
+      platoonColor: null,
       addedAt: now,
       updatedAt: now,
     }

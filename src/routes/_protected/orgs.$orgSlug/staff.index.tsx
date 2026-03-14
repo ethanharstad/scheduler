@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { UserPlus, Mail, Phone, Send, X, RefreshCw, Trash2, ChevronDown } from 'lucide-react'
+import { UserPlus, Mail, Phone, Send, X, RefreshCw, Trash2, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 import type { OrgRole } from '@/lib/org.types'
 import type { StaffMemberView } from '@/lib/staff.types'
@@ -36,6 +36,7 @@ const ROLE_LABELS: Record<OrgRole, string> = {
 
 const ALL_ROLES: OrgRole[] = ['owner', 'admin', 'manager', 'employee', 'payroll_hr']
 const ASSIGNABLE_ROLES: OrgRole[] = ['admin', 'manager', 'employee', 'payroll_hr']
+const ROLE_ORDER: Record<OrgRole, number> = { owner: 0, admin: 1, manager: 2, payroll_hr: 3, employee: 4 }
 
 function statusBadge(status: StaffMemberView['status']) {
   if (status === 'active') {
@@ -76,6 +77,41 @@ function StaffPage() {
   const [busyMember, setBusyMember] = useState<string | null>(null)
   const [memberError, setMemberError] = useState<Record<string, string>>({})
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
+
+  type SortKey = 'name' | 'rank' | 'role' | 'platoon'
+  type SortDir = 'asc' | 'desc'
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const sortedMembers = useMemo(() => {
+    return [...members].sort((a, b) => {
+      let cmp = 0
+      if (sortKey === 'name') {
+        cmp = a.name.localeCompare(b.name)
+      } else if (sortKey === 'rank') {
+        const aOrder = a.rankSortOrder ?? Infinity
+        const bOrder = b.rankSortOrder ?? Infinity
+        cmp = aOrder !== bOrder ? aOrder - bOrder : a.name.localeCompare(b.name)
+      } else if (sortKey === 'role') {
+        cmp = ROLE_ORDER[a.role] - ROLE_ORDER[b.role]
+        if (cmp === 0) cmp = a.name.localeCompare(b.name)
+      } else if (sortKey === 'platoon') {
+        const aP = a.platoonName ?? ''
+        const bP = b.platoonName ?? ''
+        cmp = aP !== bP ? aP.localeCompare(bP) : a.name.localeCompare(b.name)
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [members, sortKey, sortDir])
 
   const canManage = canDo(userRole, 'invite-members')
   const canChangeRoles = canDo(userRole, 'assign-roles')
@@ -329,9 +365,24 @@ function StaffPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Name</th>
+                {(['name', 'rank', 'platoon', 'role'] as const).map((key) => (
+                  <th
+                    key={key}
+                    onClick={() => handleSort(key)}
+                    className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide cursor-pointer select-none hover:text-navy-700 transition-colors"
+                    style={{ fontFamily: 'var(--font-condensed)' }}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {key.charAt(0).toUpperCase() + key.slice(1)}
+                      {sortKey === key ? (
+                        sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      ) : (
+                        <ChevronsUpDown className="w-3 h-3 text-gray-400" />
+                      )}
+                    </span>
+                  </th>
+                ))}
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Contact</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Role</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Status</th>
                 {(canManage || canChangeRoles || canRemove) && (
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>Actions</th>
@@ -339,7 +390,7 @@ function StaffPage() {
               </tr>
             </thead>
             <tbody>
-              {members.map((member) => {
+              {sortedMembers.map((member) => {
                 const busy = busyMember === member.id
                 const error = memberError[member.id]
                 const confirming = confirmRemove === member.id
@@ -354,6 +405,24 @@ function StaffPage() {
                       >
                         {member.name}
                       </Link>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-sm">
+                      {member.rankName ?? <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {member.platoonName ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {member.platoonColor && (
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: member.platoonColor }}
+                            />
+                          )}
+                          <span className="text-gray-700">{member.platoonName}</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       {member.email && (

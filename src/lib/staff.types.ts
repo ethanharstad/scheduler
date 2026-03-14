@@ -22,6 +22,10 @@ export interface StaffMemberView {
   role: OrgRole
   status: StaffStatus
   userId: string | null
+  rankName: string | null
+  rankSortOrder: number | null
+  platoonName: string | null
+  platoonColor: string | null
   addedAt: string
   updatedAt: string
 }
