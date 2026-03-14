@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- 
+    Scene Ready — Reversed Icon Mark
+    Use for: icons on dark backgrounds, dark mode UI, apparatus graphics
+  -->
+  <!-- Upper Chevron — White -->
+  <path d="M 50 12 L 88 44 L 88 58 L 50 28 L 12 58 L 12 44 Z" fill="#FFFFFF"/>
+  <!-- Lower Chevron — Red -->
+  <path d="M 50 38 L 88 70 L 88 84 L 50 54 L 12 84 L 12 70 Z" fill="#C8102E"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 
+    Scene Ready — Favicon / App Icon
+    Use for: browser favicons, PWA icons, social avatars
+    Export at: 512, 192, 180, 128, 48, 32, 16
+  -->
+  <!-- Navy circle background -->
+  <circle cx="256" cy="256" r="256" fill="#1B2A4A"/>
+  <!-- Upper Chevron — White -->
+  <path d="M 256 100 L 420 230 L 420 278 L 256 152 L 92 278 L 92 230 Z" fill="#FFFFFF"/>
+  <!-- Lower Chevron — Red -->
+  <path d="M 256 196 L 420 326 L 420 374 L 256 248 L 92 374 L 92 326 Z" fill="#C8102E"/>
+</svg>

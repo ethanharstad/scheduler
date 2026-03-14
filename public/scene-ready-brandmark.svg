@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200">
+  <!-- 
+    Scene Ready — Parent Brand Mark
+    The Chevron Pair
+    
+    Colors:
+      Navy: #1B2A4A
+      Red:  #C8102E
+    
+    Font: Barlow (700 for wordmark, 400 for tagline)
+    Minimum width: 160px
+    Clear space: height of one chevron on all sides
+  -->
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;700&amp;display=swap');
+    </style>
+  </defs>
+
+  <!-- Chevron Pair Icon -->
+  <g transform="translate(68, 58)">
+    <!-- Upper Chevron — Navy -->
+    <path d="M 0 -48 L 36 -12 L 36 6 L 0 -30 L -36 6 L -36 -12 Z" fill="#1B2A4A"/>
+    <!-- Lower Chevron — Red -->
+    <path d="M 0 -16 L 36 20 L 36 38 L 0 2 L -36 38 L -36 20 Z" fill="#C8102E"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="122" y="52" font-family="'Barlow', system-ui, sans-serif" font-weight="700" font-size="36" fill="#1B2A4A" letter-spacing="5">SCENE READY</text>
+
+  <!-- Divider -->
+  <line x1="122" y1="64" x2="270" y2="64" stroke="#C8102E" stroke-width="1.5"/>
+
+  <!-- Tagline -->
+  <text x="122" y="82" font-family="'Barlow', system-ui, sans-serif" font-weight="400" font-size="11" fill="#9CA3AF" letter-spacing="3">PREPARED TO PERFORM</text>
+</svg>
