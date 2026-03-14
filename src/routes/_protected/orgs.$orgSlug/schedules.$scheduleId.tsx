@@ -1629,6 +1629,212 @@ function ScheduleDetailPage() {
           busy={applyConstraintsConfirmBusy}
         />
       )}
+
+      {viewType === 'calendar' && editingAssignment !== null && (() => {
+        const a = assignments.find((x) => x.id === editingAssignment)
+        return a ? (
+          <EditAssignmentModal
+            assignment={a}
+            staffMembers={staffMembers}
+            positions={positions}
+            staffId={editAssignStaffId}
+            startDatetime={editAssignStart}
+            endDatetime={editAssignEnd}
+            position={editAssignPosition}
+            positionId={editAssignPositionId}
+            notes={editAssignNotes}
+            busy={editAssignBusy}
+            warnings={assignmentWarnings.get(editingAssignment) ?? []}
+            setStaffId={setEditAssignStaffId}
+            setStartDatetime={setEditAssignStart}
+            setEndDatetime={setEditAssignEnd}
+            setPosition={setEditAssignPosition}
+            setPositionId={setEditAssignPositionId}
+            setNotes={setEditAssignNotes}
+            onSave={() => void handleUpdateAssignment(editingAssignment)}
+            onClose={() => setEditingAssignment(null)}
+            onDelete={() => void handleDeleteAssignment(editingAssignment)}
+          />
+        ) : null
+      })()}
+    </div>
+  )
+}
+
+interface EditAssignmentModalProps {
+  assignment: ShiftAssignmentView
+  staffMembers: StaffMemberView[]
+  positions: PositionView[]
+  staffId: string
+  startDatetime: string
+  endDatetime: string
+  position: string
+  positionId: string
+  notes: string
+  busy: boolean
+  warnings: EligibilityWarning[]
+  setStaffId: (v: string) => void
+  setStartDatetime: (v: string) => void
+  setEndDatetime: (v: string) => void
+  setPosition: (v: string) => void
+  setPositionId: (v: string) => void
+  setNotes: (v: string) => void
+  onSave: () => void
+  onClose: () => void
+  onDelete: () => void
+}
+
+function EditAssignmentModal({ assignment, staffMembers, positions, staffId, startDatetime, endDatetime, position, positionId, notes, busy, warnings, setStaffId, setStartDatetime, setEndDatetime, setPosition, setPositionId, setNotes, onSave, onClose, onDelete }: EditAssignmentModalProps) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-navy-700">Edit Assignment</h2>
+            <p className="text-xs text-gray-500 mt-0.5">{assignment.staffMemberName}</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          {warnings.length > 0 && (
+            <div className="flex items-start gap-2 px-3 py-2 bg-warning-bg rounded-md">
+              <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+              <p className="text-xs text-warning">{warnings.map((w) => w.type + (w.certTypeName ? `: ${w.certTypeName}` : '')).join(', ')}</p>
+            </div>
+          )}
+
+          {/* Staff + Position */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Staff Member</label>
+              <div className="relative">
+                <select
+                  value={staffId}
+                  onChange={(e) => setStaffId(e.target.value)}
+                  className="w-full appearance-none px-2 py-1.5 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+                >
+                  {staffMembers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-1.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Position</label>
+              {positions.length > 0 ? (
+                <div>
+                  <div className="relative">
+                    <select
+                      value={positionId}
+                      onChange={(e) => {
+                        const pid = e.target.value
+                        setPositionId(pid)
+                        if (pid) {
+                          const pos = positions.find((p) => p.id === pid)
+                          if (pos) setPosition(pos.name)
+                        }
+                      }}
+                      className="w-full appearance-none px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500"
+                    >
+                      <option value="">Custom / none</option>
+                      {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-1.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                  </div>
+                  {!positionId && (
+                    <input type="text" value={position} onChange={(e) => setPosition(e.target.value)} className="w-full mt-1 px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" placeholder="Custom label" />
+                  )}
+                </div>
+              ) : (
+                <input type="text" value={position} onChange={(e) => setPosition(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" />
+              )}
+            </div>
+          </div>
+
+          {/* Start / End */}
+          <div className="flex items-end gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
+              <div className="flex gap-1">
+                <input
+                  type="date"
+                  value={startDatetime.slice(0, 10)}
+                  onChange={(e) => setStartDatetime(e.target.value + 'T' + (startDatetime.slice(11, 16) || '00:00'))}
+                  className="px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500"
+                />
+                <input
+                  type="time"
+                  value={startDatetime.slice(11, 16)}
+                  onChange={(e) => setStartDatetime((startDatetime.slice(0, 10) || '') + 'T' + e.target.value)}
+                  className="px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500 w-24"
+                />
+              </div>
+            </div>
+            <span className="text-gray-400 pb-2">→</span>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">End</label>
+              <div className="flex gap-1">
+                <input
+                  type="date"
+                  value={endDatetime.slice(0, 10)}
+                  onChange={(e) => setEndDatetime(e.target.value + 'T' + (endDatetime.slice(11, 16) || '00:00'))}
+                  className="px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500"
+                />
+                <input
+                  type="time"
+                  value={endDatetime.slice(11, 16)}
+                  onChange={(e) => setEndDatetime((endDatetime.slice(0, 10) || '') + 'T' + e.target.value)}
+                  className="px-2 py-1.5 bg-white border border-gray-300 rounded-md text-xs focus:outline-none focus:border-navy-500 w-24"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:border-navy-500" placeholder="Optional" />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-200 shrink-0">
+          <div>
+            {confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">Delete?</span>
+                <button type="button" onClick={onDelete} disabled={busy} className="px-3 py-1.5 bg-danger hover:opacity-90 disabled:opacity-50 text-white rounded-md text-sm">
+                  Yes
+                </button>
+                <button type="button" onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-sm">
+                  No
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setConfirmDelete(true)} className="px-3 py-1.5 text-danger hover:bg-danger-bg rounded-md text-sm transition-colors">
+                Delete
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={onClose} disabled={busy} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 transition-colors">
+              Cancel
+            </button>
+            <button type="button" onClick={onSave} disabled={busy} className="px-4 py-2 bg-navy-700 hover:bg-navy-800 disabled:opacity-50 text-white rounded-md text-sm transition-colors">
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
