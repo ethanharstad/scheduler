@@ -706,7 +706,7 @@ function ScheduleDetailPage() {
     )
   }
 
-  function applyQuickShift(preset: '24h' | 'day' | 'night') {
+  function applyQuickShift(preset: '24h' | 'day' | 'night' | '7a4p' | '4p7a') {
     const dateStr = addStartDatetime ? addStartDatetime.slice(0, 10) : schedule.startDate
     const [y, m, d] = dateStr.split('-').map(Number)
     const nextDay = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
@@ -716,8 +716,14 @@ function ScheduleDetailPage() {
     } else if (preset === 'day') {
       setAddStartDatetime(`${dateStr}T07:00`)
       setAddEndDatetime(`${dateStr}T19:00`)
-    } else {
+    } else if (preset === 'night') {
       setAddStartDatetime(`${dateStr}T19:00`)
+      setAddEndDatetime(`${nextDay}T07:00`)
+    } else if (preset === '7a4p') {
+      setAddStartDatetime(`${dateStr}T07:00`)
+      setAddEndDatetime(`${dateStr}T16:00`)
+    } else {
+      setAddStartDatetime(`${dateStr}T16:00`)
       setAddEndDatetime(`${nextDay}T07:00`)
     }
   }
@@ -1235,6 +1241,8 @@ function ScheduleDetailPage() {
                           { label: '24h (7A–7A)', preset: '24h' as const },
                           { label: 'Day (7A–7P)', preset: 'day' as const },
                           { label: 'Night (7P–7A)', preset: 'night' as const },
+                          { label: '7A–4P', preset: '7a4p' as const },
+                          { label: '4P–7A', preset: '4p7a' as const },
                         ] as const).map(({ label, preset }) => (
                           <button
                             key={preset}
