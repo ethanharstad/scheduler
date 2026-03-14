@@ -8,7 +8,6 @@ function SchedulesLayout() {
   const { orgSlug } = Route.useParams()
   const { pathname } = useLocation()
   const isPlatoons = pathname.includes('/schedules/platoons')
-  const isRequirements = pathname.endsWith('/requirements')
 
   return (
     <div>
@@ -19,24 +18,12 @@ function SchedulesLayout() {
           params={{ orgSlug }}
           className={[
             'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-            !isRequirements && !isPlatoons
+            !isPlatoons
               ? 'border-red-700 text-red-700'
               : 'border-transparent text-gray-500 hover:text-navy-700 hover:border-gray-300',
           ].join(' ')}
         >
           Schedules
-        </Link>
-        <Link
-          to="/orgs/$orgSlug/schedules/requirements"
-          params={{ orgSlug }}
-          className={[
-            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-            isRequirements
-              ? 'border-red-700 text-red-700'
-              : 'border-transparent text-gray-500 hover:text-navy-700 hover:border-gray-300',
-          ].join(' ')}
-        >
-          Requirements
         </Link>
         <Link
           to="/orgs/$orgSlug/schedules/platoons"

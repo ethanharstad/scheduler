@@ -1,82 +1,104 @@
-import { useState } from 'react'
-import { createFileRoute, redirect, useRouteContext } from '@tanstack/react-router'
+import { createFileRoute, Link, Outlet, redirect, useRouteContext } from '@tanstack/react-router'
+import { Award, Briefcase, ClipboardList, Settings, Star } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
-import { updateOrgSettingsServerFn } from '@/server/org'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/settings')({
-  head: () => ({
-    meta: [{ title: 'Settings | Scene Ready' }],
-  }),
   beforeLoad: async ({ context }) => {
     if (!canDo(context.userRole, 'edit-org-settings')) {
       throw redirect({ to: '/orgs/$orgSlug', params: { orgSlug: context.org.slug } })
     }
   },
-  component: OrgSettingsPage,
+  component: SettingsLayout,
 })
 
-function OrgSettingsPage() {
-  const { org } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
-  const [scheduleDayStart, setScheduleDayStart] = useState(org.scheduleDayStart)
-  const [saving, setSaving] = useState(false)
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+function NavLink({
+  to,
+  params,
+  icon,
+  label,
+  exact,
+}: {
+  to: string
+  params: Record<string, string>
+  icon: React.ReactNode
+  label: string
+  exact?: boolean
+}) {
+  return (
+    <Link
+      to={to as never}
+      params={params as never}
+      activeOptions={exact ? { exact: true } : undefined}
+      className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:text-navy-700 hover:bg-gray-50 transition-colors [&.active]:bg-navy-50 [&.active]:text-navy-700"
+    >
+      {icon}
+      {label}
+    </Link>
+  )
+}
 
-  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setSaving(true)
-    setFeedback(null)
-    try {
-      const result = await updateOrgSettingsServerFn({ data: { orgSlug: org.slug, scheduleDayStart } })
-      if (result.success) {
-        setFeedback({ type: 'success', message: 'Settings saved.' })
-      } else {
-        setFeedback({ type: 'error', message: result.error === 'FORBIDDEN' ? 'You do not have permission to edit settings.' : 'Failed to save settings.' })
-      }
-    } catch {
-      setFeedback({ type: 'error', message: 'An unexpected error occurred.' })
-    } finally {
-      setSaving(false)
-    }
-  }
+function SettingsLayout() {
+  const { org } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
+  const slug = org.slug
 
   return (
-    <div className="max-w-lg">
-      <div className="border border-gray-200 rounded-lg bg-white p-6">
-        <h1 className="text-xl font-bold text-navy-700 mb-6">Organization Settings</h1>
-
-        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
-          <div>
-            <label htmlFor="scheduleDayStart" className="block text-sm font-medium text-gray-700 mb-1">
-              Schedule Day Start
-            </label>
-            <p className="text-xs text-gray-500 mb-2">
-              The time that marks the start of a scheduling day. Use 07:00 for departments running 24-hour shifts from 0700 to 0700.
-            </p>
-            <input
-              id="scheduleDayStart"
-              type="time"
-              value={scheduleDayStart}
-              onChange={(e) => setScheduleDayStart(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-700 focus:border-navy-700"
+    <div className="flex gap-8">
+      {/* Left sub-nav */}
+      <aside className="w-44 shrink-0">
+        <p
+          className="text-xs font-semibold text-gray-400 uppercase tracking-widest px-3 mb-2"
+          style={{ fontFamily: 'var(--font-condensed)' }}
+        >
+          Settings
+        </p>
+        <ul className="space-y-0.5">
+          <li>
+            <NavLink
+              to="/orgs/$orgSlug/settings/"
+              params={{ orgSlug: slug }}
+              icon={<Settings className="w-4 h-4" />}
+              label="General"
+              exact
             />
-          </div>
+          </li>
+          <li>
+            <NavLink
+              to="/orgs/$orgSlug/settings/qualifications/ranks"
+              params={{ orgSlug: slug }}
+              icon={<Star className="w-4 h-4" />}
+              label="Ranks"
+            />
+          </li>
+          <li>
+            <NavLink
+              to="/orgs/$orgSlug/settings/qualifications/cert-types"
+              params={{ orgSlug: slug }}
+              icon={<Award className="w-4 h-4" />}
+              label="Cert Types"
+            />
+          </li>
+          <li>
+            <NavLink
+              to="/orgs/$orgSlug/settings/qualifications/positions"
+              params={{ orgSlug: slug }}
+              icon={<Briefcase className="w-4 h-4" />}
+              label="Positions"
+            />
+          </li>
+          <li>
+            <NavLink
+              to="/orgs/$orgSlug/settings/scheduling/requirements"
+              params={{ orgSlug: slug }}
+              icon={<ClipboardList className="w-4 h-4" />}
+              label="Scheduling"
+            />
+          </li>
+        </ul>
+      </aside>
 
-          {feedback && (
-            <p className={`text-sm ${feedback.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
-              {feedback.message}
-            </p>
-          )}
-
-          <div>
-            <button
-              type="submit"
-              disabled={saving}
-              className="bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors"
-            >
-              {saving ? 'Saving…' : 'Save Settings'}
-            </button>
-          </div>
-        </form>
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <Outlet />
       </div>
     </div>
   )

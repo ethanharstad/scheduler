@@ -54,11 +54,20 @@ function useBreadcrumbs(): Crumb[] {
     if (pathname === `${base}/staff/audit`) return [{ label: 'Staff', to: '/orgs/$orgSlug/staff', params: { orgSlug: slug } }, { label: 'Audit Log' }]
     if (pathname === `${base}/stations`) return [{ label: 'Stations' }]
     if (pathname === `${base}/members`) return [{ label: 'Members' }]
-    if (pathname === `${base}/settings`) return [{ label: 'Settings' }]
+    if (pathname === `${base}/settings` || pathname === `${base}/settings/`) return [{ label: 'Settings' }]
+    if (pathname === `${base}/settings/qualifications/ranks`) {
+      return [{ label: 'Settings', to: '/orgs/$orgSlug/settings', params: { orgSlug: slug } }, { label: 'Ranks' }]
+    }
+    if (pathname === `${base}/settings/qualifications/cert-types`) {
+      return [{ label: 'Settings', to: '/orgs/$orgSlug/settings', params: { orgSlug: slug } }, { label: 'Cert Types' }]
+    }
+    if (pathname === `${base}/settings/qualifications/positions`) {
+      return [{ label: 'Settings', to: '/orgs/$orgSlug/settings', params: { orgSlug: slug } }, { label: 'Positions' }]
+    }
     if (pathname === `${base}/availability`) return [{ label: 'Availability' }]
     if (pathname === `${base}/schedules`) return [{ label: 'Schedules' }]
-    if (pathname === `${base}/schedules/requirements`) {
-      return [{ label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Requirements' }]
+    if (pathname === `${base}/settings/scheduling/requirements`) {
+      return [{ label: 'Settings', to: '/orgs/$orgSlug/settings', params: { orgSlug: slug } }, { label: 'Requirements' }]
     }
     if (pathname === `${base}/schedules/platoons`) {
       return [{ label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: 'Platoons' }]
@@ -72,12 +81,9 @@ function useBreadcrumbs(): Crumb[] {
       const scheduleName = loaderData?.schedule?.name ?? 'Schedule'
       return [{ label: 'Schedules', to: '/orgs/$orgSlug/schedules', params: { orgSlug: slug } }, { label: scheduleName }]
     }
-    if (pathname === `${base}/qualifications`) return [{ label: 'Qualifications' }]
-    if (pathname === `${base}/qualifications/certifications`) {
-      return [{ label: 'Qualifications', to: '/orgs/$orgSlug/qualifications', params: { orgSlug: slug } }, { label: 'Certification Status' }]
-    }
+    if (pathname === `${base}/qualifications/certifications`) return [{ label: 'Qualifications' }]
     if (pathname.startsWith(`${base}/qualifications/positions/`)) {
-      return [{ label: 'Qualifications', to: '/orgs/$orgSlug/qualifications', params: { orgSlug: slug } }, { label: 'Eligibility' }]
+      return [{ label: 'Qualifications', to: '/orgs/$orgSlug/qualifications/certifications', params: { orgSlug: slug } }, { label: 'Eligibility' }]
     }
     if (pathname === `${base}/assets`) return [{ label: 'Assets' }]
     if (pathname === `${base}/assets/new`) return [{ label: 'Assets', to: '/orgs/$orgSlug/assets', params: { orgSlug: slug } }, { label: 'New Asset' }]
@@ -370,7 +376,7 @@ function ProtectedLayout() {
               />
               {canDo(effectiveOrgCtx.userRole, 'view-certifications') && (
                 <NavItem
-                  to="/orgs/$orgSlug/qualifications"
+                  to="/orgs/$orgSlug/qualifications/certifications"
                   params={{ orgSlug: effectiveOrgCtx.org.slug }}
                   icon={<GraduationCap className="w-5 h-5" />}
                   label="Qualifications"

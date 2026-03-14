@@ -821,7 +821,7 @@ export const listPositionsServerFn = createServerFn({ method: 'GET' })
       `SELECT p.id, p.name, p.description, p.min_rank_id, p.sort_order, r.name AS min_rank_name
        FROM position p
        LEFT JOIN rank r ON r.id = p.min_rank_id
-       ORDER BY p.sort_order DESC, p.name ASC`,
+       ORDER BY p.sort_order ASC, p.name ASC`,
     ) as PosRow[]
     if (posList.length === 0) return { success: true, positions: [] }
 

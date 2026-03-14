@@ -13,6 +13,36 @@
 	"observability": {
 		"enabled": true
 	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "scene-ready-dev",
+			"database_id": "373d1e8d-fca2-4623-af5a-9b3c119b8b66",
+			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "PROFILE_PHOTOS",
+			"bucket_name": "scene-ready-dev"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "ORG_DO",
+				"class_name": "OrgDurableObject"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"OrgDurableObject"
+			]
+		}
+	],
 	"env": {
 		"dev": {
 			"routes": [
