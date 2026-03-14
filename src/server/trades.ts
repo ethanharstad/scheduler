@@ -356,6 +356,152 @@ export const getTradeServerFn = createServerFn({ method: 'GET' })
   })
 
 // ---------------------------------------------------------------------------
+// getMyTradeableAssignmentsServerFn — future assignments from published schedules
+// ---------------------------------------------------------------------------
+
+export type TradeableAssignment = {
+  id: string
+  scheduleId: string
+  scheduleName: string
+  staffMemberId: string
+  staffMemberName: string
+  startDatetime: string
+  endDatetime: string
+  position: string | null
+  positionId: string | null
+}
+
+type GetMyTradeableAssignmentsOutput =
+  | { success: true; assignments: TradeableAssignment[] }
+  | { success: false; error: 'UNAUTHORIZED' | 'NO_STAFF_RECORD' }
+
+export const getMyTradeableAssignmentsServerFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { orgSlug: string }) => d)
+  .handler(async (ctx): Promise<GetMyTradeableAssignmentsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+
+    const stub = getOrgStub(env, membership.orgId)
+    const selfStaffId = await resolveStaffMemberId(env, membership.orgId, membership.userId)
+    if (!selfStaffId) return { success: false, error: 'NO_STAFF_RECORD' }
+
+    const now = new Date().toISOString()
+
+    type Row = {
+      id: string
+      schedule_id: string
+      schedule_name: string
+      staff_member_id: string
+      staff_member_name: string
+      start_datetime: string
+      end_datetime: string
+      position: string | null
+      position_id: string | null
+    }
+
+    const rows = (await stub.query(
+      `SELECT sa.id, sa.schedule_id, s.name AS schedule_name,
+              sa.staff_member_id, sm.name AS staff_member_name,
+              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id
+       FROM shift_assignment sa
+       JOIN schedule s ON s.id = sa.schedule_id
+       JOIN staff_member sm ON sm.id = sa.staff_member_id
+       WHERE sa.staff_member_id = ?
+         AND s.status = 'published'
+         AND sa.start_datetime > ?
+         AND NOT EXISTS (
+           SELECT 1 FROM shift_trade t
+           WHERE t.offering_assignment_id = sa.id
+             AND t.status IN ${ACTIVE_STATUSES}
+         )
+       ORDER BY sa.start_datetime ASC`,
+      selfStaffId,
+      now,
+    )) as Row[]
+
+    return {
+      success: true,
+      assignments: rows.map((r) => ({
+        id: r.id,
+        scheduleId: r.schedule_id,
+        scheduleName: r.schedule_name,
+        staffMemberId: r.staff_member_id,
+        staffMemberName: r.staff_member_name,
+        startDatetime: r.start_datetime,
+        endDatetime: r.end_datetime,
+        position: r.position,
+        positionId: r.position_id,
+      })),
+    }
+  })
+
+// ---------------------------------------------------------------------------
+// getStaffAssignmentsServerFn — get future assignments for a specific staff member (for directed swaps)
+// ---------------------------------------------------------------------------
+
+type GetStaffAssignmentsOutput =
+  | { success: true; assignments: TradeableAssignment[] }
+  | { success: false; error: 'UNAUTHORIZED' | 'NOT_FOUND' }
+
+export const getStaffAssignmentsServerFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { orgSlug: string; staffMemberId: string }) => d)
+  .handler(async (ctx): Promise<GetStaffAssignmentsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+
+    const stub = getOrgStub(env, membership.orgId)
+    const now = new Date().toISOString()
+
+    type Row = {
+      id: string
+      schedule_id: string
+      schedule_name: string
+      staff_member_id: string
+      staff_member_name: string
+      start_datetime: string
+      end_datetime: string
+      position: string | null
+      position_id: string | null
+    }
+
+    const rows = (await stub.query(
+      `SELECT sa.id, sa.schedule_id, s.name AS schedule_name,
+              sa.staff_member_id, sm.name AS staff_member_name,
+              sa.start_datetime, sa.end_datetime, sa.position, sa.position_id
+       FROM shift_assignment sa
+       JOIN schedule s ON s.id = sa.schedule_id
+       JOIN staff_member sm ON sm.id = sa.staff_member_id
+       WHERE sa.staff_member_id = ?
+         AND s.status = 'published'
+         AND sa.start_datetime > ?
+       ORDER BY sa.start_datetime ASC`,
+      data.staffMemberId,
+      now,
+    )) as Row[]
+
+    return {
+      success: true,
+      assignments: rows.map((r) => ({
+        id: r.id,
+        scheduleId: r.schedule_id,
+        scheduleName: r.schedule_name,
+        staffMemberId: r.staff_member_id,
+        staffMemberName: r.staff_member_name,
+        startDatetime: r.start_datetime,
+        endDatetime: r.end_datetime,
+        position: r.position,
+        positionId: r.position_id,
+      })),
+    }
+  })
+
+// ---------------------------------------------------------------------------
 // createTradeServerFn
 // ---------------------------------------------------------------------------
 
