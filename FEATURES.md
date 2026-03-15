@@ -90,3 +90,6 @@ Staff can submit time-off requests, unavailability, preferred/not-preferred time
 
 ### Form System
 Template-based forms with versioned field definitions, a visual form builder (`FieldBuilder`), and a form renderer for submissions. Supports equipment inspection, property inspection, medication, and custom categories. Submissions link to asset inspection schedules or arbitrary entities. System-level templates (D1) and org-level templates (Durable Object).
+
+### Toast Notification System
+Framework-agnostic toast notification system with four semantic types (success, info, warning, danger). Features auto-dismiss for success/info toasts, persistent warning/danger toasts, CSS slide animations with `prefers-reduced-motion` support, ARIA live region for screen readers, Escape key dismissal, and a max stack of 5 toasts. Integrated at the app root via `ToastContainer` component; callable from any component via `useToast()` hook.
