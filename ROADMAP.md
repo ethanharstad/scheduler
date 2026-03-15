@@ -10,13 +10,10 @@ For development principles and strategic context, see `specs/roadmap.md`.
 
 *High-value collaboration feature; major pain point in existing tools.*
 
-- Staff-initiated shift trade requests (offer to another named staff member)
-- Open shift posting (offer shift to any eligible staff)
-- Manager approval workflows for all trades and pickups
-- Coverage request from manager (solicit volunteers for an open shift)
-- Overtime and eligibility enforcement at the point of swap
+- Overtime and eligibility enforcement at the point of swap (currently warnings only, not enforced)
+- Partial coverage requests — allow multiple staff to each cover a time slice of a single open shift (workaround: manager posts separate coverage requests for each time slice)
 
-**Exit criteria:** An employee can request a trade, a qualified colleague can accept, and a manager can approve or deny — all in-app.
+**Exit criteria:** Overtime rules block ineligible trades automatically; a single open shift can be split across multiple volunteers.
 
 ---
 

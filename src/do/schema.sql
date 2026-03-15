@@ -473,12 +473,12 @@ CREATE INDEX IF NOT EXISTS idx_frv_field_number ON form_response_value(field_key
 CREATE TABLE IF NOT EXISTS shift_trade (
   id                      TEXT NOT NULL PRIMARY KEY,
 
-  -- The shift being offered (or portion of it)
-  offering_assignment_id  TEXT NOT NULL REFERENCES shift_assignment(id) ON DELETE CASCADE,
-  offering_staff_id       TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
-  offering_schedule_id    TEXT NOT NULL REFERENCES schedule(id) ON DELETE CASCADE,
-  offering_start_datetime TEXT NOT NULL,
-  offering_end_datetime   TEXT NOT NULL,
+  -- The shift being offered (or portion of it) — NULL for coverage_request
+  offering_assignment_id  TEXT REFERENCES shift_assignment(id) ON DELETE CASCADE,
+  offering_staff_id       TEXT REFERENCES staff_member(id) ON DELETE CASCADE,
+  offering_schedule_id    TEXT REFERENCES schedule(id) ON DELETE CASCADE,
+  offering_start_datetime TEXT,
+  offering_end_datetime   TEXT,
 
   -- The shift given in return (NULL for open board posts and giveaways pre-acceptance)
   receiving_assignment_id  TEXT REFERENCES shift_assignment(id) ON DELETE SET NULL,
@@ -486,6 +486,15 @@ CREATE TABLE IF NOT EXISTS shift_trade (
   receiving_schedule_id    TEXT REFERENCES schedule(id) ON DELETE SET NULL,
   receiving_start_datetime TEXT,
   receiving_end_datetime   TEXT,
+
+  -- Coverage request fields (NULL for swap/giveaway)
+  coverage_schedule_id    TEXT REFERENCES schedule(id) ON DELETE CASCADE,
+  coverage_position_id    TEXT REFERENCES position(id) ON DELETE SET NULL,
+  coverage_position_name  TEXT,
+  coverage_start_datetime TEXT,
+  coverage_end_datetime   TEXT,
+  coverage_notes          TEXT,
+  created_by_staff_id     TEXT REFERENCES staff_member(id),
 
   trade_type       TEXT NOT NULL DEFAULT 'swap',
   status           TEXT NOT NULL DEFAULT 'pending_acceptance',
@@ -502,7 +511,7 @@ CREATE TABLE IF NOT EXISTS shift_trade (
   updated_at       TEXT NOT NULL,
   expires_at       TEXT,
 
-  CHECK (trade_type IN ('swap', 'giveaway')),
+  CHECK (trade_type IN ('swap', 'giveaway', 'coverage_request')),
   CHECK (status IN (
     'pending_acceptance', 'pending_approval',
     'approved', 'denied', 'withdrawn', 'expired', 'cancelled_system'
@@ -514,3 +523,22 @@ CREATE INDEX IF NOT EXISTS idx_shift_trade_receiving_staff  ON shift_trade(recei
 CREATE INDEX IF NOT EXISTS idx_shift_trade_status           ON shift_trade(status);
 CREATE INDEX IF NOT EXISTS idx_shift_trade_open_board       ON shift_trade(is_open_board, status);
 CREATE INDEX IF NOT EXISTS idx_shift_trade_offering_assign  ON shift_trade(offering_assignment_id);
+CREATE INDEX IF NOT EXISTS idx_shift_trade_coverage_sched   ON shift_trade(coverage_schedule_id, status);
+
+-- ============================================================
+-- Coverage Applications (for coverage_request trades)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS coverage_application (
+  id              TEXT NOT NULL PRIMARY KEY,
+  trade_id        TEXT NOT NULL REFERENCES shift_trade(id) ON DELETE CASCADE,
+  staff_member_id TEXT NOT NULL REFERENCES staff_member(id) ON DELETE CASCADE,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  notes           TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  CHECK (status IN ('pending', 'selected', 'not_selected', 'withdrawn'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_coverage_app_trade_staff ON coverage_application(trade_id, staff_member_id);
+CREATE INDEX IF NOT EXISTS idx_coverage_app_trade ON coverage_application(trade_id, status);

@@ -1,4 +1,4 @@
-export type TradeType = 'swap' | 'giveaway'
+export type TradeType = 'swap' | 'giveaway' | 'coverage_request'
 
 export type TradeStatus =
   | 'pending_acceptance'
@@ -18,13 +18,14 @@ export interface ShiftTradeView {
   reason: string | null
   denialReason: string | null
 
-  offeringStaffId: string
-  offeringStaffName: string
-  offeringAssignmentId: string
-  offeringScheduleId: string
-  offeringScheduleName: string
-  offeringStartDatetime: string
-  offeringEndDatetime: string
+  // Offering side — NULL for coverage_request trades
+  offeringStaffId: string | null
+  offeringStaffName: string | null
+  offeringAssignmentId: string | null
+  offeringScheduleId: string | null
+  offeringScheduleName: string | null
+  offeringStartDatetime: string | null
+  offeringEndDatetime: string | null
   offeringPosition: string | null
   offeringPositionId: string | null
   /** Whether the trade covers only a portion of the full assignment */
@@ -40,6 +41,20 @@ export interface ShiftTradeView {
   receivingPosition: string | null
   receivingPositionId: string | null
   receivingIsPartial: boolean
+
+  // Coverage request fields — NULL for swap/giveaway
+  coverageScheduleId: string | null
+  coverageScheduleName: string | null
+  coveragePositionId: string | null
+  coveragePositionName: string | null
+  coverageStartDatetime: string | null
+  coverageEndDatetime: string | null
+  coverageNotes: string | null
+  createdByStaffId: string | null
+  createdByStaffName: string | null
+
+  // Application count (for coverage requests on the board)
+  applicationCount: number
 
   reviewerName: string | null
   reviewedAt: string | null
@@ -102,4 +117,41 @@ export interface ListTradesInput {
 export interface GetTradeInput {
   orgSlug: string
   tradeId: string
+}
+
+/** Input for creating a coverage request */
+export interface CreateCoverageRequestInput {
+  orgSlug: string
+  scheduleId: string
+  positionId?: string
+  startDatetime: string
+  endDatetime: string
+  reason?: string
+  notes?: string
+}
+
+/** Input for applying to a coverage request */
+export interface ApplyForCoverageInput {
+  orgSlug: string
+  tradeId: string
+  notes?: string
+}
+
+/** Input for selecting an applicant for a coverage request */
+export interface SelectApplicantInput {
+  orgSlug: string
+  tradeId: string
+  applicationId: string
+}
+
+/** Coverage application view */
+export interface CoverageApplicationView {
+  id: string
+  tradeId: string
+  staffMemberId: string
+  staffMemberName: string
+  rankName: string | null
+  status: 'pending' | 'selected' | 'not_selected' | 'withdrawn'
+  notes: string | null
+  createdAt: string
 }

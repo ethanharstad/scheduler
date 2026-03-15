@@ -23,6 +23,7 @@ import {
 import { listStaffServerFn } from '@/server/staff'
 import { listPositionsServerFn, checkPositionEligibilityServerFn } from '@/server/qualifications'
 import { listScheduleRequirementsServerFn } from '@/server/schedule-requirements'
+import { createCoverageRequestServerFn } from '@/server/trades'
 
 export const Route = createFileRoute(
   '/_protected/orgs/$orgSlug/schedules/$scheduleId',
@@ -657,6 +658,7 @@ function ScheduleDetailPage() {
 
   // Add assignment state
   const [showAddForm, setShowAddForm] = useState(false)
+  const [addOpenShift, setAddOpenShift] = useState(false)
   const [addStaffId, setAddStaffId] = useState('')
   const [addStartDatetime, setAddStartDatetime] = useState('')
   const [addEndDatetime, setAddEndDatetime] = useState('')
@@ -808,6 +810,7 @@ function ScheduleDetailPage() {
     setAddEveryNDays(1); setAddStartingFrom(schedule.startDate)
     setAddRecurrenceMode('days-of-week')
     setAddPosition(''); setAddPositionId(''); setAddNotes(''); setAddRecurring(false)
+    setAddOpenShift(false)
     setShowAddForm(false)
   }
 
@@ -841,6 +844,43 @@ function ScheduleDetailPage() {
   async function handleAddAssignment(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     setAddError(null)
+
+    // Open shift → create coverage request instead
+    if (addOpenShift) {
+      if (!addStartDatetime || !addEndDatetime) { setAddError('Start and end times are required.'); return }
+      if (addEndDatetime <= addStartDatetime) { setAddError('End time must be after start time.'); return }
+      setAddBusy(true)
+      try {
+        const result = await createCoverageRequestServerFn({
+          data: {
+            orgSlug: org.slug,
+            scheduleId: schedule.id,
+            positionId: addPositionId || undefined,
+            startDatetime: new Date(addStartDatetime).toISOString(),
+            endDatetime: new Date(addEndDatetime).toISOString(),
+            notes: addNotes.trim() || undefined,
+          },
+        })
+        if (result.success) {
+          resetAddForm()
+        } else {
+          const msgs: Record<string, string> = {
+            UNAUTHORIZED: 'You are not authorized.',
+            FORBIDDEN: 'You do not have permission.',
+            NOT_FOUND: 'Schedule or position not found.',
+            NO_STAFF_RECORD: 'You are not linked to a staff record. Contact an admin.',
+            VALIDATION_ERROR: 'Please check form fields.',
+            DRAFT_SCHEDULE: 'Schedule must be published to post open shifts.',
+            SHIFT_STARTED: 'This shift time is in the past.',
+          }
+          setAddError(msgs[result.error] ?? result.error)
+        }
+      } finally {
+        setAddBusy(false)
+      }
+      return
+    }
+
     if (!addStaffId) { setAddError('Select a staff member.'); return }
 
     setAddBusy(true)
@@ -1156,45 +1196,68 @@ function ScheduleDetailPage() {
           ) : (
             <form ref={addFormRef} onSubmit={handleAddAssignment} className="p-5 rounded-lg border border-gray-200 bg-white">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-base font-semibold text-navy-700">New assignment</h2>
-                <button
-                  type="button"
-                  onClick={() => setAddRecurring((v) => !v)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${addRecurring ? 'bg-navy-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                >
-                  <Repeat className="w-3.5 h-3.5" />
-                  {addRecurring ? 'Recurring' : 'Repeat…'}
-                </button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    Staff Member <span className="text-danger">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={addStaffId}
-                      onChange={(e) => setAddStaffId(e.target.value)}
-                      className="w-full appearance-none px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
-                    >
-                      <option value="">Select staff member…</option>
-                      {staffMembers.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-                  </div>
-                  {!addRecurring && (
+                <h2 className="text-base font-semibold text-navy-700">
+                  {addOpenShift ? 'Post open shift' : 'New assignment'}
+                </h2>
+                <div className="flex items-center gap-2">
+                  {schedule.status === 'published' && (
                     <button
                       type="button"
-                      onClick={() => setShowWizard(true)}
-                      className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1 border border-navy-500 text-navy-700 hover:bg-navy-50 rounded-md text-xs font-medium transition-colors"
+                      onClick={() => { setAddOpenShift((v) => !v); setAddRecurring(false) }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${addOpenShift ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                     >
-                      <Wand2 className="w-3.5 h-3.5" />
-                      Find Available Staff
+                      <Plus className="w-3.5 h-3.5" />
+                      {addOpenShift ? 'Open Shift' : 'Open Shift…'}
+                    </button>
+                  )}
+                  {!addOpenShift && (
+                    <button
+                      type="button"
+                      onClick={() => setAddRecurring((v) => !v)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${addRecurring ? 'bg-navy-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      <Repeat className="w-3.5 h-3.5" />
+                      {addRecurring ? 'Recurring' : 'Repeat…'}
                     </button>
                   )}
                 </div>
+              </div>
+              {addOpenShift && (
+                <p className="text-sm text-gray-500 mb-3">
+                  Post this shift to the trade board for staff to apply. A manager can then select an applicant.
+                </p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {!addOpenShift && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">
+                      Staff Member <span className="text-danger">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={addStaffId}
+                        onChange={(e) => setAddStaffId(e.target.value)}
+                        className="w-full appearance-none px-3 py-2 bg-white border border-gray-300 rounded-md text-gray-900 text-sm focus:outline-none focus:border-navy-500"
+                      >
+                        <option value="">Select staff member…</option>
+                        {staffMembers.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                    </div>
+                    {!addRecurring && (
+                      <button
+                        type="button"
+                        onClick={() => setShowWizard(true)}
+                        className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1 border border-navy-500 text-navy-700 hover:bg-navy-50 rounded-md text-xs font-medium transition-colors"
+                      >
+                        <Wand2 className="w-3.5 h-3.5" />
+                        Find Available Staff
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1">Position</label>
                   {positions.length > 0 ? (
@@ -1237,7 +1300,7 @@ function ScheduleDetailPage() {
                     />
                   )}
                 </div>
-                {addRecurring ? (
+                {addRecurring && !addOpenShift ? (
                   <>
                     <div>
                       <label className="block text-sm font-medium text-gray-600 mb-1">
@@ -1392,8 +1455,8 @@ function ScheduleDetailPage() {
               </div>
               {addError && <p className="mt-3 text-sm text-danger">{addError}</p>}
               <div className="flex items-center gap-3 mt-4">
-                <button type="submit" disabled={addBusy} className="px-4 py-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors">
-                  {addBusy ? (addRecurring ? 'Adding shifts…' : 'Adding…') : (addRecurring ? `Add recurring shifts` : 'Add assignment')}
+                <button type="submit" disabled={addBusy} className={`px-4 py-2 ${addOpenShift ? 'bg-blue-700 hover:bg-blue-800' : 'bg-red-700 hover:bg-red-800'} disabled:opacity-50 text-white rounded-md text-sm font-semibold transition-colors`}>
+                  {addBusy ? (addOpenShift ? 'Posting…' : addRecurring ? 'Adding shifts…' : 'Adding…') : (addOpenShift ? 'Post Open Shift' : addRecurring ? `Add recurring shifts` : 'Add assignment')}
                 </button>
                 <button type="button" onClick={() => { resetAddForm(); setAddError(null) }} className="px-4 py-2 text-gray-500 hover:text-gray-900 text-sm transition-colors">
                   Cancel

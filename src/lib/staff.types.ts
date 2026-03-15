@@ -20,6 +20,9 @@ export type StaffAuditAction =
   | 'trade_denied'
   | 'trade_expired'
   | 'trade_cancelled_system'
+  | 'coverage_requested'
+  | 'coverage_applied'
+  | 'coverage_selected'
 
 /** Returned by listStaffServerFn */
 export interface StaffMemberView {

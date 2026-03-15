@@ -84,6 +84,84 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
     this.sql.exec(ORG_SCHEMA_SQL)
     // Additive migrations for existing DO instances
     try { this.sql.exec(`ALTER TABLE org_settings ADD COLUMN quick_shifts TEXT`) } catch { /* already exists */ }
+    // Migrate shift_trade: make offering columns nullable + add coverage columns.
+    // SQLite doesn't support ALTER COLUMN, so we recreate the table if needed.
+    this.migrateShiftTradeTable()
+  }
+
+  private migrateShiftTradeTable(): void {
+    // Check if migration is needed by looking for coverage_schedule_id column
+    try {
+      this.sql.exec(`SELECT coverage_schedule_id FROM shift_trade LIMIT 0`)
+      return // Column exists — already migrated or fresh table
+    } catch {
+      // Column missing — need to migrate
+    }
+
+    // Recreate shift_trade with nullable offering fields and coverage columns
+    this.sql.exec(`ALTER TABLE shift_trade RENAME TO shift_trade_old`)
+    this.sql.exec(`CREATE TABLE shift_trade (
+      id                      TEXT NOT NULL PRIMARY KEY,
+      offering_assignment_id  TEXT REFERENCES shift_assignment(id) ON DELETE CASCADE,
+      offering_staff_id       TEXT REFERENCES staff_member(id) ON DELETE CASCADE,
+      offering_schedule_id    TEXT REFERENCES schedule(id) ON DELETE CASCADE,
+      offering_start_datetime TEXT,
+      offering_end_datetime   TEXT,
+      receiving_assignment_id  TEXT REFERENCES shift_assignment(id) ON DELETE SET NULL,
+      receiving_staff_id       TEXT REFERENCES staff_member(id) ON DELETE SET NULL,
+      receiving_schedule_id    TEXT REFERENCES schedule(id) ON DELETE SET NULL,
+      receiving_start_datetime TEXT,
+      receiving_end_datetime   TEXT,
+      coverage_schedule_id    TEXT REFERENCES schedule(id) ON DELETE CASCADE,
+      coverage_position_id    TEXT REFERENCES position(id) ON DELETE SET NULL,
+      coverage_position_name  TEXT,
+      coverage_start_datetime TEXT,
+      coverage_end_datetime   TEXT,
+      coverage_notes          TEXT,
+      created_by_staff_id     TEXT REFERENCES staff_member(id),
+      trade_type       TEXT NOT NULL DEFAULT 'swap',
+      status           TEXT NOT NULL DEFAULT 'pending_acceptance',
+      is_open_board    INTEGER NOT NULL DEFAULT 0,
+      reason           TEXT,
+      denial_reason    TEXT,
+      accepted_by      TEXT,
+      accepted_at      TEXT,
+      reviewer_id      TEXT,
+      reviewed_at      TEXT,
+      created_at       TEXT NOT NULL,
+      updated_at       TEXT NOT NULL,
+      expires_at       TEXT,
+      CHECK (trade_type IN ('swap', 'giveaway', 'coverage_request')),
+      CHECK (status IN (
+        'pending_acceptance', 'pending_approval',
+        'approved', 'denied', 'withdrawn', 'expired', 'cancelled_system'
+      ))
+    )`)
+    this.sql.exec(`INSERT INTO shift_trade (
+      id, offering_assignment_id, offering_staff_id, offering_schedule_id,
+      offering_start_datetime, offering_end_datetime,
+      receiving_assignment_id, receiving_staff_id, receiving_schedule_id,
+      receiving_start_datetime, receiving_end_datetime,
+      trade_type, status, is_open_board, reason, denial_reason,
+      accepted_by, accepted_at, reviewer_id, reviewed_at,
+      created_at, updated_at, expires_at
+    ) SELECT
+      id, offering_assignment_id, offering_staff_id, offering_schedule_id,
+      offering_start_datetime, offering_end_datetime,
+      receiving_assignment_id, receiving_staff_id, receiving_schedule_id,
+      receiving_start_datetime, receiving_end_datetime,
+      trade_type, status, is_open_board, reason, denial_reason,
+      accepted_by, accepted_at, reviewer_id, reviewed_at,
+      created_at, updated_at, expires_at
+    FROM shift_trade_old`)
+    this.sql.exec(`DROP TABLE shift_trade_old`)
+    // Recreate indexes
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_shift_trade_offering_staff ON shift_trade(offering_staff_id, status)`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_shift_trade_receiving_staff ON shift_trade(receiving_staff_id, status)`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_shift_trade_status ON shift_trade(status)`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_shift_trade_open_board ON shift_trade(is_open_board, status)`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_shift_trade_offering_assign ON shift_trade(offering_assignment_id)`)
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_shift_trade_coverage_sched ON shift_trade(coverage_schedule_id, status)`)
   }
 
   // =========================================================================
@@ -582,7 +660,7 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
       'staff_constraint', 'schedule_requirement',
       'asset', 'asset_location', 'asset_inspection_schedule', 'asset_audit_log',
       'form_template', 'form_template_version', 'form_submission', 'form_response_value',
-      'shift_trade',
+      'shift_trade', 'coverage_application',
     ]
     const result: Record<string, unknown[]> = {}
     for (const table of tables) {
@@ -597,7 +675,7 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
     const deleteOrder = [
       'form_response_value', 'form_submission', 'form_template_version',
       'asset_audit_log', 'asset_inspection_schedule', 'asset_location',
-      'shift_trade', 'shift_assignment', 'schedule',
+      'coverage_application', 'shift_trade', 'shift_assignment', 'schedule',
       'schedule_requirement', 'staff_constraint',
       'platoon_membership', 'platoon',
       'staff_certification', 'staff_audit_log', 'staff_invitation', 'staff_member',
@@ -617,7 +695,7 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
       'staff_constraint', 'schedule_requirement',
       'asset', 'asset_location', 'asset_inspection_schedule', 'asset_audit_log',
       'form_submission', 'form_response_value',
-      'shift_trade',
+      'shift_trade', 'coverage_application',
     ]
 
     // Clear all tables

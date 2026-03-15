@@ -24,6 +24,7 @@ function TradesLayout() {
         <Link
           to="/orgs/$orgSlug/trades"
           params={{ orgSlug }}
+          search={{ assignmentId: undefined }}
           className={[
             'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
             !isApprovals

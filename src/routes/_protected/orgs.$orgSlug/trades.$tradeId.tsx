@@ -1,14 +1,17 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createFileRoute, Link, useRouteContext } from '@tanstack/react-router'
-import { ArrowRightLeft, Gift, ArrowLeft, Check, X, AlertTriangle, Clock } from 'lucide-react'
+import { ArrowRightLeft, Gift, ArrowLeft, Check, X, AlertTriangle, Clock, UserPlus, Users } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
-import type { ShiftTradeView, TradeStatus } from '@/lib/trade.types'
+import type { ShiftTradeView, TradeStatus, CoverageApplicationView } from '@/lib/trade.types'
 import type { EligibilityWarning } from '@/lib/qualifications.types'
 import {
   getTradeServerFn,
   acceptTradeServerFn,
   withdrawTradeServerFn,
   reviewTradeServerFn,
+  listCoverageApplicationsServerFn,
+  applyForCoverageServerFn,
+  selectCoverageApplicantServerFn,
 } from '@/server/trades'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/trades/$tradeId')({
@@ -62,12 +65,35 @@ function TradeDetailPage() {
   const [denyReason, setDenyReason] = useState('')
   const [showDenyForm, setShowDenyForm] = useState(false)
 
+  // Coverage request state
+  const [applications, setApplications] = useState<CoverageApplicationView[]>([])
+  const [loadingApps, setLoadingApps] = useState(false)
+  const [applyBusy, setApplyBusy] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
+
+  const isCoverage = trade?.tradeType === 'coverage_request'
+  const canApprove = canDo(userRole, 'approve-trade')
+  const canSubmit = canDo(userRole, 'submit-trade')
+
+  // Load applications for coverage requests
+  useEffect(() => {
+    if (isCoverage && trade) {
+      setLoadingApps(true)
+      listCoverageApplicationsServerFn({ data: { orgSlug, tradeId } })
+        .then((result) => {
+          if (result.success) setApplications(result.applications)
+        })
+        .finally(() => setLoadingApps(false))
+    }
+  }, [isCoverage, trade?.id, orgSlug, tradeId])
+
   if (!trade) {
     return (
       <div className="space-y-4">
         <Link
           to="/orgs/$orgSlug/trades"
           params={{ orgSlug }}
+          search={{ assignmentId: undefined }}
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-navy-700 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" /> Back to Trades
@@ -81,7 +107,6 @@ function TradeDetailPage() {
 
   const t = trade
   const statusConfig = STATUS_CONFIG[t.status]
-  const canApprove = canDo(userRole, 'approve-trade')
   const isActive = t.status === 'pending_acceptance' || t.status === 'pending_approval'
 
   async function handleWithdraw() {
@@ -136,11 +161,56 @@ function TradeDetailPage() {
     }
   }
 
+  async function handleApply() {
+    setApplyBusy(true)
+    setApplyError(null)
+    try {
+      const result = await applyForCoverageServerFn({ data: { orgSlug, tradeId } })
+      if (result.success) {
+        setApplications((prev) => [...prev, result.application])
+        setTrade((prev) => prev ? { ...prev, applicationCount: prev.applicationCount + 1 } : prev)
+      } else {
+        setApplyError(
+          result.error === 'ALREADY_APPLIED'
+            ? 'You have already applied for this shift.'
+            : result.error,
+        )
+      }
+    } finally {
+      setApplyBusy(false)
+    }
+  }
+
+  async function handleSelectApplicant(appId: string) {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await selectCoverageApplicantServerFn({
+        data: { orgSlug, tradeId, applicationId: appId },
+      })
+      if (result.success) {
+        setTrade(result.trade)
+        // Update applications to reflect selection
+        setApplications((prev) =>
+          prev.map((a) => ({
+            ...a,
+            status: a.id === appId ? 'selected' as const : a.status === 'pending' ? 'not_selected' as const : a.status,
+          })),
+        )
+      } else {
+        setError(result.error)
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Link
         to="/orgs/$orgSlug/trades"
         params={{ orgSlug }}
+        search={{ assignmentId: undefined }}
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-navy-700 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" /> Back to Trades
@@ -153,7 +223,7 @@ function TradeDetailPage() {
             className="text-2xl font-bold text-navy-700"
             style={{ fontFamily: 'var(--font-sans)' }}
           >
-            Trade Detail
+            {isCoverage ? 'Open Shift Detail' : 'Trade Detail'}
           </h1>
           <span
             className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${statusConfig.cls}`}
@@ -161,7 +231,11 @@ function TradeDetailPage() {
           >
             {statusConfig.label}
           </span>
-          {t.tradeType === 'swap' ? (
+          {isCoverage ? (
+            <span className="inline-flex items-center gap-1 text-sm font-medium text-blue-700">
+              <UserPlus className="w-4 h-4" /> Coverage Request
+            </span>
+          ) : t.tradeType === 'swap' ? (
             <span className="inline-flex items-center gap-1 text-sm font-medium text-navy-700">
               <ArrowRightLeft className="w-4 h-4" /> Swap
             </span>
@@ -179,96 +253,216 @@ function TradeDetailPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Offering Side */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-            <h2 className="text-sm font-semibold text-navy-700 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
-              Offering
-            </h2>
-          </div>
-          <div className="px-6 py-4 space-y-3">
-            <div>
-              <label className="text-xs text-gray-500 font-medium">Staff Member</label>
-              <div className="text-sm font-medium text-navy-700">{t.offeringStaffName}</div>
+      {isCoverage ? (
+        /* Coverage Request Layout */
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Open Shift Details */}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+              <h2 className="text-sm font-semibold text-navy-700 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
+                Open Shift Details
+              </h2>
             </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium">Schedule</label>
-              <div className="text-sm text-gray-700">{t.offeringScheduleName}</div>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium">Time</label>
-              <div className="text-sm text-gray-700">
-                {formatDatetime(t.offeringStartDatetime)} – {formatDatetime(t.offeringEndDatetime)}
+            <div className="px-6 py-4 space-y-3">
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Schedule</label>
+                <div className="text-sm text-gray-700">{t.coverageScheduleName}</div>
               </div>
-              {t.offeringIsPartial && (
-                <span className="text-xs text-amber-600 font-medium mt-0.5 inline-block">
-                  Partial shift trade
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Time</label>
+                <div className="text-sm text-gray-700">
+                  {t.coverageStartDatetime && formatDatetime(t.coverageStartDatetime)} –{' '}
+                  {t.coverageEndDatetime && formatDatetime(t.coverageEndDatetime)}
+                </div>
+              </div>
+              {t.coveragePositionName && (
+                <div>
+                  <label className="text-xs text-gray-500 font-medium">Position</label>
+                  <div className="text-sm text-gray-700">{t.coveragePositionName}</div>
+                </div>
+              )}
+              {t.coverageNotes && (
+                <div>
+                  <label className="text-xs text-gray-500 font-medium">Notes</label>
+                  <div className="text-sm text-gray-700">{t.coverageNotes}</div>
+                </div>
+              )}
+              {t.createdByStaffName && (
+                <div>
+                  <label className="text-xs text-gray-500 font-medium">Posted By</label>
+                  <div className="text-sm text-gray-700">{t.createdByStaffName}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Applications */}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-navy-700 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
+                Applications
+              </h2>
+              {applications.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-medium">
+                  <Users className="w-3 h-3" /> {applications.filter((a) => a.status === 'pending').length} pending
                 </span>
               )}
             </div>
-            {t.offeringPosition && (
-              <div>
-                <label className="text-xs text-gray-500 font-medium">Position</label>
-                <div className="text-sm text-gray-700">{t.offeringPosition}</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Receiving Side */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-            <h2 className="text-sm font-semibold text-navy-700 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
-              {t.tradeType === 'swap' ? 'Receiving' : 'Picked Up By'}
-            </h2>
-          </div>
-          <div className="px-6 py-4 space-y-3">
-            {t.receivingStaffName ? (
-              <>
-                <div>
-                  <label className="text-xs text-gray-500 font-medium">Staff Member</label>
-                  <div className="text-sm font-medium text-navy-700">{t.receivingStaffName}</div>
-                </div>
-                {t.tradeType === 'swap' && t.receivingScheduleName && (
-                  <>
-                    <div>
-                      <label className="text-xs text-gray-500 font-medium">Schedule</label>
-                      <div className="text-sm text-gray-700">{t.receivingScheduleName}</div>
-                    </div>
-                    {t.receivingStartDatetime && t.receivingEndDatetime && (
+            <div className="px-6 py-4">
+              {loadingApps ? (
+                <p className="text-sm text-gray-400">Loading applications…</p>
+              ) : applications.length === 0 ? (
+                <p className="text-sm text-gray-400 italic py-4">No applications yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {applications.map((app) => (
+                    <div key={app.id} className="flex items-center justify-between gap-3 py-2 border-b border-gray-100 last:border-0">
                       <div>
-                        <label className="text-xs text-gray-500 font-medium">Time</label>
-                        <div className="text-sm text-gray-700">
-                          {formatDatetime(t.receivingStartDatetime)} –{' '}
-                          {formatDatetime(t.receivingEndDatetime)}
+                        <div className="text-sm font-medium text-navy-700">{app.staffMemberName}</div>
+                        {app.rankName && (
+                          <div className="text-xs text-gray-500">{app.rankName}</div>
+                        )}
+                        {app.notes && (
+                          <div className="text-xs text-gray-400 italic mt-0.5">{app.notes}</div>
+                        )}
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          Applied {formatDatetime(app.createdAt)}
                         </div>
-                        {t.receivingIsPartial && (
-                          <span className="text-xs text-amber-600 font-medium mt-0.5 inline-block">
-                            Partial shift trade
-                          </span>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        {app.status === 'selected' && (
+                          <span className="text-xs font-semibold text-success">Selected</span>
+                        )}
+                        {app.status === 'not_selected' && (
+                          <span className="text-xs text-gray-400">Not Selected</span>
+                        )}
+                        {app.status === 'pending' && canApprove && t.status === 'pending_acceptance' && (
+                          <button
+                            onClick={() => void handleSelectApplicant(app.id)}
+                            disabled={busy}
+                            className="px-3 py-1 rounded-md text-xs font-medium bg-success-bg text-success hover:opacity-80 disabled:opacity-50 transition-opacity"
+                          >
+                            Select
+                          </button>
                         )}
                       </div>
-                    )}
-                    {t.receivingPosition && (
-                      <div>
-                        <label className="text-xs text-gray-500 font-medium">Position</label>
-                        <div className="text-sm text-gray-700">{t.receivingPosition}</div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </>
-            ) : (
-              <div className="text-sm text-gray-400 italic py-4">
-                {t.isOpenBoard
-                  ? 'Waiting for someone to claim this trade'
-                  : 'Waiting for response'}
-              </div>
-            )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Apply button for staff */}
+              {canSubmit && t.status === 'pending_acceptance' && (
+                <div className="mt-4 pt-3 border-t border-gray-100">
+                  {applyError && (
+                    <div className="text-xs text-danger mb-2">{applyError}</div>
+                  )}
+                  <button
+                    onClick={() => void handleApply()}
+                    disabled={applyBusy}
+                    className="px-4 py-2 rounded-md text-sm font-medium bg-blue-700 text-white hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                  >
+                    {applyBusy ? 'Applying…' : 'Apply for this Shift'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        /* Trade Layout (existing swap/giveaway) */
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Offering Side */}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+              <h2 className="text-sm font-semibold text-navy-700 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
+                Offering
+              </h2>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Staff Member</label>
+                <div className="text-sm font-medium text-navy-700">{t.offeringStaffName}</div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Schedule</label>
+                <div className="text-sm text-gray-700">{t.offeringScheduleName}</div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Time</label>
+                <div className="text-sm text-gray-700">
+                  {t.offeringStartDatetime && formatDatetime(t.offeringStartDatetime)} –{' '}
+                  {t.offeringEndDatetime && formatDatetime(t.offeringEndDatetime)}
+                </div>
+                {t.offeringIsPartial && (
+                  <span className="text-xs text-amber-600 font-medium mt-0.5 inline-block">
+                    Partial shift trade
+                  </span>
+                )}
+              </div>
+              {t.offeringPosition && (
+                <div>
+                  <label className="text-xs text-gray-500 font-medium">Position</label>
+                  <div className="text-sm text-gray-700">{t.offeringPosition}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Receiving Side */}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+              <h2 className="text-sm font-semibold text-navy-700 uppercase tracking-wide" style={{ fontFamily: 'var(--font-condensed)' }}>
+                {t.tradeType === 'swap' ? 'Receiving' : 'Picked Up By'}
+              </h2>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              {t.receivingStaffName ? (
+                <>
+                  <div>
+                    <label className="text-xs text-gray-500 font-medium">Staff Member</label>
+                    <div className="text-sm font-medium text-navy-700">{t.receivingStaffName}</div>
+                  </div>
+                  {t.tradeType === 'swap' && t.receivingScheduleName && (
+                    <>
+                      <div>
+                        <label className="text-xs text-gray-500 font-medium">Schedule</label>
+                        <div className="text-sm text-gray-700">{t.receivingScheduleName}</div>
+                      </div>
+                      {t.receivingStartDatetime && t.receivingEndDatetime && (
+                        <div>
+                          <label className="text-xs text-gray-500 font-medium">Time</label>
+                          <div className="text-sm text-gray-700">
+                            {formatDatetime(t.receivingStartDatetime)} –{' '}
+                            {formatDatetime(t.receivingEndDatetime)}
+                          </div>
+                          {t.receivingIsPartial && (
+                            <span className="text-xs text-amber-600 font-medium mt-0.5 inline-block">
+                              Partial shift trade
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {t.receivingPosition && (
+                        <div>
+                          <label className="text-xs text-gray-500 font-medium">Position</label>
+                          <div className="text-sm text-gray-700">{t.receivingPosition}</div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="text-sm text-gray-400 italic py-4">
+                  {t.isOpenBoard
+                    ? 'Waiting for someone to claim this trade'
+                    : 'Waiting for response'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Eligibility Warnings */}
       {warnings.length > 0 && (
@@ -331,7 +525,7 @@ function TradeDetailPage() {
       </div>
 
       {/* Actions */}
-      {isActive && (
+      {isActive && !isCoverage && (
         <div className="flex items-center gap-3 flex-wrap">
           {/* Employee actions */}
           {t.status === 'pending_acceptance' && t.tradeType === 'giveaway' && t.isOpenBoard && (
@@ -396,6 +590,19 @@ function TradeDetailPage() {
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* Coverage request withdraw */}
+      {isActive && isCoverage && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void handleWithdraw()}
+            disabled={busy}
+            className="px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            Withdraw Open Shift
+          </button>
         </div>
       )}
     </div>

@@ -39,6 +39,10 @@ const ACTION_LABELS: Record<StaffAuditAction, string> = {
   trade_denied: 'Trade Denied',
   trade_expired: 'Trade Expired',
   trade_cancelled_system: 'Trade Cancelled',
+  member_updated: 'Member Updated',
+  coverage_requested: 'Coverage Requested',
+  coverage_applied: 'Coverage Applied',
+  coverage_selected: 'Coverage Selected',
 }
 
 const ACTION_BADGE_COLORS: Record<StaffAuditAction, string> = {
@@ -58,6 +62,10 @@ const ACTION_BADGE_COLORS: Record<StaffAuditAction, string> = {
   trade_denied: 'bg-danger-bg text-danger',
   trade_expired: 'bg-gray-100 text-gray-500',
   trade_cancelled_system: 'bg-gray-100 text-gray-500',
+  member_updated: 'bg-info-bg text-info',
+  coverage_requested: 'bg-warning-bg text-warning',
+  coverage_applied: 'bg-info-bg text-info',
+  coverage_selected: 'bg-success-bg text-success',
 }
 
 function formatRelativeTime(isoString: string): string {

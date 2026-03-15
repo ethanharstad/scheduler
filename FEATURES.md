@@ -60,6 +60,12 @@ Unified tracking of apparatus (vehicles — engines, ambulances, etc.) and gear 
 
 ---
 
+## Shift Trading & Coverage
+
+Staff-initiated shift trades (swap or giveaway) with support for directed trades to a specific person or open board posting for any eligible staff. Includes manager approval/denial workflow with optional denial reasons, partial shift trades, eligibility warnings based on position qualifications, and full audit logging. Coverage requests allow managers to post open/unassigned shifts to the trade board; staff apply and a manager selects the best applicant, which creates a new shift assignment. Open shifts can be posted from the Trades page or directly from the Schedule Detail page's Add Assignment form. Automatic expiration of trades/coverage requests whose shift time has passed, and cascading cancellation when schedules, assignments, or staff are removed.
+
+---
+
 ## Additional Implemented Capabilities
 
 These features were built alongside or after the numbered specs:

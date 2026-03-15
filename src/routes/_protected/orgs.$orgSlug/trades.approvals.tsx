@@ -130,17 +130,19 @@ function TradeApprovalsPage() {
                   </div>
 
                   {/* Offering side */}
-                  <div className="text-sm mb-2">
-                    <span className="font-semibold text-navy-700">{t.offeringStaffName}</span>
-                    <span className="text-gray-500"> gives up:</span>
-                    <div className="text-gray-600 ml-4 mt-0.5">
-                      {t.offeringScheduleName} &middot;{' '}
-                      {formatDateRange(t.offeringStartDatetime, t.offeringEndDatetime)}
-                      {t.offeringPosition && (
-                        <span className="text-gray-500"> &middot; {t.offeringPosition}</span>
-                      )}
+                  {t.offeringStaffName && (
+                    <div className="text-sm mb-2">
+                      <span className="font-semibold text-navy-700">{t.offeringStaffName}</span>
+                      <span className="text-gray-500"> gives up:</span>
+                      <div className="text-gray-600 ml-4 mt-0.5">
+                        {t.offeringScheduleName} &middot;{' '}
+                        {t.offeringStartDatetime && t.offeringEndDatetime && formatDateRange(t.offeringStartDatetime, t.offeringEndDatetime)}
+                        {t.offeringPosition && (
+                          <span className="text-gray-500"> &middot; {t.offeringPosition}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Receiving side */}
                   {t.receivingStaffName && (

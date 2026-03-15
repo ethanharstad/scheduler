@@ -12,6 +12,10 @@ import type {
   ListTradesInput,
   GetTradeInput,
   TradeStatus,
+  CreateCoverageRequestInput,
+  ApplyForCoverageInput,
+  SelectApplicantInput,
+  CoverageApplicationView,
 } from '@/lib/trade.types'
 import type { EligibilityWarning } from '@/lib/qualifications.types'
 
@@ -35,17 +39,17 @@ async function resolveStaffMemberId(
 
 type DOTradeRow = {
   id: string
-  offering_assignment_id: string
-  offering_staff_id: string
-  offering_staff_name: string
-  offering_schedule_id: string
-  offering_schedule_name: string
-  offering_start_datetime: string
-  offering_end_datetime: string
+  offering_assignment_id: string | null
+  offering_staff_id: string | null
+  offering_staff_name: string | null
+  offering_schedule_id: string | null
+  offering_schedule_name: string | null
+  offering_start_datetime: string | null
+  offering_end_datetime: string | null
   offering_position: string | null
   offering_position_id: string | null
-  offering_assign_start: string
-  offering_assign_end: string
+  offering_assign_start: string | null
+  offering_assign_end: string | null
   receiving_assignment_id: string | null
   receiving_staff_id: string | null
   receiving_staff_name: string | null
@@ -57,6 +61,17 @@ type DOTradeRow = {
   receiving_position_id: string | null
   receiving_assign_start: string | null
   receiving_assign_end: string | null
+  // Coverage request fields
+  coverage_schedule_id: string | null
+  coverage_schedule_name: string | null
+  coverage_position_id: string | null
+  coverage_position_name: string | null
+  coverage_start_datetime: string | null
+  coverage_end_datetime: string | null
+  coverage_notes: string | null
+  created_by_staff_id: string | null
+  created_by_staff_name: string | null
+  application_count: number
   trade_type: string
   status: string
   is_open_board: number
@@ -85,18 +100,25 @@ const DO_TRADE_SELECT = `
     t.receiving_start_datetime, t.receiving_end_datetime,
     ra.position AS receiving_position, ra.position_id AS receiving_position_id,
     ra.start_datetime AS receiving_assign_start, ra.end_datetime AS receiving_assign_end,
+    t.coverage_schedule_id, cs.name AS coverage_schedule_name,
+    t.coverage_position_id, t.coverage_position_name,
+    t.coverage_start_datetime, t.coverage_end_datetime, t.coverage_notes,
+    t.created_by_staff_id, cbsm.name AS created_by_staff_name,
+    COALESCE((SELECT COUNT(*) FROM coverage_application ca WHERE ca.trade_id = t.id AND ca.status = 'pending'), 0) AS application_count,
     t.trade_type, t.status, t.is_open_board,
     t.reason, t.denial_reason,
     t.accepted_by, t.accepted_at,
     t.reviewer_id, t.reviewed_at,
     t.created_at, t.updated_at, t.expires_at
   FROM shift_trade t
-  JOIN staff_member osm ON osm.id = t.offering_staff_id
-  JOIN schedule os ON os.id = t.offering_schedule_id
-  JOIN shift_assignment oa ON oa.id = t.offering_assignment_id
+  LEFT JOIN staff_member osm ON osm.id = t.offering_staff_id
+  LEFT JOIN schedule os ON os.id = t.offering_schedule_id
+  LEFT JOIN shift_assignment oa ON oa.id = t.offering_assignment_id
   LEFT JOIN staff_member rsm ON rsm.id = t.receiving_staff_id
   LEFT JOIN schedule rs ON rs.id = t.receiving_schedule_id
   LEFT JOIN shift_assignment ra ON ra.id = t.receiving_assignment_id
+  LEFT JOIN schedule cs ON cs.id = t.coverage_schedule_id
+  LEFT JOIN staff_member cbsm ON cbsm.id = t.created_by_staff_id
 `
 
 function rowToView(r: DOTradeRow, reviewerName: string | null): ShiftTradeView {
@@ -117,8 +139,10 @@ function rowToView(r: DOTradeRow, reviewerName: string | null): ShiftTradeView {
     offeringPosition: r.offering_position,
     offeringPositionId: r.offering_position_id,
     offeringIsPartial:
-      r.offering_start_datetime !== r.offering_assign_start ||
-      r.offering_end_datetime !== r.offering_assign_end,
+      r.offering_start_datetime != null &&
+      r.offering_assign_start != null &&
+      (r.offering_start_datetime !== r.offering_assign_start ||
+        r.offering_end_datetime !== r.offering_assign_end),
     receivingStaffId: r.receiving_staff_id,
     receivingStaffName: r.receiving_staff_name,
     receivingAssignmentId: r.receiving_assignment_id,
@@ -133,6 +157,16 @@ function rowToView(r: DOTradeRow, reviewerName: string | null): ShiftTradeView {
       r.receiving_assign_start != null &&
       (r.receiving_start_datetime !== r.receiving_assign_start ||
         r.receiving_end_datetime !== r.receiving_assign_end),
+    coverageScheduleId: r.coverage_schedule_id,
+    coverageScheduleName: r.coverage_schedule_name,
+    coveragePositionId: r.coverage_position_id,
+    coveragePositionName: r.coverage_position_name,
+    coverageStartDatetime: r.coverage_start_datetime,
+    coverageEndDatetime: r.coverage_end_datetime,
+    coverageNotes: r.coverage_notes,
+    createdByStaffId: r.created_by_staff_id,
+    createdByStaffName: r.created_by_staff_name,
+    applicationCount: Number(r.application_count) || 0,
     reviewerName,
     reviewedAt: r.reviewed_at,
     acceptedAt: r.accepted_at,
@@ -167,7 +201,7 @@ async function enrichReviewerNames(
 
 const ACTIVE_STATUSES = `('pending_acceptance', 'pending_approval')`
 
-/** Expire trades whose offering shift has already started */
+/** Expire trades whose offering/coverage shift has already started */
 async function expireStaleTradesLazy(
   stub: ReturnType<typeof getOrgStub>,
 ): Promise<void> {
@@ -175,7 +209,11 @@ async function expireStaleTradesLazy(
   await stub.execute(
     `UPDATE shift_trade SET status = 'expired', updated_at = ?
      WHERE status IN ${ACTIVE_STATUSES}
-       AND offering_start_datetime <= ?`,
+       AND (
+         (offering_start_datetime IS NOT NULL AND offering_start_datetime <= ?)
+         OR (coverage_start_datetime IS NOT NULL AND coverage_start_datetime <= ?)
+       )`,
+    now,
     now,
     now,
   )
@@ -208,8 +246,10 @@ export const listTradesServerFn = createServerFn({ method: 'GET' })
     await expireStaleTradesLazy(stub)
 
     let query = `${DO_TRADE_SELECT}
-      WHERE (t.offering_staff_id = ? OR t.receiving_staff_id = ?)`
-    const params: string[] = [staffId, staffId]
+      WHERE (t.offering_staff_id = ? OR t.receiving_staff_id = ?
+             OR t.created_by_staff_id = ?
+             OR EXISTS (SELECT 1 FROM coverage_application ca WHERE ca.trade_id = t.id AND ca.staff_member_id = ?))`
+    const params: string[] = [staffId, staffId, staffId, staffId]
 
     if (data.status) {
       query += ` AND t.status = ?`
@@ -252,7 +292,7 @@ export const listOpenBoardTradesServerFn = createServerFn({ method: 'GET' })
     const rows = (await stub.query(
       `${DO_TRADE_SELECT}
        WHERE t.is_open_board = 1 AND t.status = 'pending_acceptance'
-       ORDER BY t.offering_start_datetime ASC`,
+       ORDER BY COALESCE(t.offering_start_datetime, t.coverage_start_datetime) ASC`,
     )) as DOTradeRow[]
 
     return {
@@ -331,7 +371,7 @@ export const getTradeServerFn = createServerFn({ method: 'GET' })
 
     // Eligibility warnings for both parties
     const warnings: EligibilityWarning[] = []
-    if (trade.receivingStaffId && trade.offeringPositionId) {
+    if (trade.receivingStaffId && trade.offeringPositionId && trade.offeringStartDatetime) {
       const w = await checkSingleStaffEligibility(
         env,
         membership.orgId,
@@ -341,7 +381,7 @@ export const getTradeServerFn = createServerFn({ method: 'GET' })
       )
       warnings.push(...w)
     }
-    if (trade.tradeType === 'swap' && trade.receivingPositionId && trade.offeringStaffId) {
+    if (trade.tradeType === 'swap' && trade.receivingPositionId && trade.offeringStaffId && trade.offeringStartDatetime) {
       const w = await checkSingleStaffEligibility(
         env,
         membership.orgId,
@@ -891,14 +931,18 @@ export const withdrawTradeServerFn = createServerFn({ method: 'POST' })
 
     const stub = getOrgStub(env, membership.orgId)
 
-    type TradeRow = { id: string; status: string; offering_staff_id: string }
+    type TradeRow = { id: string; status: string; offering_staff_id: string | null; created_by_staff_id: string | null; trade_type: string }
     const trade = (await stub.queryOne(
-      `SELECT id, status, offering_staff_id FROM shift_trade WHERE id = ?`,
+      `SELECT id, status, offering_staff_id, created_by_staff_id, trade_type FROM shift_trade WHERE id = ?`,
       data.tradeId,
     )) as TradeRow | null
 
     if (!trade) return { success: false, error: 'NOT_FOUND' }
-    if (trade.offering_staff_id !== selfStaffId) return { success: false, error: 'FORBIDDEN' }
+    // Allow creator of coverage request OR offering staff of trade to withdraw
+    const isOwner = trade.trade_type === 'coverage_request'
+      ? trade.created_by_staff_id === selfStaffId
+      : trade.offering_staff_id === selfStaffId
+    if (!isOwner) return { success: false, error: 'FORBIDDEN' }
     if (trade.status !== 'pending_acceptance' && trade.status !== 'pending_approval') {
       return { success: false, error: 'INVALID_STATUS' }
     }
@@ -1236,9 +1280,10 @@ export async function cancelActiveTradesForSchedule(
   const now = new Date().toISOString()
   await stub.execute(
     `UPDATE shift_trade SET status = 'cancelled_system', updated_at = ?
-     WHERE offering_schedule_id = ?
+     WHERE (offering_schedule_id = ? OR coverage_schedule_id = ?)
        AND status IN ${ACTIVE_STATUSES}`,
     now,
+    scheduleId,
     scheduleId,
   )
 }
@@ -1250,10 +1295,461 @@ export async function cancelActiveTradesForStaffMember(
   const now = new Date().toISOString()
   await stub.execute(
     `UPDATE shift_trade SET status = 'cancelled_system', updated_at = ?
-     WHERE (offering_staff_id = ? OR receiving_staff_id = ?)
+     WHERE (offering_staff_id = ? OR receiving_staff_id = ? OR created_by_staff_id = ?)
        AND status IN ${ACTIVE_STATUSES}`,
     now,
     staffMemberId,
     staffMemberId,
+    staffMemberId,
+  )
+  // Withdraw any pending coverage applications by this staff member
+  await stub.execute(
+    `UPDATE coverage_application SET status = 'withdrawn', updated_at = ?
+     WHERE staff_member_id = ? AND status = 'pending'`,
+    now,
+    staffMemberId,
   )
 }
+
+// ---------------------------------------------------------------------------
+// createCoverageRequestServerFn — manager posts an open shift
+// ---------------------------------------------------------------------------
+
+type CreateCoverageOutput =
+  | { success: true; trade: ShiftTradeView }
+  | {
+      success: false
+      error:
+        | 'UNAUTHORIZED'
+        | 'FORBIDDEN'
+        | 'NOT_FOUND'
+        | 'VALIDATION_ERROR'
+        | 'DRAFT_SCHEDULE'
+        | 'SHIFT_STARTED'
+    }
+
+export const createCoverageRequestServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: CreateCoverageRequestInput) => d)
+  .handler(async (ctx): Promise<CreateCoverageOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'create-edit-schedules')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    const selfStaffId = await resolveStaffMemberId(env, membership.orgId, membership.userId)
+    // Staff record is optional for coverage requests — managers may not be on the roster
+
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Verify schedule exists and is published
+    type ScheduleRow = { id: string; status: string }
+    const schedule = (await stub.queryOne(
+      `SELECT id, status FROM schedule WHERE id = ?`,
+      data.scheduleId,
+    )) as ScheduleRow | null
+    if (!schedule) return { success: false, error: 'NOT_FOUND' }
+    if (schedule.status !== 'published') return { success: false, error: 'DRAFT_SCHEDULE' }
+
+    // Validate time range
+    if (!data.startDatetime || !data.endDatetime || data.endDatetime <= data.startDatetime) {
+      return { success: false, error: 'VALIDATION_ERROR' }
+    }
+
+    const now = new Date().toISOString()
+    if (data.startDatetime <= now) {
+      return { success: false, error: 'SHIFT_STARTED' }
+    }
+
+    // Resolve position name if positionId provided
+    let positionName: string | null = null
+    if (data.positionId) {
+      type PosRow = { name: string }
+      const pos = (await stub.queryOne(
+        `SELECT name FROM position WHERE id = ?`,
+        data.positionId,
+      )) as PosRow | null
+      if (!pos) return { success: false, error: 'NOT_FOUND' }
+      positionName = pos.name
+    }
+
+    const id = crypto.randomUUID()
+
+    await stub.execute(
+      `INSERT INTO shift_trade
+         (id, trade_type, status, is_open_board,
+          coverage_schedule_id, coverage_position_id, coverage_position_name,
+          coverage_start_datetime, coverage_end_datetime, coverage_notes,
+          created_by_staff_id, reason,
+          created_at, updated_at)
+       VALUES (?, 'coverage_request', 'pending_acceptance', 1,
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id,
+      data.scheduleId,
+      data.positionId ?? null,
+      positionName,
+      data.startDatetime,
+      data.endDatetime,
+      data.notes?.trim() || null,
+      selfStaffId,
+      data.reason?.trim() || null,
+      now,
+      now,
+    )
+
+    await stub.writeAuditLog({
+      staffMemberId: selfStaffId,
+      performedBy: membership.userId,
+      action: 'coverage_requested',
+      metadata: { tradeId: id, scheduleId: data.scheduleId },
+    })
+
+    const row = (await stub.queryOne(
+      `${DO_TRADE_SELECT} WHERE t.id = ?`,
+      id,
+    )) as DOTradeRow | null
+    if (!row) return { success: false, error: 'NOT_FOUND' }
+
+    return { success: true, trade: rowToView(row, null) }
+  })
+
+// ---------------------------------------------------------------------------
+// applyForCoverageServerFn — staff applies for an open shift
+// ---------------------------------------------------------------------------
+
+type ApplyForCoverageOutput =
+  | { success: true; application: CoverageApplicationView }
+  | {
+      success: false
+      error:
+        | 'UNAUTHORIZED'
+        | 'FORBIDDEN'
+        | 'NOT_FOUND'
+        | 'NO_STAFF_RECORD'
+        | 'INVALID_STATUS'
+        | 'ALREADY_APPLIED'
+    }
+
+export const applyForCoverageServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: ApplyForCoverageInput) => d)
+  .handler(async (ctx): Promise<ApplyForCoverageOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'submit-trade')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    const selfStaffId = await resolveStaffMemberId(env, membership.orgId, membership.userId)
+    if (!selfStaffId) return { success: false, error: 'NO_STAFF_RECORD' }
+
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Verify the trade is a coverage_request in pending_acceptance status
+    type TradeRow = { id: string; status: string; trade_type: string; created_by_staff_id: string | null }
+    const trade = (await stub.queryOne(
+      `SELECT id, status, trade_type, created_by_staff_id FROM shift_trade WHERE id = ?`,
+      data.tradeId,
+    )) as TradeRow | null
+
+    if (!trade) return { success: false, error: 'NOT_FOUND' }
+    if (trade.trade_type !== 'coverage_request') return { success: false, error: 'NOT_FOUND' }
+    if (trade.status !== 'pending_acceptance') return { success: false, error: 'INVALID_STATUS' }
+
+    // Check not already applied
+    type AppRow = { id: string }
+    const existing = (await stub.queryOne(
+      `SELECT id FROM coverage_application WHERE trade_id = ? AND staff_member_id = ? AND status != 'withdrawn'`,
+      data.tradeId,
+      selfStaffId,
+    )) as AppRow | null
+    if (existing) return { success: false, error: 'ALREADY_APPLIED' }
+
+    const now = new Date().toISOString()
+    const id = crypto.randomUUID()
+
+    await stub.execute(
+      `INSERT INTO coverage_application (id, trade_id, staff_member_id, status, notes, created_at, updated_at)
+       VALUES (?, ?, ?, 'pending', ?, ?, ?)`,
+      id,
+      data.tradeId,
+      selfStaffId,
+      data.notes?.trim() || null,
+      now,
+      now,
+    )
+
+    await stub.writeAuditLog({
+      staffMemberId: selfStaffId,
+      performedBy: membership.userId,
+      action: 'coverage_applied',
+      metadata: { tradeId: data.tradeId, applicationId: id },
+    })
+
+    // Fetch the created application with staff details
+    type AppViewRow = { id: string; trade_id: string; staff_member_id: string; staff_name: string; rank_name: string | null; status: string; notes: string | null; created_at: string }
+    const appRow = (await stub.queryOne(
+      `SELECT ca.id, ca.trade_id, ca.staff_member_id, sm.name AS staff_name,
+              r.name AS rank_name, ca.status, ca.notes, ca.created_at
+       FROM coverage_application ca
+       JOIN staff_member sm ON sm.id = ca.staff_member_id
+       LEFT JOIN rank r ON r.id = sm.rank_id
+       WHERE ca.id = ?`,
+      id,
+    )) as AppViewRow | null
+
+    if (!appRow) return { success: false, error: 'NOT_FOUND' }
+
+    return {
+      success: true,
+      application: {
+        id: appRow.id,
+        tradeId: appRow.trade_id,
+        staffMemberId: appRow.staff_member_id,
+        staffMemberName: appRow.staff_name,
+        rankName: appRow.rank_name,
+        status: appRow.status as CoverageApplicationView['status'],
+        notes: appRow.notes,
+        createdAt: appRow.created_at,
+      },
+    }
+  })
+
+// ---------------------------------------------------------------------------
+// withdrawCoverageApplicationServerFn
+// ---------------------------------------------------------------------------
+
+type WithdrawApplicationOutput =
+  | { success: true }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'NO_STAFF_RECORD' | 'INVALID_STATUS' }
+
+export const withdrawCoverageApplicationServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { orgSlug: string; applicationId: string }) => d)
+  .handler(async (ctx): Promise<WithdrawApplicationOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+
+    const selfStaffId = await resolveStaffMemberId(env, membership.orgId, membership.userId)
+    if (!selfStaffId) return { success: false, error: 'NO_STAFF_RECORD' }
+
+    const stub = getOrgStub(env, membership.orgId)
+
+    type AppRow = { id: string; staff_member_id: string; status: string }
+    const app = (await stub.queryOne(
+      `SELECT id, staff_member_id, status FROM coverage_application WHERE id = ?`,
+      data.applicationId,
+    )) as AppRow | null
+
+    if (!app) return { success: false, error: 'NOT_FOUND' }
+    if (app.staff_member_id !== selfStaffId) return { success: false, error: 'FORBIDDEN' }
+    if (app.status !== 'pending') return { success: false, error: 'INVALID_STATUS' }
+
+    const now = new Date().toISOString()
+    await stub.execute(
+      `UPDATE coverage_application SET status = 'withdrawn', updated_at = ? WHERE id = ?`,
+      now,
+      data.applicationId,
+    )
+
+    return { success: true }
+  })
+
+// ---------------------------------------------------------------------------
+// listCoverageApplicationsServerFn — manager views applicants
+// ---------------------------------------------------------------------------
+
+type ListApplicationsOutput =
+  | { success: true; applications: CoverageApplicationView[] }
+  | { success: false; error: 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' }
+
+export const listCoverageApplicationsServerFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { orgSlug: string; tradeId: string }) => d)
+  .handler(async (ctx): Promise<ListApplicationsOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'view-schedules')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Verify the trade exists and is a coverage request
+    type TradeRow = { id: string; trade_type: string }
+    const trade = (await stub.queryOne(
+      `SELECT id, trade_type FROM shift_trade WHERE id = ?`,
+      data.tradeId,
+    )) as TradeRow | null
+    if (!trade || trade.trade_type !== 'coverage_request') {
+      return { success: false, error: 'NOT_FOUND' }
+    }
+
+    type AppViewRow = {
+      id: string; trade_id: string; staff_member_id: string; staff_name: string
+      rank_name: string | null; status: string; notes: string | null; created_at: string
+    }
+    const rows = (await stub.query(
+      `SELECT ca.id, ca.trade_id, ca.staff_member_id, sm.name AS staff_name,
+              r.name AS rank_name, ca.status, ca.notes, ca.created_at
+       FROM coverage_application ca
+       JOIN staff_member sm ON sm.id = ca.staff_member_id
+       LEFT JOIN rank r ON r.id = sm.rank_id
+       WHERE ca.trade_id = ? AND ca.status != 'withdrawn'
+       ORDER BY ca.created_at ASC`,
+      data.tradeId,
+    )) as AppViewRow[]
+
+    return {
+      success: true,
+      applications: rows.map((r) => ({
+        id: r.id,
+        tradeId: r.trade_id,
+        staffMemberId: r.staff_member_id,
+        staffMemberName: r.staff_name,
+        rankName: r.rank_name,
+        status: r.status as CoverageApplicationView['status'],
+        notes: r.notes,
+        createdAt: r.created_at,
+      })),
+    }
+  })
+
+// ---------------------------------------------------------------------------
+// selectCoverageApplicantServerFn — manager selects applicant, creates assignment
+// ---------------------------------------------------------------------------
+
+type SelectApplicantOutput =
+  | { success: true; trade: ShiftTradeView }
+  | {
+      success: false
+      error:
+        | 'UNAUTHORIZED'
+        | 'FORBIDDEN'
+        | 'NOT_FOUND'
+        | 'NO_STAFF_RECORD'
+        | 'INVALID_STATUS'
+        | 'SELF_REVIEW'
+    }
+
+export const selectCoverageApplicantServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: SelectApplicantInput) => d)
+  .handler(async (ctx): Promise<SelectApplicantOutput> => {
+    const { data } = ctx
+    const env = ctx.context as unknown as Cloudflare.Env
+
+    const membership = await requireOrgMembership(env, data.orgSlug)
+    if (!membership) return { success: false, error: 'UNAUTHORIZED' }
+    if (!canDo(membership.role, 'approve-trade')) {
+      return { success: false, error: 'FORBIDDEN' }
+    }
+
+    const stub = getOrgStub(env, membership.orgId)
+
+    // Verify trade is a coverage request in pending_acceptance status
+    type FullTradeRow = {
+      id: string; status: string; trade_type: string
+      coverage_schedule_id: string; coverage_position_id: string | null
+      coverage_position_name: string | null
+      coverage_start_datetime: string; coverage_end_datetime: string
+      created_by_staff_id: string | null
+    }
+    const trade = (await stub.queryOne(
+      `SELECT id, status, trade_type, coverage_schedule_id, coverage_position_id,
+              coverage_position_name, coverage_start_datetime, coverage_end_datetime,
+              created_by_staff_id
+       FROM shift_trade WHERE id = ?`,
+      data.tradeId,
+    )) as FullTradeRow | null
+
+    if (!trade) return { success: false, error: 'NOT_FOUND' }
+    if (trade.trade_type !== 'coverage_request') return { success: false, error: 'NOT_FOUND' }
+    if (trade.status !== 'pending_acceptance') return { success: false, error: 'INVALID_STATUS' }
+
+    // Verify the application exists and is pending
+    type AppRow = { id: string; staff_member_id: string; status: string }
+    const app = (await stub.queryOne(
+      `SELECT id, staff_member_id, status FROM coverage_application WHERE id = ? AND trade_id = ?`,
+      data.applicationId,
+      data.tradeId,
+    )) as AppRow | null
+
+    if (!app) return { success: false, error: 'NOT_FOUND' }
+    if (app.status !== 'pending') return { success: false, error: 'INVALID_STATUS' }
+
+    const now = new Date().toISOString()
+
+    // Create a new shift assignment for the selected staff member
+    const assignmentId = crypto.randomUUID()
+    await stub.execute(
+      `INSERT INTO shift_assignment
+         (id, schedule_id, staff_member_id, start_datetime, end_datetime,
+          position, position_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      assignmentId,
+      trade.coverage_schedule_id,
+      app.staff_member_id,
+      trade.coverage_start_datetime,
+      trade.coverage_end_datetime,
+      trade.coverage_position_name,
+      trade.coverage_position_id,
+      now,
+      now,
+    )
+
+    // Update the trade to approved with the receiving staff
+    await stub.execute(
+      `UPDATE shift_trade
+       SET status = 'approved', receiving_staff_id = ?,
+           reviewer_id = ?, reviewed_at = ?, updated_at = ?
+       WHERE id = ?`,
+      app.staff_member_id,
+      membership.userId,
+      now,
+      now,
+      data.tradeId,
+    )
+
+    // Mark selected application, mark others not_selected
+    await stub.execute(
+      `UPDATE coverage_application SET status = 'selected', updated_at = ? WHERE id = ?`,
+      now,
+      data.applicationId,
+    )
+    await stub.execute(
+      `UPDATE coverage_application SET status = 'not_selected', updated_at = ?
+       WHERE trade_id = ? AND id != ? AND status = 'pending'`,
+      now,
+      data.tradeId,
+      data.applicationId,
+    )
+
+    // Audit logs
+    await stub.writeAuditLog({
+      staffMemberId: app.staff_member_id,
+      performedBy: membership.userId,
+      action: 'coverage_selected',
+      metadata: { tradeId: data.tradeId, applicationId: data.applicationId },
+    })
+
+    const row = (await stub.queryOne(
+      `${DO_TRADE_SELECT} WHERE t.id = ?`,
+      data.tradeId,
+    )) as DOTradeRow | null
+    if (!row) return { success: false, error: 'NOT_FOUND' }
+
+    const reviewerNames = await enrichReviewerNames(env, [row])
+    return {
+      success: true,
+      trade: rowToView(row, reviewerNames.get(row.reviewer_id ?? '') ?? null),
+    }
+  })

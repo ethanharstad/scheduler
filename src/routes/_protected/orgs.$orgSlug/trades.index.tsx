@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { createFileRoute, Link, useNavigate, useRouteContext } from '@tanstack/react-router'
-import { ArrowRightLeft, Gift, XCircle, Plus, X, ChevronDown } from 'lucide-react'
+import { ArrowRightLeft, Gift, XCircle, Plus, X, UserPlus, Users } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
-import type { ShiftTradeView, TradeStatus, TradeType, CreateTradeInput } from '@/lib/trade.types'
+import type { ShiftTradeView, TradeStatus, TradeType, CreateTradeInput, CreateCoverageRequestInput } from '@/lib/trade.types'
 import type { StaffMemberView } from '@/lib/staff.types'
 import type { TradeableAssignment } from '@/server/trades'
 import {
@@ -14,8 +14,12 @@ import {
   createTradeServerFn,
   getMyTradeableAssignmentsServerFn,
   getStaffAssignmentsServerFn,
+  createCoverageRequestServerFn,
+  applyForCoverageServerFn,
 } from '@/server/trades'
 import { listStaffServerFn } from '@/server/staff'
+import { listSchedulesServerFn } from '@/server/schedule'
+import { listPositionsServerFn } from '@/server/qualifications'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/trades/')({
   head: () => ({
@@ -81,12 +85,22 @@ function StatusBadge({ status }: { status: TradeStatus }) {
   )
 }
 
-function TypeBadge({ type }: { type: 'swap' | 'giveaway' }) {
-  return type === 'swap' ? (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-navy-700">
-      <ArrowRightLeft className="w-3.5 h-3.5" /> Swap
-    </span>
-  ) : (
+function TypeBadge({ type }: { type: TradeType }) {
+  if (type === 'swap') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-navy-700">
+        <ArrowRightLeft className="w-3.5 h-3.5" /> Swap
+      </span>
+    )
+  }
+  if (type === 'coverage_request') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700">
+        <UserPlus className="w-3.5 h-3.5" /> Coverage
+      </span>
+    )
+  }
+  return (
     <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
       <Gift className="w-3.5 h-3.5" /> Giveaway
     </span>
@@ -106,6 +120,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   DRAFT_SCHEDULE: 'Trades can only be created for published schedules.',
   SHIFT_STARTED: 'This shift has already started or is in the past.',
   DUPLICATE_TRADE: 'An active trade already exists for this assignment.',
+  ALREADY_APPLIED: 'You have already applied for this shift.',
+  INVALID_STATUS: 'This trade is no longer accepting applications.',
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +144,7 @@ function CreateTradeForm({
   onCancel: () => void
 }) {
   const [assignmentId, setAssignmentId] = useState(preselectedAssignmentId ?? '')
-  const [tradeType, setTradeType] = useState<TradeType>('swap')
+  const [tradeType, setTradeType] = useState<'swap' | 'giveaway'>('swap')
   const [isOpenBoard, setIsOpenBoard] = useState(true)
   const [receivingStaffId, setReceivingStaffId] = useState('')
   const [receivingAssignmentId, setReceivingAssignmentId] = useState('')
@@ -425,6 +441,216 @@ function CreateTradeForm({
 }
 
 // ---------------------------------------------------------------------------
+// Create Coverage Request Form
+// ---------------------------------------------------------------------------
+
+function CreateCoverageRequestForm({
+  orgSlug,
+  onCreated,
+  onCancel,
+}: {
+  orgSlug: string
+  onCreated: (trade: ShiftTradeView) => void
+  onCancel: () => void
+}) {
+  const [scheduleId, setScheduleId] = useState('')
+  const [positionId, setPositionId] = useState('')
+  const [startDatetime, setStartDatetime] = useState('')
+  const [endDatetime, setEndDatetime] = useState('')
+  const [reason, setReason] = useState('')
+  const [notes, setNotes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Load schedules and positions
+  const [schedules, setSchedules] = useState<Array<{ id: string; name: string; status: string }>>([])
+  const [positions, setPositions] = useState<Array<{ id: string; name: string }>>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      listSchedulesServerFn({ data: { orgSlug } }),
+      listPositionsServerFn({ data: { orgSlug } }),
+    ]).then(([schedResult, posResult]) => {
+      if (schedResult.success) {
+        setSchedules(
+          (schedResult.schedules as Array<{ id: string; name: string; status: string }>)
+            .filter((s) => s.status === 'published'),
+        )
+      }
+      if (posResult.success) {
+        setPositions(posResult.positions as Array<{ id: string; name: string }>)
+      }
+      setLoading(false)
+    })
+  }, [orgSlug])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!scheduleId || !startDatetime || !endDatetime) return
+    setError(null)
+    setBusy(true)
+
+    try {
+      const input: CreateCoverageRequestInput = {
+        orgSlug,
+        scheduleId,
+        positionId: positionId || undefined,
+        startDatetime: new Date(startDatetime).toISOString(),
+        endDatetime: new Date(endDatetime).toISOString(),
+        reason: reason.trim() || undefined,
+        notes: notes.trim() || undefined,
+      }
+
+      const result = await createCoverageRequestServerFn({ data: input })
+      if (result.success) {
+        onCreated(result.trade)
+      } else {
+        setError(ERROR_MESSAGES[result.error] ?? 'Something went wrong.')
+      }
+    } catch {
+      setError('An unexpected error occurred.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg px-6 py-8 text-sm text-gray-500 text-center">
+        Loading…
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 className="text-base font-semibold text-navy-700">Post Open Shift</h2>
+        <button
+          onClick={onCancel}
+          className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      <form onSubmit={(e) => void handleSubmit(e)} className="px-6 py-5 space-y-5">
+        {/* Schedule */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Schedule</label>
+          {schedules.length === 0 ? (
+            <p className="text-sm text-gray-500">No published schedules available.</p>
+          ) : (
+            <select
+              value={scheduleId}
+              onChange={(e) => setScheduleId(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700 outline-none"
+            >
+              <option value="">Select a schedule…</option>
+              {schedules.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Position (optional) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Position <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <select
+            value={positionId}
+            onChange={(e) => setPositionId(e.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700 outline-none"
+          >
+            <option value="">Any position</option>
+            {positions.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Start / End datetime */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Start</label>
+            <input
+              type="datetime-local"
+              value={startDatetime}
+              onChange={(e) => setStartDatetime(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">End</label>
+            <input
+              type="datetime-local"
+              value={endDatetime}
+              onChange={(e) => setEndDatetime(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700 outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Reason */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Reason <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Staffing shortage, special event"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700 outline-none"
+            maxLength={200}
+          />
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Notes <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Additional details for applicants…"
+            rows={2}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700 outline-none resize-none"
+            maxLength={500}
+          />
+        </div>
+
+        {error && (
+          <div className="bg-danger-bg border border-danger/20 rounded-md px-4 py-3 text-sm text-danger">
+            {error}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            type="submit"
+            disabled={busy || !scheduleId || !startDatetime || !endDatetime}
+            className="px-5 py-2 rounded-md text-sm font-medium bg-red-700 text-white hover:bg-red-800 disabled:opacity-50 transition-colors"
+          >
+            {busy ? 'Posting…' : 'Post Open Shift'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -441,8 +667,10 @@ function TradesIndexPage() {
   const [actionBusy, setActionBusy] = useState<string | null>(null)
   const [confirmAction, setConfirmAction] = useState<{ id: string; action: string } | null>(null)
   const [showForm, setShowForm] = useState(!!searchAssignmentId)
+  const [showCoverageForm, setShowCoverageForm] = useState(false)
 
   const canSubmit = canDo(userRole, 'submit-trade')
+  const canCreateCoverage = canDo(userRole, 'create-edit-schedules')
 
   async function handleWithdraw(tradeId: string) {
     setActionBusy(tradeId)
@@ -488,20 +716,38 @@ function TradesIndexPage() {
     }
   }
 
+  async function handleApplyForCoverage(tradeId: string) {
+    setActionBusy(tradeId)
+    try {
+      const result = await applyForCoverageServerFn({ data: { orgSlug, tradeId } })
+      if (result.success) {
+        // Update the board to reflect the new application count
+        setOpenBoard((prev) =>
+          prev.map((t) =>
+            t.id === tradeId ? { ...t, applicationCount: t.applicationCount + 1 } : t,
+          ),
+        )
+      }
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
   function handleTradeCreated(trade: ShiftTradeView) {
     setMyTrades((prev) => [trade, ...prev])
     if (trade.isOpenBoard) {
       setOpenBoard((prev) => [trade, ...prev])
     }
     setShowForm(false)
+    setShowCoverageForm(false)
     setTab('mine')
-    // Clear the assignmentId search param
-    void navigate({ to: '/orgs/$orgSlug/trades', params: { orgSlug }, search: {}, replace: true })
+    void navigate({ to: '/orgs/$orgSlug/trades', params: { orgSlug }, search: { assignmentId: undefined }, replace: true })
   }
 
   function handleCancelForm() {
     setShowForm(false)
-    void navigate({ to: '/orgs/$orgSlug/trades', params: { orgSlug }, search: {}, replace: true })
+    setShowCoverageForm(false)
+    void navigate({ to: '/orgs/$orgSlug/trades', params: { orgSlug }, search: { assignmentId: undefined }, replace: true })
   }
 
   const activeTrades = myTrades.filter(
@@ -523,15 +769,26 @@ function TradesIndexPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">{org.name}</p>
         </div>
-        {canSubmit && !showForm && !loaderData.noStaffRecord && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium bg-red-700 text-white hover:bg-red-800 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Trade
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canCreateCoverage && !showForm && !showCoverageForm && !loaderData.noStaffRecord && (
+            <button
+              onClick={() => { setShowCoverageForm(true); setShowForm(false) }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border border-red-700 text-red-700 hover:bg-red-50 transition-colors"
+            >
+              <UserPlus className="w-4 h-4" />
+              Post Open Shift
+            </button>
+          )}
+          {canSubmit && !showForm && !showCoverageForm && !loaderData.noStaffRecord && (
+            <button
+              onClick={() => { setShowForm(true); setShowCoverageForm(false) }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium bg-red-700 text-white hover:bg-red-800 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Trade
+            </button>
+          )}
+        </div>
       </div>
 
       {loaderData.noStaffRecord && (
@@ -548,6 +805,15 @@ function TradesIndexPage() {
           myAssignments={loaderData.myAssignments}
           staffMembers={loaderData.staffMembers}
           preselectedAssignmentId={searchAssignmentId}
+          onCreated={handleTradeCreated}
+          onCancel={handleCancelForm}
+        />
+      )}
+
+      {/* Create Coverage Request Form */}
+      {showCoverageForm && canCreateCoverage && (
+        <CreateCoverageRequestForm
+          orgSlug={orgSlug}
           onCreated={handleTradeCreated}
           onCancel={handleCancelForm}
         />
@@ -596,17 +862,39 @@ function TradesIndexPage() {
                 <div key={t.id} className="px-6 py-4 hover:bg-gray-50 flex items-center gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-navy-700">{t.offeringStaffName}</span>
+                      {t.tradeType === 'coverage_request' ? (
+                        <span className="font-medium text-blue-700">Coverage Needed</span>
+                      ) : (
+                        <span className="font-medium text-navy-700">{t.offeringStaffName}</span>
+                      )}
                       <TypeBadge type={t.tradeType} />
                       {t.offeringIsPartial && (
                         <span className="text-xs text-amber-600 font-medium">Partial</span>
                       )}
                     </div>
                     <div className="text-sm text-gray-600">
-                      {t.offeringScheduleName} &middot;{' '}
-                      {formatDateRange(t.offeringStartDatetime, t.offeringEndDatetime)}
+                      {t.tradeType === 'coverage_request' ? (
+                        <>
+                          {t.coverageScheduleName} &middot;{' '}
+                          {t.coverageStartDatetime && t.coverageEndDatetime
+                            ? formatDateRange(t.coverageStartDatetime, t.coverageEndDatetime)
+                            : ''}
+                        </>
+                      ) : (
+                        <>
+                          {t.offeringScheduleName} &middot;{' '}
+                          {t.offeringStartDatetime && t.offeringEndDatetime
+                            ? formatDateRange(t.offeringStartDatetime, t.offeringEndDatetime)
+                            : ''}
+                        </>
+                      )}
                     </div>
-                    {t.offeringPosition && (
+                    {t.tradeType === 'coverage_request' && t.coveragePositionName && (
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        Position: {t.coveragePositionName}
+                      </div>
+                    )}
+                    {t.tradeType !== 'coverage_request' && t.offeringPosition && (
                       <div className="text-xs text-gray-500 mt-0.5">
                         Position: {t.offeringPosition}
                       </div>
@@ -614,8 +902,23 @@ function TradesIndexPage() {
                     {t.reason && (
                       <div className="text-xs text-gray-400 mt-1 italic">{t.reason}</div>
                     )}
+                    {t.tradeType === 'coverage_request' && t.applicationCount > 0 && (
+                      <div className="inline-flex items-center gap-1 mt-1 text-xs text-blue-600 font-medium">
+                        <Users className="w-3 h-3" />
+                        {t.applicationCount} applicant{t.applicationCount !== 1 ? 's' : ''}
+                      </div>
+                    )}
                   </div>
                   <div className="shrink-0">
+                    {t.tradeType === 'coverage_request' && canSubmit && (
+                      <button
+                        onClick={() => void handleApplyForCoverage(t.id)}
+                        disabled={actionBusy === t.id}
+                        className="px-3 py-1.5 rounded-md text-xs font-medium bg-blue-700 text-white hover:bg-blue-800 disabled:opacity-50 transition-colors"
+                      >
+                        {actionBusy === t.id ? 'Applying...' : 'Apply'}
+                      </button>
+                    )}
                     {canSubmit && t.tradeType === 'giveaway' && (
                       <button
                         onClick={() => void handleClaimGiveaway(t.id)}
@@ -632,6 +935,15 @@ function TradesIndexPage() {
                         className="px-3 py-1.5 rounded-md text-xs font-medium bg-red-700 text-white hover:bg-red-800 transition-colors inline-block"
                       >
                         View & Offer Swap
+                      </Link>
+                    )}
+                    {t.tradeType === 'coverage_request' && (
+                      <Link
+                        to="/orgs/$orgSlug/trades/$tradeId"
+                        params={{ orgSlug, tradeId: t.id }}
+                        className="ml-2 px-3 py-1.5 rounded-md text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors inline-block"
+                      >
+                        Details
                       </Link>
                     )}
                   </div>
@@ -720,6 +1032,7 @@ function TradeRow({
   onConfirmAction: (v: { id: string; action: string } | null) => void
 }) {
   const isActive = t.status === 'pending_acceptance' || t.status === 'pending_approval'
+  const isCoverage = t.tradeType === 'coverage_request'
 
   return (
     <div className="px-6 py-4 hover:bg-gray-50">
@@ -731,35 +1044,60 @@ function TradeRow({
             {t.isOpenBoard && (
               <span className="text-xs text-gray-400 font-medium">Board Post</span>
             )}
-            {t.offeringIsPartial && (
+            {!isCoverage && t.offeringIsPartial && (
               <span className="text-xs text-amber-600 font-medium">Partial</span>
             )}
           </div>
-          <div className="text-sm text-gray-700 mt-1">
-            <span className="font-medium text-navy-700">{t.offeringStaffName}</span>
-            {' offers '}
-            <span className="text-gray-600">
-              {t.offeringScheduleName} &middot;{' '}
-              {formatDateRange(t.offeringStartDatetime, t.offeringEndDatetime)}
-            </span>
-            {t.offeringPosition && (
-              <span className="text-gray-500"> ({t.offeringPosition})</span>
-            )}
-          </div>
-          {t.receivingStaffName && (
-            <div className="text-sm text-gray-700 mt-0.5">
-              <span className="font-medium text-navy-700">{t.receivingStaffName}</span>
-              {' offers '}
+          {isCoverage ? (
+            <div className="text-sm text-gray-700 mt-1">
+              <span className="font-medium text-blue-700">Coverage Needed</span>
+              {' — '}
               <span className="text-gray-600">
-                {t.receivingScheduleName && `${t.receivingScheduleName} \u00b7 `}
-                {t.receivingStartDatetime &&
-                  t.receivingEndDatetime &&
-                  formatDateRange(t.receivingStartDatetime, t.receivingEndDatetime)}
+                {t.coverageScheduleName} &middot;{' '}
+                {t.coverageStartDatetime && t.coverageEndDatetime
+                  ? formatDateRange(t.coverageStartDatetime, t.coverageEndDatetime)
+                  : ''}
               </span>
-              {t.receivingPosition && (
-                <span className="text-gray-500"> ({t.receivingPosition})</span>
+              {t.coveragePositionName && (
+                <span className="text-gray-500"> ({t.coveragePositionName})</span>
+              )}
+              {t.applicationCount > 0 && (
+                <span className="ml-2 text-xs text-blue-600 font-medium">
+                  {t.applicationCount} applicant{t.applicationCount !== 1 ? 's' : ''}
+                </span>
               )}
             </div>
+          ) : (
+            <>
+              <div className="text-sm text-gray-700 mt-1">
+                <span className="font-medium text-navy-700">{t.offeringStaffName}</span>
+                {' offers '}
+                <span className="text-gray-600">
+                  {t.offeringScheduleName} &middot;{' '}
+                  {t.offeringStartDatetime && t.offeringEndDatetime
+                    ? formatDateRange(t.offeringStartDatetime, t.offeringEndDatetime)
+                    : ''}
+                </span>
+                {t.offeringPosition && (
+                  <span className="text-gray-500"> ({t.offeringPosition})</span>
+                )}
+              </div>
+              {t.receivingStaffName && (
+                <div className="text-sm text-gray-700 mt-0.5">
+                  <span className="font-medium text-navy-700">{t.receivingStaffName}</span>
+                  {' offers '}
+                  <span className="text-gray-600">
+                    {t.receivingScheduleName && `${t.receivingScheduleName} \u00b7 `}
+                    {t.receivingStartDatetime &&
+                      t.receivingEndDatetime &&
+                      formatDateRange(t.receivingStartDatetime, t.receivingEndDatetime)}
+                  </span>
+                  {t.receivingPosition && (
+                    <span className="text-gray-500"> ({t.receivingPosition})</span>
+                  )}
+                </div>
+              )}
+            </>
           )}
           {t.reason && <div className="text-xs text-gray-400 mt-1 italic">{t.reason}</div>}
           {t.denialReason && (
