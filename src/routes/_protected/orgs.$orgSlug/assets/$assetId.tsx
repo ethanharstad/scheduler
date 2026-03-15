@@ -39,6 +39,7 @@ import { listStaffServerFn } from '@/server/staff'
 import { listFormTemplatesServerFn, getFormTemplateServerFn, submitFormServerFn, listSubmissionsServerFn } from '@/server/forms'
 import { FormRenderer, type FormValues, type FormErrors } from '@/components/form-renderer/FormRenderer'
 import type { FormSubmissionView } from '@/lib/form.types'
+import { useToast } from '@/lib/toast'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/assets/$assetId')({
   head: () => ({ meta: [{ title: 'Asset Detail | Scene Ready' }] }),
@@ -144,6 +145,7 @@ function AssetDetailPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
   const { asset: initialAsset, staffList, apparatusList } = Route.useLoaderData()
   const router = useRouter()
+  const toast = useToast()
 
   const [asset, setAsset] = useState<AssetDetailView | null>(initialAsset)
   const [activeTab, setActiveTab] = useState<'details' | 'assigned-gear' | 'inspections' | 'audit'>('details')
@@ -278,19 +280,25 @@ function AssetDetailPage() {
       },
     })
     setAssignBusy(false)
-    if (!result.success) { setAssignError(result.error); return }
+    if (!result.success) { setAssignError(result.error); toast.danger('Assignment failed', result.error); return }
     setAsset((a) => a ? { ...a, ...result.asset } : a)
     setAssignStaffId('')
     setAssignApparatusId('')
     setAssignLocationId('')
     setAssignLocations([])
+    toast.success('Gear assigned', `${currentAsset.name} has been assigned.`)
   }
 
   async function handleUnassign() {
     setAssignBusy(true)
     const result = await unassignGearServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id } })
     setAssignBusy(false)
-    if (result.success) setAsset((a) => a ? { ...a, ...result.asset } : a)
+    if (result.success) {
+      setAsset((a) => a ? { ...a, ...result.asset } : a)
+      toast.success('Gear unassigned', `${currentAsset.name} has been unassigned.`)
+    } else {
+      toast.danger('Unassign failed', 'Could not unassign gear. Please try again.')
+    }
   }
 
   async function loadSchedules() {
@@ -319,12 +327,13 @@ function AssetDetailPage() {
       const result = await addInspectionScheduleServerFn({
         data: { orgSlug: org.slug, assetId: currentAsset.id, formTemplateId: addTemplateId, label: addLabel.trim(), recurrenceRule: rrule },
       })
-      if (!result.success) { setAddError(result.error); return }
+      if (!result.success) { setAddError(result.error); toast.danger('Schedule failed', result.error); return }
       setSchedules((prev) => [...prev, result.schedule])
       setShowAddSchedule(false)
       setAddLabel('')
       setAddTemplateId('')
       setAddUnit('weeks')
+      toast.success('Schedule added', `Inspection schedule "${result.schedule.label}" created.`)
     } catch {
       setAddError('Failed to add schedule. Please try again.')
     } finally {
@@ -339,6 +348,9 @@ function AssetDetailPage() {
       if (result.success) {
         setSchedules((prev) => prev.filter((s) => s.id !== scheduleId))
         setDeletingScheduleId(null)
+        toast.success('Schedule deleted', 'Inspection schedule has been removed.')
+      } else {
+        toast.danger('Delete failed', 'Could not delete the schedule.')
       }
     } catch {
       // Schedule may already be deleted; refresh list
@@ -354,6 +366,9 @@ function AssetDetailPage() {
     })
     if (result.success) {
       setSchedules((prev) => prev.map((s) => s.id === schedule.id ? result.schedule : s))
+      toast.info(`Schedule ${result.schedule.isActive ? 'enabled' : 'disabled'}`, `"${schedule.label}" is now ${result.schedule.isActive ? 'active' : 'inactive'}.`)
+    } else {
+      toast.danger('Update failed', 'Could not toggle schedule status.')
     }
   }
 
@@ -393,6 +408,7 @@ function AssetDetailPage() {
         setActiveInspSchedule(null)
         setInspFields([])
         setInspValues({})
+        toast.success('Inspection submitted', 'Inspection has been recorded successfully.')
         // Refresh schedules to update next due dates
         await loadSchedules()
         // Refresh submissions if loaded
@@ -455,8 +471,9 @@ function AssetDetailPage() {
     setStatusBusy(true)
     const result = await changeAssetStatusServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id, newStatus } })
     setStatusBusy(false)
-    if (!result.success) { setStatusError(result.error); return }
+    if (!result.success) { setStatusError(result.error); toast.danger('Status change failed', result.error); return }
     setAsset((a) => a ? { ...a, ...(result.asset as AssetView), notes: a.notes, manufactureDate: a.manufactureDate, purchasedDate: a.purchasedDate, inServiceDate: a.inServiceDate, warrantyExpirationDate: a.warrantyExpirationDate, customFields: a.customFields } : a)
+    toast.success('Status updated', `${currentAsset.name} is now ${STATUS_LABELS[newStatus] ?? newStatus}.`)
     setNewStatus('')
     setConfirmDecomm(false)
   }
@@ -501,10 +518,11 @@ function AssetDetailPage() {
       },
     })
     setEditBusy(false)
-    if (!result.success) { setEditError(result.error); return }
+    if (!result.success) { setEditError(result.error); toast.danger('Update failed', result.error); return }
     const updated = await getAssetServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id } })
     if (updated.success) setAsset(updated.asset)
     setShowEdit(false)
+    toast.success('Asset updated', 'Changes have been saved.')
   }
 
   async function loadLocations() {
@@ -1020,9 +1038,10 @@ function AssetDetailPage() {
                                       data: { orgSlug: org.slug, assetId: currentAsset.id, locationId: loc.id, name: editLocName, description: editLocDesc || null, sortOrder: editLocSort },
                                     })
                                     setLocBusy(false)
-                                    if (!result.success) { setLocError(result.error); return }
+                                    if (!result.success) { setLocError(result.error); toast.danger('Update failed', result.error); return }
                                     setLocations((prev) => prev.map((l) => l.id === loc.id ? result.location : l).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
                                     setEditingLocId(null)
+                                    toast.success('Location updated', `"${result.location.name}" has been saved.`)
                                   }}
                                   className="px-3 py-1 text-xs bg-navy-700 text-white rounded-md disabled:opacity-60"
                                 >
@@ -1056,7 +1075,12 @@ function AssetDetailPage() {
                                       setLocBusy(true)
                                       const result = await deleteAssetLocationServerFn({ data: { orgSlug: org.slug, assetId: currentAsset.id, locationId: loc.id } })
                                       setLocBusy(false)
-                                      if (result.success) setLocations((prev) => prev.filter((l) => l.id !== loc.id))
+                                      if (result.success) {
+                                        setLocations((prev) => prev.filter((l) => l.id !== loc.id))
+                                        toast.success('Location deleted', 'Location has been removed.')
+                                      } else {
+                                        toast.danger('Delete failed', 'Could not delete the location.')
+                                      }
                                       setDeletingLocId(null)
                                     }}
                                     className="px-2 py-1 text-xs text-danger hover:bg-danger-bg rounded"
@@ -1109,11 +1133,12 @@ function AssetDetailPage() {
                           data: { orgSlug: org.slug, assetId: currentAsset.id, name: newLocName.trim(), description: newLocDesc || undefined, sortOrder: newLocSort },
                         })
                         setLocBusy(false)
-                        if (!result.success) { setLocError(result.error); return }
+                        if (!result.success) { setLocError(result.error); toast.danger('Location error', result.error); return }
                         setLocations((prev) => [...prev, result.location].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)))
                         setNewLocName('')
                         setNewLocDesc('')
                         setNewLocSort(0)
+                        toast.success('Location added', `"${result.location.name}" has been created.`)
                       }}
                       className="px-4 py-1.5 bg-navy-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 hover:bg-navy-800"
                     >

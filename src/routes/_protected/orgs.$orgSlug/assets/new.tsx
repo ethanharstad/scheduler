@@ -5,6 +5,7 @@ import { ChevronLeft } from 'lucide-react'
 import type { AssetType } from '@/lib/asset.types'
 import { APPARATUS_CATEGORIES, GEAR_CATEGORIES, APPARATUS_STATUSES, GEAR_STATUSES } from '@/lib/asset.types'
 import { createAssetServerFn } from '@/server/assets'
+import { useToast } from '@/lib/toast'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/assets/new')({
   head: () => ({ meta: [{ title: 'Add Asset | Scene Ready' }] }),
@@ -59,6 +60,7 @@ const STATUS_LABELS: Record<string, string> = {
 function NewAssetPage() {
   const { org, userRole } = useRouteContext({ from: '/_protected/orgs/$orgSlug' })
   const navigate = useNavigate()
+  const toast = useToast()
 
   if (!canDo(userRole, 'manage-assets')) {
     return <p className="text-sm text-gray-500">You don't have permission to add assets.</p>
@@ -121,6 +123,7 @@ function NewAssetPage() {
       return
     }
 
+    toast.success('Asset created', `${result.asset.name} has been added to inventory.`)
     await navigate({
       to: '/orgs/$orgSlug/assets/$assetId',
       params: { orgSlug: org.slug, assetId: result.asset.id },
