@@ -18,6 +18,7 @@ import type {
   CoverageApplicationView,
 } from '@/lib/trade.types'
 import type { EligibilityWarning } from '@/lib/qualifications.types'
+import { notifyStaffMember } from '@/server/_notifications'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -1051,6 +1052,25 @@ export const reviewTradeServerFn = createServerFn({ method: 'POST' })
         action: 'trade_denied',
         metadata: { tradeId: data.tradeId },
       })
+
+      // Notify both parties of denial
+      const tradeLink = `/orgs/${data.orgSlug}/schedules/trades`
+      void notifyStaffMember(env, membership.orgId, trade.offering_staff_id, 'shift_trade', {
+        type: 'warning',
+        title: 'Trade Denied',
+        message: data.reason?.trim() ? `Your shift trade was denied: ${data.reason.trim()}` : 'Your shift trade was denied by a manager.',
+        link: tradeLink,
+        channels: ['in_app', 'email'],
+      })
+      if (trade.receiving_staff_id) {
+        void notifyStaffMember(env, membership.orgId, trade.receiving_staff_id, 'shift_trade', {
+          type: 'info',
+          title: 'Trade Denied',
+          message: 'A shift trade you were involved in was denied by a manager.',
+          link: tradeLink,
+          channels: ['in_app', 'email'],
+        })
+      }
     } else {
       // APPROVE — mutate shift assignments
       if (!trade.receiving_staff_id) {
@@ -1142,6 +1162,25 @@ export const reviewTradeServerFn = createServerFn({ method: 'POST' })
           performedBy: membership.userId,
           action: 'trade_approved',
           metadata: { tradeId: data.tradeId, tradeType: trade.trade_type },
+        })
+      }
+
+      // Notify both parties of approval
+      const tradeLink = `/orgs/${data.orgSlug}/schedules/trades`
+      void notifyStaffMember(env, membership.orgId, trade.offering_staff_id, 'shift_trade', {
+        type: 'success',
+        title: 'Trade Approved',
+        message: `Your shift ${trade.trade_type} has been approved.`,
+        link: tradeLink,
+        channels: ['in_app', 'email'],
+      })
+      if (trade.receiving_staff_id) {
+        void notifyStaffMember(env, membership.orgId, trade.receiving_staff_id, 'shift_trade', {
+          type: 'success',
+          title: 'Trade Approved',
+          message: `A shift ${trade.trade_type} you accepted has been approved.`,
+          link: tradeLink,
+          channels: ['in_app', 'email'],
         })
       }
     }

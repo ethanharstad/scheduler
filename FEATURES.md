@@ -66,6 +66,12 @@ Staff-initiated shift trades (swap or giveaway) with support for directed trades
 
 ---
 
+## Notification System
+
+In-app notification center with email channel support. Bell widget in the topbar shows unread count and a dropdown of recent notifications. Supports notification types (info, warning, success, action_required) and categories (schedule changes, shift trades, time-off, cert expirations, general). Per-user notification preferences allow toggling email delivery per category. Reusable email module extracted from auth flows. Initial integrations: shift trade approvals/denials and time-off request decisions. Architecture designed for future SMS channel addition.
+
+---
+
 ## Additional Implemented Capabilities
 
 These features were built alongside or after the numbered specs:

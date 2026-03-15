@@ -17,6 +17,7 @@ import type {
 } from '@/lib/constraint.types'
 import { requireOrgMembership } from '@/server/_helpers'
 import { getOrgStub } from '@/server/_do-helpers'
+import { notifyStaffMember } from '@/server/_notifications'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -386,9 +387,9 @@ export const reviewConstraintServerFn = createServerFn({ method: 'POST' })
 
     const stub = getOrgStub(env, membership.orgId)
 
-    type ConstraintMeta = { type: string; status: string }
+    type ConstraintMeta = { type: string; status: string; staff_member_id: string }
     const existing = await stub.queryOne(
-      `SELECT type, status FROM staff_constraint WHERE id = ?`,
+      `SELECT type, status, staff_member_id FROM staff_constraint WHERE id = ?`,
       data.constraintId,
     ) as ConstraintMeta | null
 
@@ -404,6 +405,18 @@ export const reviewConstraintServerFn = createServerFn({ method: 'POST' })
        WHERE id = ?`,
       data.decision, membership.userId, now, now, data.constraintId,
     )
+
+    // Notify the staff member of the decision
+    const isApproved = data.decision === 'approved'
+    void notifyStaffMember(env, membership.orgId, existing.staff_member_id, 'time_off', {
+      type: isApproved ? 'success' : 'warning',
+      title: isApproved ? 'Time Off Approved' : 'Time Off Denied',
+      message: isApproved
+        ? 'Your time-off request has been approved.'
+        : 'Your time-off request has been denied.',
+      link: `/orgs/${data.orgSlug}/availability`,
+      channels: ['in_app', 'email'],
+    })
 
     const row = await stub.queryOne(
       `${DO_CONSTRAINT_SELECT} WHERE c.id = ?`,

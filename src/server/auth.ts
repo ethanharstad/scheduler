@@ -6,6 +6,7 @@ import {
   generateToken,
   logSecurityEvent,
 } from '@/lib/auth'
+import { sendEmail } from '@/server/_email'
 
 // ---------------------------------------------------------------------------
 // T007: Input validation helpers
@@ -193,7 +194,7 @@ export const registerServerFn = createServerFn({ method: 'POST' })
       .bind(tokenId, userId, token, now, expiresAt)
       .run()
 
-    await sendVerificationEmail(email, token, env.RESEND_API_KEY)
+    await sendVerificationEmail(email, token, env)
     return { success: true }
   })
 
@@ -302,7 +303,7 @@ export const resendVerificationServerFn = createServerFn({ method: 'POST' })
       .bind(tokenId, user.id, token, now, expiresAt)
       .run()
 
-    await sendVerificationEmail(email, token, env.RESEND_API_KEY)
+    await sendVerificationEmail(email, token, env)
     return { success: true }
   })
 
@@ -353,7 +354,7 @@ export const forgotPasswordServerFn = createServerFn({ method: 'POST' })
       .bind(tokenId, user.id, token, now, expiresAt)
       .run()
 
-    await sendPasswordResetEmail(email, token, env.RESEND_API_KEY)
+    await sendPasswordResetEmail(email, token, env)
     return { success: true }
   })
 
@@ -453,63 +454,34 @@ export const logoutServerFn = createServerFn({ method: 'POST' }).handler(
 )
 
 // ---------------------------------------------------------------------------
-// Internal: Email delivery helpers (best-effort via Resend API)
+// Internal: Email delivery helpers (uses shared _email module)
 // ---------------------------------------------------------------------------
-
-async function sendEmail(payload: {
-  to: string
-  subject: string
-  html: string
-  apiKey: string
-}): Promise<void> {
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${payload.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: 'noreply@sceneready.app',
-      to: payload.to,
-      subject: payload.subject,
-      html: payload.html,
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '(unreadable)')
-    console.error(
-      `[email] Resend API error ${res.status} for ${payload.to}: ${body}`,
-    )
-  }
-}
 
 async function sendVerificationEmail(
   email: string,
   token: string,
-  apiKey: string,
+  env: Cloudflare.Env,
 ): Promise<void> {
   const origin = getRequestOrigin()
   const url = `${origin}/verify-email/${token}`
-  await sendEmail({
+  await sendEmail(env, {
     to: email,
     subject: 'Verify your email address',
     html: `<p>Click <a href="${url}">here</a> to verify your email. This link expires in 24 hours.</p>`,
-    apiKey,
   })
 }
 
 async function sendPasswordResetEmail(
   email: string,
   token: string,
-  apiKey: string,
+  env: Cloudflare.Env,
 ): Promise<void> {
   const origin = getRequestOrigin()
   const url = `${origin}/reset-password/${token}`
-  await sendEmail({
+  await sendEmail(env, {
     to: email,
     subject: 'Reset your password',
     html: `<p>Click <a href="${url}">here</a> to reset your password. This link expires in 60 minutes.</p>`,
-    apiKey,
   })
 }
 

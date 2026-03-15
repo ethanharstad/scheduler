@@ -19,6 +19,7 @@ import type {
 } from '@/lib/staff.types'
 import { requireOrgMembership } from '@/server/_helpers'
 import { getOrgStub } from '@/server/_do-helpers'
+import { sendEmail } from '@/server/_email'
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -54,30 +55,18 @@ async function sendInvitationEmail(
   token: string,
   orgName: string,
   inviterName: string | null,
-  apiKey: string,
+  env: Cloudflare.Env,
 ): Promise<void> {
   const origin = getRequestOrigin()
   const url = `${origin}/join/${token}`
   const fromLine = inviterName ? `${inviterName} has invited` : 'You have been invited'
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: 'noreply@sceneready.app',
-      to,
-      subject: `You've been invited to join ${orgName} on Scheduler`,
-      html: `<p>${fromLine} you to join <strong>${orgName}</strong> on Scheduler.</p>
-             <p><a href="${url}">Accept invitation</a></p>
-             <p>This link expires in 7 days.</p>`,
-    }),
+  await sendEmail(env, {
+    to,
+    subject: `You've been invited to join ${orgName} on Scheduler`,
+    html: `<p>${fromLine} you to join <strong>${orgName}</strong> on Scheduler.</p>
+           <p><a href="${url}">Accept invitation</a></p>
+           <p>This link expires in 7 days.</p>`,
   })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '(unreadable)')
-    console.error(`[email] Resend API error ${res.status} for ${to}: ${body}`)
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -370,7 +359,7 @@ export const inviteStaffMemberServerFn = createServerFn({ method: 'POST' })
       metadata: { email: staffRow.email },
     })
 
-    await sendInvitationEmail(staffRow.email, token, orgName, inviterName, env.RESEND_API_KEY)
+    await sendInvitationEmail(staffRow.email, token, orgName, inviterName, env)
 
     return { success: true }
   })
@@ -505,7 +494,7 @@ export const resendInvitationServerFn = createServerFn({ method: 'POST' })
       metadata: { email: invRow.email },
     })
 
-    await sendInvitationEmail(invRow.email, newToken, orgName, inviterName, env.RESEND_API_KEY)
+    await sendInvitationEmail(invRow.email, newToken, orgName, inviterName, env)
 
     return { success: true }
   })

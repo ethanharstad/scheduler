@@ -51,6 +51,7 @@ import { Route as ProtectedOrgsOrgSlugSettingsSchedulingRouteImport } from './ro
 import { Route as ProtectedOrgsOrgSlugSettingsRanksRouteImport } from './routes/_protected/orgs.$orgSlug/settings.ranks'
 import { Route as ProtectedOrgsOrgSlugSettingsQualificationsRouteImport } from './routes/_protected/orgs.$orgSlug/settings.qualifications'
 import { Route as ProtectedOrgsOrgSlugSettingsPositionsRouteImport } from './routes/_protected/orgs.$orgSlug/settings.positions'
+import { Route as ProtectedOrgsOrgSlugSettingsNotificationsRouteImport } from './routes/_protected/orgs.$orgSlug/settings.notifications'
 import { Route as ProtectedOrgsOrgSlugSettingsCertTypesRouteImport } from './routes/_protected/orgs.$orgSlug/settings.cert-types'
 import { Route as ProtectedOrgsOrgSlugSchedulesRequirementsRouteImport } from './routes/_protected/orgs.$orgSlug/schedules.requirements'
 import { Route as ProtectedOrgsOrgSlugSchedulesPlatoonsRouteImport } from './routes/_protected/orgs.$orgSlug/schedules.platoons'
@@ -304,6 +305,12 @@ const ProtectedOrgsOrgSlugSettingsPositionsRoute =
     path: '/positions',
     getParentRoute: () => ProtectedOrgsOrgSlugSettingsRoute,
   } as any)
+const ProtectedOrgsOrgSlugSettingsNotificationsRoute =
+  ProtectedOrgsOrgSlugSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => ProtectedOrgsOrgSlugSettingsRoute,
+  } as any)
 const ProtectedOrgsOrgSlugSettingsCertTypesRoute =
   ProtectedOrgsOrgSlugSettingsCertTypesRouteImport.update({
     id: '/cert-types',
@@ -442,6 +449,7 @@ export interface FileRoutesByFullPath {
   '/orgs/$orgSlug/schedules/platoons': typeof ProtectedOrgsOrgSlugSchedulesPlatoonsRouteWithChildren
   '/orgs/$orgSlug/schedules/requirements': typeof ProtectedOrgsOrgSlugSchedulesRequirementsRoute
   '/orgs/$orgSlug/settings/cert-types': typeof ProtectedOrgsOrgSlugSettingsCertTypesRoute
+  '/orgs/$orgSlug/settings/notifications': typeof ProtectedOrgsOrgSlugSettingsNotificationsRoute
   '/orgs/$orgSlug/settings/positions': typeof ProtectedOrgsOrgSlugSettingsPositionsRoute
   '/orgs/$orgSlug/settings/qualifications': typeof ProtectedOrgsOrgSlugSettingsQualificationsRoute
   '/orgs/$orgSlug/settings/ranks': typeof ProtectedOrgsOrgSlugSettingsRanksRoute
@@ -491,6 +499,7 @@ export interface FileRoutesByTo {
   '/orgs/$orgSlug/schedules/$scheduleId': typeof ProtectedOrgsOrgSlugSchedulesScheduleIdRoute
   '/orgs/$orgSlug/schedules/requirements': typeof ProtectedOrgsOrgSlugSchedulesRequirementsRoute
   '/orgs/$orgSlug/settings/cert-types': typeof ProtectedOrgsOrgSlugSettingsCertTypesRoute
+  '/orgs/$orgSlug/settings/notifications': typeof ProtectedOrgsOrgSlugSettingsNotificationsRoute
   '/orgs/$orgSlug/settings/positions': typeof ProtectedOrgsOrgSlugSettingsPositionsRoute
   '/orgs/$orgSlug/settings/qualifications': typeof ProtectedOrgsOrgSlugSettingsQualificationsRoute
   '/orgs/$orgSlug/settings/ranks': typeof ProtectedOrgsOrgSlugSettingsRanksRoute
@@ -553,6 +562,7 @@ export interface FileRoutesById {
   '/_protected/orgs/$orgSlug/schedules/platoons': typeof ProtectedOrgsOrgSlugSchedulesPlatoonsRouteWithChildren
   '/_protected/orgs/$orgSlug/schedules/requirements': typeof ProtectedOrgsOrgSlugSchedulesRequirementsRoute
   '/_protected/orgs/$orgSlug/settings/cert-types': typeof ProtectedOrgsOrgSlugSettingsCertTypesRoute
+  '/_protected/orgs/$orgSlug/settings/notifications': typeof ProtectedOrgsOrgSlugSettingsNotificationsRoute
   '/_protected/orgs/$orgSlug/settings/positions': typeof ProtectedOrgsOrgSlugSettingsPositionsRoute
   '/_protected/orgs/$orgSlug/settings/qualifications': typeof ProtectedOrgsOrgSlugSettingsQualificationsRoute
   '/_protected/orgs/$orgSlug/settings/ranks': typeof ProtectedOrgsOrgSlugSettingsRanksRoute
@@ -614,6 +624,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/schedules/platoons'
     | '/orgs/$orgSlug/schedules/requirements'
     | '/orgs/$orgSlug/settings/cert-types'
+    | '/orgs/$orgSlug/settings/notifications'
     | '/orgs/$orgSlug/settings/positions'
     | '/orgs/$orgSlug/settings/qualifications'
     | '/orgs/$orgSlug/settings/ranks'
@@ -663,6 +674,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgSlug/schedules/$scheduleId'
     | '/orgs/$orgSlug/schedules/requirements'
     | '/orgs/$orgSlug/settings/cert-types'
+    | '/orgs/$orgSlug/settings/notifications'
     | '/orgs/$orgSlug/settings/positions'
     | '/orgs/$orgSlug/settings/qualifications'
     | '/orgs/$orgSlug/settings/ranks'
@@ -724,6 +736,7 @@ export interface FileRouteTypes {
     | '/_protected/orgs/$orgSlug/schedules/platoons'
     | '/_protected/orgs/$orgSlug/schedules/requirements'
     | '/_protected/orgs/$orgSlug/settings/cert-types'
+    | '/_protected/orgs/$orgSlug/settings/notifications'
     | '/_protected/orgs/$orgSlug/settings/positions'
     | '/_protected/orgs/$orgSlug/settings/qualifications'
     | '/_protected/orgs/$orgSlug/settings/ranks'
@@ -1056,6 +1069,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedOrgsOrgSlugSettingsPositionsRouteImport
       parentRoute: typeof ProtectedOrgsOrgSlugSettingsRoute
     }
+    '/_protected/orgs/$orgSlug/settings/notifications': {
+      id: '/_protected/orgs/$orgSlug/settings/notifications'
+      path: '/notifications'
+      fullPath: '/orgs/$orgSlug/settings/notifications'
+      preLoaderRoute: typeof ProtectedOrgsOrgSlugSettingsNotificationsRouteImport
+      parentRoute: typeof ProtectedOrgsOrgSlugSettingsRoute
+    }
     '/_protected/orgs/$orgSlug/settings/cert-types': {
       id: '/_protected/orgs/$orgSlug/settings/cert-types'
       path: '/cert-types'
@@ -1325,6 +1345,7 @@ const ProtectedOrgsOrgSlugSchedulesRouteWithChildren =
 
 interface ProtectedOrgsOrgSlugSettingsRouteChildren {
   ProtectedOrgsOrgSlugSettingsCertTypesRoute: typeof ProtectedOrgsOrgSlugSettingsCertTypesRoute
+  ProtectedOrgsOrgSlugSettingsNotificationsRoute: typeof ProtectedOrgsOrgSlugSettingsNotificationsRoute
   ProtectedOrgsOrgSlugSettingsPositionsRoute: typeof ProtectedOrgsOrgSlugSettingsPositionsRoute
   ProtectedOrgsOrgSlugSettingsQualificationsRoute: typeof ProtectedOrgsOrgSlugSettingsQualificationsRoute
   ProtectedOrgsOrgSlugSettingsRanksRoute: typeof ProtectedOrgsOrgSlugSettingsRanksRoute
@@ -1336,6 +1357,8 @@ const ProtectedOrgsOrgSlugSettingsRouteChildren: ProtectedOrgsOrgSlugSettingsRou
   {
     ProtectedOrgsOrgSlugSettingsCertTypesRoute:
       ProtectedOrgsOrgSlugSettingsCertTypesRoute,
+    ProtectedOrgsOrgSlugSettingsNotificationsRoute:
+      ProtectedOrgsOrgSlugSettingsNotificationsRoute,
     ProtectedOrgsOrgSlugSettingsPositionsRoute:
       ProtectedOrgsOrgSlugSettingsPositionsRoute,
     ProtectedOrgsOrgSlugSettingsQualificationsRoute:

@@ -7,6 +7,7 @@ import { listUserOrgsServerFn } from '@/server/org'
 import { canDo } from '@/lib/rbac'
 import { SelectedOrgProvider, useSelectedOrg } from '@/lib/org-context'
 import type { OrgView, OrgRole } from '@/lib/org.types'
+import { NotificationBell } from '@/components/NotificationBell'
 
 export const Route = createFileRoute('/_protected')({
   beforeLoad: async ({ location }) => {
@@ -63,6 +64,9 @@ function useBreadcrumbs(): Crumb[] {
     }
     if (pathname === `${base}/settings/qualifications/positions`) {
       return [{ label: 'Settings', to: '/orgs/$orgSlug/settings', params: { orgSlug: slug } }, { label: 'Positions' }]
+    }
+    if (pathname === `${base}/settings/notifications`) {
+      return [{ label: 'Settings', to: '/orgs/$orgSlug/settings', params: { orgSlug: slug } }, { label: 'Notifications' }]
     }
     if (pathname === `${base}/availability`) return [{ label: 'Availability' }]
     if (pathname === `${base}/schedules`) return [{ label: 'Schedules' }]
@@ -460,6 +464,9 @@ function ProtectedLayout() {
         {/* Top bar */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center px-6 shrink-0">
           <Breadcrumbs />
+          <div className="ml-auto flex items-center gap-2">
+            <NotificationBell orgSlug={effectiveOrgCtx?.org.slug ?? null} />
+          </div>
         </header>
 
         {/* Content */}

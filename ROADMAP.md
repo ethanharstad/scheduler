@@ -17,14 +17,14 @@ For development principles and strategic context, see `specs/roadmap.md`.
 
 ---
 
-## Communication & Notifications
+## Communication & Notifications (Remaining)
 
-*Keeps staff informed without external tools.*
+*Foundation shipped — in-app notifications, email channel, and preferences. Remaining items:*
 
-- In-app notification center (schedule changes, open shifts, trade requests, cert expirations)
-- Email and browser push notifications
+- Browser push notifications
 - Department-level announcements (broadcast to all staff or a station)
-- Notification preferences (staff controls what they receive)
+- SMS notification channel
+- Notification integrations for schedule publish, cert expirations, coverage requests, and open shifts
 
 **Exit criteria:** A manager posting an open shift triggers an immediate notification to all eligible staff.
 

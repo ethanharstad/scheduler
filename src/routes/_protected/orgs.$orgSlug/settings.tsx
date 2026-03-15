@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, redirect, useRouteContext } from '@tanstack/react-router'
-import { Award, Briefcase, ClipboardList, Settings, Star } from 'lucide-react'
+import { Award, Bell, Briefcase, ClipboardList, Settings, Star } from 'lucide-react'
 import { canDo } from '@/lib/rbac'
 
 export const Route = createFileRoute('/_protected/orgs/$orgSlug/settings')({
@@ -91,6 +91,14 @@ function SettingsLayout() {
               params={{ orgSlug: slug }}
               icon={<ClipboardList className="w-4 h-4" />}
               label="Scheduling"
+            />
+          </li>
+          <li>
+            <NavLink
+              to="/orgs/$orgSlug/settings/notifications"
+              params={{ orgSlug: slug }}
+              icon={<Bell className="w-4 h-4" />}
+              label="Notifications"
             />
           </li>
         </ul>

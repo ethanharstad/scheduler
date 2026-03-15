@@ -542,3 +542,39 @@ CREATE TABLE IF NOT EXISTS coverage_application (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_coverage_app_trade_staff ON coverage_application(trade_id, staff_member_id);
 CREATE INDEX IF NOT EXISTS idx_coverage_app_trade ON coverage_application(trade_id, status);
+
+-- ============================================================
+-- Notifications (per-org, per-user)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS notification (
+  id         TEXT NOT NULL PRIMARY KEY,
+  user_id    TEXT NOT NULL,                -- soft ref to D1 user
+  type       TEXT NOT NULL DEFAULT 'info', -- info | warning | success | action_required
+  title      TEXT NOT NULL,
+  message    TEXT NOT NULL,
+  link       TEXT,                         -- relative URL path
+  is_read    INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  CHECK (type IN ('info', 'warning', 'success', 'action_required'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_user_unread ON notification(user_id, is_read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_user_date ON notification(user_id, created_at DESC);
+
+-- ============================================================
+-- Notification Preferences (per-org, per-user, per-category)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS notification_preference (
+  id         TEXT NOT NULL PRIMARY KEY,
+  user_id    TEXT NOT NULL,                -- soft ref to D1 user
+  category   TEXT NOT NULL,                -- schedule_change | shift_trade | time_off | cert_expiration | general
+  email      INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(user_id, category),
+  CHECK (category IN ('schedule_change', 'shift_trade', 'time_off', 'cert_expiration', 'general'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_pref_user ON notification_preference(user_id);
