@@ -23,7 +23,7 @@ import type { RRuleEntry } from '@/lib/platoon.types'
 // Constraint-conflict helpers (used by bulk-population functions)
 // ---------------------------------------------------------------------------
 
-type ConstraintInfo = {
+export type ConstraintInfo = {
   startDatetime: string
   endDatetime: string
   daysOfWeek: number[] | null
@@ -34,7 +34,7 @@ type ConstraintInfo = {
  * Returns the remaining free intervals (0 = fully blocked, 1 = no/full overlap,
  * 2+ = constraint punches a hole in the middle of the shift).
  */
-function subtractConstraints(
+export function subtractConstraints(
   assignStart: string,
   assignEnd: string,
   constraints: ConstraintInfo[],
