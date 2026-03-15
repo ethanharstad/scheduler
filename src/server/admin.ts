@@ -2,13 +2,17 @@ import { createServerFn } from '@tanstack/react-start'
 import { getCookie } from '@tanstack/react-start/server'
 import type {
   AdminStatsOutput,
+  BackupOrgInput,
   ListOrgsInput,
   ListOrgsOutput,
   ListUsersInput,
   ListUsersOutput,
+  OrgBackup,
+  RestoreOrgInput,
   ToggleAdminInput,
   ToggleAdminOutput,
 } from '@/lib/admin.types'
+import { getOrgStub } from './_do-helpers'
 
 // ---------------------------------------------------------------------------
 // Internal: require system admin session
@@ -229,3 +233,82 @@ export const getAdminStatsServerFn = createServerFn({ method: 'GET' }).handler(
     }
   },
 )
+
+// ---------------------------------------------------------------------------
+// backupOrgServerFn
+// ---------------------------------------------------------------------------
+
+export const backupOrgServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: BackupOrgInput) => d)
+  .handler(async (ctx) => {
+    const env = ctx.context as unknown as Cloudflare.Env
+    const adminId = await requireSystemAdmin(env)
+    if (!adminId) return { success: false as const, error: 'UNAUTHORIZED' as const }
+
+    const { orgId } = ctx.data
+
+    type OrgRow = { id: string; slug: string; name: string; plan: string; status: string; created_at: string }
+    const orgRow = await env.DB.prepare('SELECT * FROM organization WHERE id = ?')
+      .bind(orgId)
+      .first<OrgRow>()
+    if (!orgRow) return { success: false as const, error: 'NOT_FOUND' as const }
+
+    const memberships = await env.DB.prepare(
+      'SELECT * FROM org_membership WHERE org_id = ?',
+    ).bind(orgId).all()
+
+    const invitations = await env.DB.prepare(
+      'SELECT * FROM invitation_token_index WHERE org_id = ?',
+    ).bind(orgId).all()
+
+    const stub = getOrgStub(env, orgId)
+    const doData = await stub.exportAllData()
+
+    const backup: OrgBackup = {
+      _meta: {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        exportedBy: adminId,
+        orgId,
+        orgSlug: orgRow.slug,
+        orgName: orgRow.name,
+      },
+      d1: {
+        organization: orgRow,
+        org_memberships: memberships.results ?? [],
+        invitation_token_index: invitations.results ?? [],
+      },
+      do: doData,
+    }
+
+    return { success: true as const, backup }
+  })
+
+// ---------------------------------------------------------------------------
+// restoreOrgServerFn
+// ---------------------------------------------------------------------------
+
+export const restoreOrgServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: RestoreOrgInput) => d)
+  .handler(async (ctx) => {
+    const env = ctx.context as unknown as Cloudflare.Env
+    const adminId = await requireSystemAdmin(env)
+    if (!adminId) return { success: false as const, error: 'UNAUTHORIZED' as const }
+
+    const { orgId, backup } = ctx.data
+
+    if (!backup?._meta?.version || backup._meta.version !== 1) {
+      return { success: false as const, error: 'INVALID_BACKUP' as const }
+    }
+
+    type IdRow = { id: string }
+    const orgRow = await env.DB.prepare('SELECT id FROM organization WHERE id = ?')
+      .bind(orgId)
+      .first<IdRow>()
+    if (!orgRow) return { success: false as const, error: 'NOT_FOUND' as const }
+
+    const stub = getOrgStub(env, orgId)
+    await stub.importAllData(backup.do)
+
+    return { success: true as const }
+  })

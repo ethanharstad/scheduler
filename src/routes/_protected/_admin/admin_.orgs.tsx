@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Building2, Shield } from 'lucide-react'
-import { listAllOrgsServerFn } from '@/server/admin'
+import { Building2, Download, Loader2, Shield, Upload } from 'lucide-react'
+import { listAllOrgsServerFn, backupOrgServerFn, restoreOrgServerFn } from '@/server/admin'
+import type { OrgBackup } from '@/lib/admin.types'
 
 export const Route = createFileRoute('/_protected/_admin/admin_/orgs')({
   loader: async () => {
@@ -14,6 +16,63 @@ export const Route = createFileRoute('/_protected/_admin/admin_/orgs')({
 
 function AdminOrgs() {
   const { orgs, total } = Route.useLoaderData()
+  const [loadingBackup, setLoadingBackup] = useState<string | null>(null)
+  const [loadingRestore, setLoadingRestore] = useState<string | null>(null)
+
+  async function handleBackup(orgId: string, slug: string) {
+    setLoadingBackup(orgId)
+    try {
+      const result = await backupOrgServerFn({ data: { orgId } })
+      if (!result.success) {
+        alert(`Backup failed: ${result.error}`)
+        return
+      }
+      const json = JSON.stringify(result.backup, null, 2)
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `backup-${slug}-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Backup failed unexpectedly')
+    } finally {
+      setLoadingBackup(null)
+    }
+  }
+
+  function handleRestore(orgId: string, orgName: string) {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+
+      const confirmed = window.confirm(
+        `This will replace ALL data for "${orgName}". This action cannot be undone. Continue?`,
+      )
+      if (!confirmed) return
+
+      setLoadingRestore(orgId)
+      try {
+        const text = await file.text()
+        const backup = JSON.parse(text) as OrgBackup
+        const result = await restoreOrgServerFn({ data: { orgId, backup } })
+        if (!result.success) {
+          alert(`Restore failed: ${result.error}`)
+        } else {
+          alert('Restore completed successfully')
+        }
+      } catch {
+        alert('Restore failed: invalid JSON file')
+      } finally {
+        setLoadingRestore(null)
+      }
+    }
+    input.click()
+  }
 
   return (
     <div>
@@ -37,6 +96,7 @@ function AdminOrgs() {
               <th className="text-center px-4 py-3 font-semibold text-gray-700">Status</th>
               <th className="text-center px-4 py-3 font-semibold text-gray-700">Members</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-700">Created</th>
+              <th className="text-center px-4 py-3 font-semibold text-gray-700">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -70,6 +130,30 @@ function AdminOrgs() {
                 <td className="px-4 py-3 text-center text-gray-600">{org.memberCount}</td>
                 <td className="px-4 py-3 text-gray-500">
                   {new Date(org.createdAt).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <div className="flex items-center justify-center gap-1">
+                    <button
+                      onClick={() => handleBackup(org.id, org.slug)}
+                      disabled={loadingBackup === org.id}
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-navy-700 disabled:opacity-50"
+                      title="Backup"
+                    >
+                      {loadingBackup === org.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Download className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => handleRestore(org.id, org.name)}
+                      disabled={loadingRestore === org.id}
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-navy-700 disabled:opacity-50"
+                      title="Restore"
+                    >
+                      {loadingRestore === org.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Upload className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

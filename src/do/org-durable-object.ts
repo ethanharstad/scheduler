@@ -567,6 +567,85 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
     )
   }
 
+  // =========================================================================
+  // Backup & Restore
+  // =========================================================================
+
+  /** Export all data from every table in the DO. */
+  async exportAllData(): Promise<Record<string, unknown[]>> {
+    const tables = [
+      'org_settings', 'org_membership', 'station',
+      'rank', 'cert_type', 'cert_level', 'position', 'position_cert_requirement',
+      'staff_member', 'staff_invitation', 'staff_audit_log', 'staff_certification',
+      'schedule', 'shift_assignment',
+      'platoon', 'platoon_membership',
+      'staff_constraint', 'schedule_requirement',
+      'asset', 'asset_location', 'asset_inspection_schedule', 'asset_audit_log',
+      'form_template', 'form_template_version', 'form_submission', 'form_response_value',
+      'shift_trade',
+    ]
+    const result: Record<string, unknown[]> = {}
+    for (const table of tables) {
+      result[table] = [...this.sql.exec(`SELECT * FROM ${table}`)]
+    }
+    return result
+  }
+
+  /** Clear all data and import from a backup. Destructive operation. */
+  async importAllData(data: Record<string, unknown[]>): Promise<void> {
+    // Delete in child-first order to respect FK constraints
+    const deleteOrder = [
+      'form_response_value', 'form_submission', 'form_template_version',
+      'asset_audit_log', 'asset_inspection_schedule', 'asset_location',
+      'shift_trade', 'shift_assignment', 'schedule',
+      'schedule_requirement', 'staff_constraint',
+      'platoon_membership', 'platoon',
+      'staff_certification', 'staff_audit_log', 'staff_invitation', 'staff_member',
+      'position_cert_requirement', 'position', 'cert_level', 'cert_type', 'rank',
+      'form_template',
+      'station', 'org_membership', 'org_settings',
+    ]
+
+    // Insert in parent-first order
+    const insertOrder = [
+      'org_settings', 'org_membership', 'station',
+      'rank', 'cert_type', 'cert_level', 'position', 'position_cert_requirement',
+      'form_template', 'form_template_version',
+      'staff_member', 'staff_invitation', 'staff_audit_log', 'staff_certification',
+      'platoon', 'platoon_membership',
+      'schedule', 'shift_assignment',
+      'staff_constraint', 'schedule_requirement',
+      'asset', 'asset_location', 'asset_inspection_schedule', 'asset_audit_log',
+      'form_submission', 'form_response_value',
+      'shift_trade',
+    ]
+
+    // Clear all tables
+    for (const table of deleteOrder) {
+      this.sql.exec(`DELETE FROM ${table}`)
+    }
+
+    // Insert backup data
+    for (const table of insertOrder) {
+      const rows = data[table] ?? []
+      for (const row of rows) {
+        const rec = row as Record<string, unknown>
+        const keys = Object.keys(rec)
+        if (keys.length === 0) continue
+        const placeholders = keys.map(() => '?').join(', ')
+        const values = keys.map((k) => rec[k])
+        this.sql.exec(
+          `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`,
+          ...values,
+        )
+      }
+    }
+  }
+
+  // =========================================================================
+  // Audit Log
+  // =========================================================================
+
   async getAuditLog(limit: number, offset: number): Promise<{
     entries: StaffAuditEntry[]
     total: number

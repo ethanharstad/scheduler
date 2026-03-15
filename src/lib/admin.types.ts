@@ -41,3 +41,32 @@ export type ToggleAdminOutput =
 export type AdminStatsOutput =
   | { success: true; stats: AdminStats }
   | { success: false; error: 'UNAUTHORIZED' }
+
+// ---------------------------------------------------------------------------
+// Org Backup & Restore
+// ---------------------------------------------------------------------------
+
+export interface OrgBackupMeta {
+  version: number
+  exportedAt: string
+  exportedBy: string
+  orgId: string
+  orgSlug: string
+  orgName: string
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type JsonRow = Record<string, any>
+
+export interface OrgBackup {
+  _meta: OrgBackupMeta
+  d1: {
+    organization: JsonRow
+    org_memberships: JsonRow[]
+    invitation_token_index: JsonRow[]
+  }
+  do: Record<string, JsonRow[]>
+}
+
+export type BackupOrgInput = { orgId: string }
+export type RestoreOrgInput = { orgId: string; backup: OrgBackup }
