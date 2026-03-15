@@ -1,4 +1,11 @@
 export type OrgRole = 'owner' | 'admin' | 'manager' | 'employee' | 'payroll_hr'
+
+export interface QuickShiftPreset {
+  label: string       // Display name, e.g. "24h (7A–7A)"
+  startTime: string   // HH:MM, e.g. "07:00"
+  endTime: string     // HH:MM, e.g. "07:00"
+  endDayOffset: number // 0 = same day, 1 = next day
+}
 export type OrgStatus = 'active' | 'inactive'
 
 /** D1 row shape for the `organization` table */
@@ -28,12 +35,14 @@ export interface OrgView {
   name: string
   plan: string
   scheduleDayStart: string  // HH:MM; e.g. "07:00"
+  quickShifts: QuickShiftPreset[]
   createdAt: string
 }
 
 export interface UpdateOrgSettingsInput {
   orgSlug: string
   scheduleDayStart: string  // HH:MM
+  quickShifts?: QuickShiftPreset[]
 }
 
 export type UpdateOrgSettingsOutput =

@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS org_settings (
   plan                TEXT NOT NULL DEFAULT 'free',
   status              TEXT NOT NULL DEFAULT 'active',
   schedule_day_start  TEXT NOT NULL DEFAULT '00:00',
+  quick_shifts        TEXT,
   created_at          TEXT NOT NULL
 );
 

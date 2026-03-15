@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
-import type { OrgRole } from '@/lib/org.types'
+import type { OrgRole, QuickShiftPreset } from '@/lib/org.types'
 import type { StaffMemberView, StaffAuditAction, StaffAuditEntry } from '@/lib/staff.types'
 
 // ---------------------------------------------------------------------------
@@ -21,6 +21,7 @@ export type OrgSettingsView = {
   plan: string
   status: string
   scheduleDayStart: string
+  quickShifts: QuickShiftPreset[]
   createdAt: string
 }
 
@@ -81,6 +82,8 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
 
   private ensureSchema(): void {
     this.sql.exec(ORG_SCHEMA_SQL)
+    // Additive migrations for existing DO instances
+    try { this.sql.exec(`ALTER TABLE org_settings ADD COLUMN quick_shifts TEXT`) } catch { /* already exists */ }
   }
 
   // =========================================================================
@@ -125,16 +128,21 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
   async getSettings(): Promise<OrgSettingsView | null> {
     const rows = [...this.sql
       .exec('SELECT * FROM org_settings WHERE id = ?', 'settings')]
-    const row = rows[0] as Record<string, string> | undefined
+    const row = rows[0] as Record<string, unknown> | undefined
     if (!row) return null
+    let quickShifts: QuickShiftPreset[] = []
+    if (row['quick_shifts']) {
+      try { quickShifts = JSON.parse(row['quick_shifts'] as string) as QuickShiftPreset[] } catch { /* ignore */ }
+    }
     return {
-      orgId: row['org_id']!,
-      slug: row['slug']!,
-      name: row['name']!,
-      plan: row['plan']!,
-      status: row['status']!,
-      scheduleDayStart: row['schedule_day_start']!,
-      createdAt: row['created_at']!,
+      orgId: row['org_id'] as string,
+      slug: row['slug'] as string,
+      name: row['name'] as string,
+      plan: row['plan'] as string,
+      status: row['status'] as string,
+      scheduleDayStart: row['schedule_day_start'] as string,
+      quickShifts,
+      createdAt: row['created_at'] as string,
     }
   }
 
@@ -161,6 +169,7 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
   async updateSettings(updates: {
     name?: string
     scheduleDayStart?: string
+    quickShifts?: QuickShiftPreset[]
   }): Promise<void> {
     if (updates.name !== undefined) {
       this.sql.exec(
@@ -172,6 +181,12 @@ export class OrgDurableObject extends DurableObject<Cloudflare.Env> {
       this.sql.exec(
         `UPDATE org_settings SET schedule_day_start = ? WHERE id = 'settings'`,
         updates.scheduleDayStart,
+      )
+    }
+    if (updates.quickShifts !== undefined) {
+      this.sql.exec(
+        `UPDATE org_settings SET quick_shifts = ? WHERE id = 'settings'`,
+        JSON.stringify(updates.quickShifts),
       )
     }
   }

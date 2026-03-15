@@ -63,7 +63,7 @@ function SettingsLayout() {
           </li>
           <li>
             <NavLink
-              to="/orgs/$orgSlug/settings/qualifications/ranks"
+              to="/orgs/$orgSlug/settings/ranks"
               params={{ orgSlug: slug }}
               icon={<Star className="w-4 h-4" />}
               label="Ranks"
@@ -71,7 +71,7 @@ function SettingsLayout() {
           </li>
           <li>
             <NavLink
-              to="/orgs/$orgSlug/settings/qualifications/cert-types"
+              to="/orgs/$orgSlug/settings/cert-types"
               params={{ orgSlug: slug }}
               icon={<Award className="w-4 h-4" />}
               label="Cert Types"
@@ -79,7 +79,7 @@ function SettingsLayout() {
           </li>
           <li>
             <NavLink
-              to="/orgs/$orgSlug/settings/qualifications/positions"
+              to="/orgs/$orgSlug/settings/positions"
               params={{ orgSlug: slug }}
               icon={<Briefcase className="w-4 h-4" />}
               label="Positions"
@@ -87,7 +87,7 @@ function SettingsLayout() {
           </li>
           <li>
             <NavLink
-              to="/orgs/$orgSlug/settings/scheduling/requirements"
+              to="/orgs/$orgSlug/settings/scheduling"
               params={{ orgSlug: slug }}
               icon={<ClipboardList className="w-4 h-4" />}
               label="Scheduling"

@@ -817,26 +817,14 @@ function ScheduleDetailPage() {
     )
   }
 
-  function applyQuickShift(preset: '24h' | 'day' | 'night' | '7a4p' | '4p7a') {
+  function applyQuickShift(preset: { startTime: string; endTime: string; endDayOffset: number }) {
     const dateStr = addStartDatetime ? addStartDatetime.slice(0, 10) : schedule.startDate
     const [y, m, d] = dateStr.split('-').map(Number)
-    const nextDay = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
-    if (preset === '24h') {
-      setAddStartDatetime(`${dateStr}T07:00`)
-      setAddEndDatetime(`${nextDay}T07:00`)
-    } else if (preset === 'day') {
-      setAddStartDatetime(`${dateStr}T07:00`)
-      setAddEndDatetime(`${dateStr}T19:00`)
-    } else if (preset === 'night') {
-      setAddStartDatetime(`${dateStr}T19:00`)
-      setAddEndDatetime(`${nextDay}T07:00`)
-    } else if (preset === '7a4p') {
-      setAddStartDatetime(`${dateStr}T07:00`)
-      setAddEndDatetime(`${dateStr}T16:00`)
-    } else {
-      setAddStartDatetime(`${dateStr}T16:00`)
-      setAddEndDatetime(`${nextDay}T07:00`)
-    }
+    const endDate = preset.endDayOffset === 1
+      ? new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
+      : dateStr
+    setAddStartDatetime(`${dateStr}T${preset.startTime}`)
+    setAddEndDatetime(`${endDate}T${preset.endTime}`)
   }
 
   function getShiftPreview(): string | null {
@@ -1345,29 +1333,25 @@ function ScheduleDetailPage() {
                   </>
                 ) : (
                   <>
-                    <div className="sm:col-span-2">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-600">Quick Shift</span>
+                    {org.quickShifts.length > 0 && (
+                      <div className="sm:col-span-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-gray-600">Quick Shift</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {org.quickShifts.map((preset, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => applyQuickShift(preset)}
+                              className="px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 hover:bg-navy-700 hover:text-white transition-colors"
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="flex gap-2">
-                        {([
-                          { label: '24h (7A–7A)', preset: '24h' as const },
-                          { label: 'Day (7A–7P)', preset: 'day' as const },
-                          { label: 'Night (7P–7A)', preset: 'night' as const },
-                          { label: '7A–4P', preset: '7a4p' as const },
-                          { label: '4P–7A', preset: '4p7a' as const },
-                        ] as const).map(({ label, preset }) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => applyQuickShift(preset)}
-                            className="px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 hover:bg-navy-700 hover:text-white transition-colors"
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    )}
                     <div>
                       <label className="block text-sm font-medium text-gray-600 mb-1">
                         Start <span className="text-danger">*</span>

@@ -9,7 +9,7 @@ import {
   deleteRankServerFn,
 } from '@/server/qualifications'
 
-export const Route = createFileRoute('/_protected/orgs/$orgSlug/settings/qualifications/ranks')({
+export const Route = createFileRoute('/_protected/orgs/$orgSlug/settings/ranks')({
   head: () => ({
     meta: [{ title: 'Ranks | Settings | Scene Ready' }],
   }),

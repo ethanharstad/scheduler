@@ -11,7 +11,7 @@ import {
   deletePositionServerFn,
 } from '@/server/qualifications'
 
-export const Route = createFileRoute('/_protected/orgs/$orgSlug/settings/qualifications/positions')({
+export const Route = createFileRoute('/_protected/orgs/$orgSlug/settings/positions')({
   head: () => ({
     meta: [{ title: 'Positions | Settings | Scene Ready' }],
   }),

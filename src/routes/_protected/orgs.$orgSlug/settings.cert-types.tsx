@@ -10,7 +10,7 @@ import {
   deleteCertTypeServerFn,
 } from '@/server/qualifications'
 
-export const Route = createFileRoute('/_protected/orgs/$orgSlug/settings/qualifications/cert-types')({
+export const Route = createFileRoute('/_protected/orgs/$orgSlug/settings/cert-types')({
   head: () => ({
     meta: [{ title: 'Cert Types | Settings | Scene Ready' }],
   }),

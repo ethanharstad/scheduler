@@ -5,6 +5,7 @@ import {
   type OrgMembershipView,
   type OrgRole,
   type OrgView,
+  type QuickShiftPreset,
   type UpdateOrgSettingsInput,
   type UpdateOrgSettingsOutput,
 } from '@/lib/org.types'
@@ -226,6 +227,7 @@ export const getOrgServerFn = createServerFn({ method: 'GET' })
         name: settings.name,
         plan: settings.plan,
         scheduleDayStart: settings.scheduleDayStart,
+        quickShifts: settings.quickShifts,
         createdAt: settings.createdAt,
       },
       userRole,
@@ -247,6 +249,18 @@ export const updateOrgSettingsServerFn = createServerFn({ method: 'POST' })
 
     if (!/^\d{2}:\d{2}$/.test(data.scheduleDayStart)) {
       return { success: false, error: 'VALIDATION_ERROR' }
+    }
+
+    const timeRegex = /^\d{2}:\d{2}$/
+    if (data.quickShifts !== undefined) {
+      for (const qs of data.quickShifts) {
+        if (!qs.label.trim() || !timeRegex.test(qs.startTime) || !timeRegex.test(qs.endTime)) {
+          return { success: false, error: 'VALIDATION_ERROR' }
+        }
+        if (qs.endDayOffset !== 0 && qs.endDayOffset !== 1) {
+          return { success: false, error: 'VALIDATION_ERROR' }
+        }
+      }
     }
 
     type OrgMemberRow = { org_id: string; role: string }
@@ -271,7 +285,11 @@ export const updateOrgSettingsServerFn = createServerFn({ method: 'POST' })
 
     // Update DO settings (sole source of truth)
     const stub = getOrgStub(env, orgId)
-    await stub.updateSettings({ scheduleDayStart: data.scheduleDayStart })
+    const settingsUpdate: { scheduleDayStart: string; quickShifts?: QuickShiftPreset[] } = {
+      scheduleDayStart: data.scheduleDayStart,
+    }
+    if (data.quickShifts !== undefined) settingsUpdate.quickShifts = data.quickShifts
+    await stub.updateSettings(settingsUpdate)
 
     return { success: true }
   })
