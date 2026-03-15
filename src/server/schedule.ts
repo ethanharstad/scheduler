@@ -247,17 +247,20 @@ export const getTodayAssignmentsServerFn = createServerFn({ method: 'GET' })
       start_datetime: string
       end_datetime: string
       position: string | null
+      position_sort_order: number | null
     }
 
     const stub = getOrgStub(env, membership.orgId)
     const doRows = await stub.query(
-      `SELECT sm.name AS staff_member_name, sa.start_datetime, sa.end_datetime, sa.position
+      `SELECT sm.name AS staff_member_name, sa.start_datetime, sa.end_datetime, sa.position,
+              pos.sort_order AS position_sort_order
        FROM shift_assignment sa
        JOIN schedule s ON s.id = sa.schedule_id
        JOIN staff_member sm ON sm.id = sa.staff_member_id
+       LEFT JOIN position pos ON pos.id = sa.position_id
        WHERE s.status = 'published'
          AND date(sa.start_datetime) = ?
-       ORDER BY sa.start_datetime ASC, sm.name ASC`,
+       ORDER BY pos.sort_order DESC, sa.start_datetime ASC, sm.name ASC`,
       data.date,
     ) as Row[]
     const assignments: TodayAssignment[] = doRows.map((r) => ({
