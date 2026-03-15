@@ -24,6 +24,7 @@ import { listStaffServerFn } from '@/server/staff'
 import { listPositionsServerFn, checkPositionEligibilityServerFn } from '@/server/qualifications'
 import { listScheduleRequirementsServerFn } from '@/server/schedule-requirements'
 import { createCoverageRequestServerFn } from '@/server/trades'
+import { createConstraintServerFn, reviewConstraintServerFn } from '@/server/constraints'
 
 export const Route = createFileRoute(
   '/_protected/orgs/$orgSlug/schedules/$scheduleId',
@@ -689,7 +690,11 @@ function ScheduleDetailPage() {
   // Delete states
   const [confirmDeleteSchedule, setConfirmDeleteSchedule] = useState(false)
   const [deleteScheduleBusy, setDeleteScheduleBusy] = useState(false)
-  const [confirmDeleteAssignment, setConfirmDeleteAssignment] = useState<string | null>(null)
+  const [deleteAssignmentState, setDeleteAssignmentState] = useState<{
+    assignmentId: string
+    constraintType: 'none' | 'unavailable' | 'time_off'
+    reason: string
+  } | null>(null)
   const [deleteAssignmentBusy, setDeleteAssignmentBusy] = useState<string | null>(null)
 
   const [statusBusy, setStatusBusy] = useState(false)
@@ -1023,17 +1028,43 @@ function ScheduleDetailPage() {
     }
   }
 
-  async function handleDeleteAssignment(assignmentId: string) {
-    setDeleteAssignmentBusy(assignmentId)
+  async function handleDeleteAssignment(
+    assignment: ShiftAssignmentView,
+    constraintType: 'none' | 'unavailable' | 'time_off',
+    reason: string,
+  ) {
+    setDeleteAssignmentBusy(assignment.id)
     try {
       const result = await deleteAssignmentServerFn({
-        data: { orgSlug: org.slug, assignmentId },
+        data: { orgSlug: org.slug, assignmentId: assignment.id },
       })
-      if (result.success) {
-        setAssignments((prev) => prev.filter((a) => a.id !== assignmentId))
-        setSchedule((s) => ({ ...s, assignmentCount: s.assignmentCount - 1 }))
-        setConfirmDeleteAssignment(null)
+      if (!result.success) return
+
+      if (constraintType !== 'none') {
+        const createResult = await createConstraintServerFn({
+          data: {
+            orgSlug: org.slug,
+            staffMemberId: assignment.staffMemberId,
+            type: constraintType,
+            startDatetime: assignment.startDatetime,
+            endDatetime: assignment.endDatetime,
+            reason: reason || undefined,
+          },
+        })
+        if (constraintType === 'time_off' && createResult.success) {
+          await reviewConstraintServerFn({
+            data: {
+              orgSlug: org.slug,
+              constraintId: createResult.constraint.id,
+              decision: 'approved',
+            },
+          })
+        }
       }
+
+      setAssignments((prev) => prev.filter((a) => a.id !== assignment.id))
+      setSchedule((s) => ({ ...s, assignmentCount: s.assignmentCount - 1 }))
+      setDeleteAssignmentState(null)
     } finally {
       setDeleteAssignmentBusy(null)
     }
@@ -1601,12 +1632,13 @@ function ScheduleDetailPage() {
                 )
               }
 
-              const confirming = confirmDeleteAssignment === a.id
+              const delState = deleteAssignmentState?.assignmentId === a.id ? deleteAssignmentState : null
               const busy = deleteAssignmentBusy === a.id
               const rowWarnings = assignmentWarnings.get(a.id) ?? []
 
               return (
-                <div key={a.id} className="group flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-sm">
+                <div key={a.id} className="group">
+                  <div className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 text-sm">
                   <div className="flex items-center gap-1.5 w-44 shrink-0 font-medium text-gray-900 truncate">
                     {a.staffMemberName}
                     {rowWarnings.length > 0 && (
@@ -1621,24 +1653,19 @@ function ScheduleDetailPage() {
                   </div>
                   {a.position && <span className="text-xs text-gray-400 truncate">{a.position}</span>}
                   {a.notes && <span className="text-xs text-gray-400 italic truncate">{a.notes}</span>}
-                  <div className={`ml-auto flex items-center gap-1.5 transition-opacity ${confirming ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                  <div className={`ml-auto flex items-center gap-1.5 transition-opacity ${delState ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                     {canEdit && (
                       <>
                         <button onClick={() => startEditAssignment(a)} className="p-1 text-gray-400 hover:text-navy-700 hover:bg-gray-100 rounded transition-colors">
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <div className="w-px h-3.5 bg-gray-200 shrink-0" />
-                        {confirming ? (
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => void handleDeleteAssignment(a.id)} disabled={busy} className="px-2 py-0.5 bg-danger hover:opacity-90 disabled:opacity-50 text-white rounded text-xs">
-                              {busy ? '…' : 'Yes'}
-                            </button>
-                            <button onClick={() => setConfirmDeleteAssignment(null)} className="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded text-xs">
-                              No
-                            </button>
-                          </div>
+                        {delState ? (
+                          <button onClick={() => setDeleteAssignmentState(null)} className="p-1 text-navy-700 bg-gray-100 rounded transition-colors">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
                         ) : (
-                          <button onClick={() => setConfirmDeleteAssignment(a.id)} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded transition-colors">
+                          <button onClick={() => setDeleteAssignmentState({ assignmentId: a.id, constraintType: 'none', reason: '' })} className="p-1 text-gray-400 hover:text-danger hover:bg-danger-bg rounded transition-colors">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
@@ -1657,6 +1684,54 @@ function ScheduleDetailPage() {
                       </Link>
                     )}
                   </div>
+                  </div>
+                  {delState && (
+                    <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-medium text-gray-500 mr-1">Remove shift:</span>
+                        {(['none', 'unavailable', 'time_off'] as const).map((ct) => {
+                          const label = ct === 'none' ? 'Just Delete' : ct === 'unavailable' ? '+ Mark Unavailable' : '+ Time Off'
+                          const selected = delState.constraintType === ct
+                          return (
+                            <button
+                              key={ct}
+                              onClick={() => setDeleteAssignmentState({ ...delState, constraintType: ct })}
+                              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${selected ? 'bg-navy-700 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:border-navy-500 hover:text-navy-700'}`}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {delState.constraintType !== 'none' && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={delState.reason}
+                            onChange={(e) => setDeleteAssignmentState({ ...delState, reason: e.target.value })}
+                            placeholder="Reason (optional)"
+                            className="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-navy-500"
+                          />
+                          <span className="text-xs text-gray-400">Auto-approved</span>
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          onClick={() => void handleDeleteAssignment(a, delState.constraintType, delState.reason)}
+                          disabled={busy}
+                          className="px-3 py-1 bg-danger hover:opacity-90 disabled:opacity-50 text-white rounded text-xs font-medium"
+                        >
+                          {busy ? 'Deleting…' : 'Delete'}
+                        </button>
+                        <button
+                          onClick={() => setDeleteAssignmentState(null)}
+                          className="px-3 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-gray-600 rounded text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             }
@@ -1854,7 +1929,7 @@ function ScheduleDetailPage() {
             setNotes={setEditAssignNotes}
             onSave={() => void handleUpdateAssignment(editingAssignment)}
             onClose={() => setEditingAssignment(null)}
-            onDelete={() => void handleDeleteAssignment(editingAssignment)}
+            onDelete={() => void handleDeleteAssignment(a, 'none', '')}
           />
         ) : null
       })()}
