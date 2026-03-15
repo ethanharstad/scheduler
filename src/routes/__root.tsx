@@ -1,6 +1,7 @@
 import { HeadContent, Scripts, createRootRoute, Link } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { ToastProvider, ToastContainer } from '@/lib/toast'
 
 import appCss from '../styles.css?url'
 
@@ -64,7 +65,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        {children}
+        <ToastProvider>
+          {children}
+          <ToastContainer />
+        </ToastProvider>
         <TanStackDevtools
           config={{
             position: 'bottom-right',
